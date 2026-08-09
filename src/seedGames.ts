@@ -5,8 +5,8 @@ import Game from './models/Game';
 dotenv.config();
 
 const MOCK_GAMES: any[] = [
-  { code: 'keno', name: 'KENO', type: 'vietlott', brandColor: '#FF4D15', bgColor: '#FFF2EE', badge: '8p-1 kỳ', cronExpression: '*/8 * * * *', drawDurationMinutes: 8, autoRandomResult: true },
-  { code: 'bao_keno', name: 'BAO KENO', type: 'vietlott', brandColor: '#FF4D15', bgColor: '#FFF2EE', cronExpression: '*/8 * * * *', drawDurationMinutes: 8, autoRandomResult: true },
+  { code: 'keno', name: 'KENO', type: 'vietlott', brandColor: '#FF4D15', bgColor: '#FFF2EE', badge: '2p-1 kỳ', cronExpression: '*/2 * * * *', drawDurationMinutes: 2, autoRandomResult: true },
+  { code: 'bao_keno', name: 'BAO KENO', type: 'vietlott', brandColor: '#FF4D15', bgColor: '#FFF2EE', badge: '2p-1 kỳ', cronExpression: '*/2 * * * *', drawDurationMinutes: 2, autoRandomResult: true },
   { code: 'mua_chung', name: 'MUA CHUNG', type: 'vietlott', brandColor: '#0095FF', bgColor: '#E6F4FF' },
   { code: 'power_655', name: 'POWER 6/55', type: 'vietlott', brandColor: '#D0021B', bgColor: '#FCE8EA', cronExpression: '0 18 * * 2,4,6', drawDurationMinutes: 60, autoRandomResult: true },
   { code: 'mega_645', name: 'MEGA 6/45', type: 'vietlott', brandColor: '#004F9F', bgColor: '#E6EEF7', badge: 'Hôm nay xổ', cronExpression: '0 18 * * 3,5,0', drawDurationMinutes: 60, autoRandomResult: true },
@@ -17,7 +17,7 @@ const MOCK_GAMES: any[] = [
   { code: 'loto_235', name: 'LÔ TÔ 2, 3, 5 Số', type: 'dientoan', brandColor: '#FF9A00', bgColor: '#FFF8F0', cronExpression: '0 18 * * *', drawDurationMinutes: 60 },
   { code: 'loto_cap', name: 'LÔ TÔ 2, 3, 4 Cặp', type: 'dientoan', brandColor: '#FF9A00', bgColor: '#FFF8F0', cronExpression: '0 18 * * *', drawDurationMinutes: 60 },
   { code: 'dientoan_636', name: 'ĐIỆN TOÁN 6x36', type: 'dientoan', brandColor: '#004F9F', bgColor: '#E6EEF7', badge: 'T4 & T7', cronExpression: '0 18 * * 3,6', drawDurationMinutes: 60 },
-  { code: 'bao_loto_2', name: 'BAO LÔ TÔ 2 Số', type: 'dientoan', brandColor: '#FF4D15', bgColor: '#FFF2EE', cronExpression: '0 18 * * *', drawDurationMinutes: 60 },
+  { code: 'truot_loto', name: 'TRƯỢT LÔ TÔ (4-8-10 cặp)', type: 'dientoan', brandColor: '#FF4D15', bgColor: '#FFF2EE', cronExpression: '0 18 * * *', drawDurationMinutes: 60 },
   { code: 'than_tai_4', name: 'Thần Tài 4 / ĐT 1-2-3', type: 'dientoan', brandColor: '#FF9A00', bgColor: '#FFF8F0', cronExpression: '0 18 * * *', drawDurationMinutes: 60 },
   { code: 'bao_636', name: 'BAO 6x36', type: 'dientoan', brandColor: '#D0021B', bgColor: '#FCE8EA', cronExpression: '0 18 * * 3,6', drawDurationMinutes: 60 },
 
@@ -28,7 +28,7 @@ const MOCK_GAMES: any[] = [
 
 const seedGames = async () => {
   try {
-    const mongoUri = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/vuaxoso';
+    const mongoUri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/vuaxoso';
     await mongoose.connect(mongoUri);
     console.log('MongoDB Connected');
 

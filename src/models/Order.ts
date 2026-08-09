@@ -5,6 +5,7 @@ export interface IOrder extends Document {
   user: mongoose.Types.ObjectId | IUser;
   orderId: string;
   gameType: string;
+  playType?: string;
   numbers?: string[];
   items?: { id?: string; numbers: string[]; cost: number }[];
   totalCost: number;
@@ -26,6 +27,7 @@ const orderSchema = new Schema<IOrder>(
       type: String, 
       required: true 
     },
+    playType: { type: String },
     numbers: [{ type: String }],
     items: [
       {

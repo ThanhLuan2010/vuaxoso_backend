@@ -181,26 +181,74 @@ export const processDrawResults = async (drawId: string) => {
       } else if (game.type === 'dientoan') {
         const w = draw.winningNumbers;
         if (w && w.length >= 9) {
-           allBoards.forEach((board) => {
-             board.numbers.forEach((ticketStr) => {
-                let ticketPrize = 0;
-                if (game.code === 'loto_235' || game.code.includes('loto')) {
-                   const numLen = ticketStr.length;
-                   if (numLen === 2 && w[0].endsWith(ticketStr)) ticketPrize = 700000;
-                   if (numLen === 3 && w[0].endsWith(ticketStr)) ticketPrize = 4000000;
-                   if (numLen === 5 && w[0] === ticketStr) ticketPrize = 40000000;
-                } else if (game.code === 'dientoan_636') {
-                   ticketPrize = 100000;
-                } else {
-                   ticketPrize = 10000;
-                }
+           const w2 = w.map(n => n.slice(-2)); // Get last 2 digits of all winning numbers
 
-                if (ticketPrize > 0) {
-                  isWinner = true;
-                  const multiplier = Math.floor(board.cost / 10000);
-                  prizeAmount += ticketPrize * (multiplier > 0 ? multiplier : 1);
-                }
-             });
+           allBoards.forEach((board) => {
+             let ticketPrize = 0;
+             const multiplier = Math.floor(board.cost / 10000);
+
+             if (game.code === 'truot_loto') {
+               // Player wins if NONE of their selected numbers appear in the results (w2)
+               const allMissed = board.numbers.every(num => !w2.includes(num));
+               if (allMissed) {
+                 if (order.playType === 'Trượt 4') ticketPrize = 25000; // x2.5
+                 if (order.playType === 'Trượt 8') ticketPrize = 85000; // x8.5
+                 if (order.playType === 'Trượt 10') ticketPrize = 120000; // x12
+               }
+             } else if (game.code === 'loto_cap') {
+               // Player wins if ALL of their selected numbers appear in the results (w2)
+               const allHit = board.numbers.every(num => w2.includes(num));
+               if (allHit) {
+                 if (order.playType === 'Lô tô 2 cặp') ticketPrize = 100000; // x10
+                 if (order.playType === 'Lô tô 3 cặp') ticketPrize = 400000; // x40
+                 if (order.playType === 'Lô tô 4 cặp') ticketPrize = 1000000; // x100
+               }
+             } else {
+               // loto_235 or standard games (evaluate per ticket)
+               board.numbers.forEach((ticketStr) => {
+                  let singlePrize = 0;
+                  if (game.code === 'loto_235' || game.code.includes('loto')) {
+                     const numLen = ticketStr.length;
+                     if (numLen === 2) {
+                       if (w[0]?.endsWith(ticketStr)) singlePrize += 600000;
+                       if (w[1]?.endsWith(ticketStr)) singlePrize += 10000;
+                     } else if (numLen === 3) {
+                       if (w[0]?.endsWith(ticketStr)) singlePrize += 4000000;
+                       if (w[1]?.endsWith(ticketStr)) singlePrize += 50000;
+                       if (w[0]?.endsWith(ticketStr.substring(1))) singlePrize += 10000;
+                     } else if (numLen === 4) {
+                       if (w[0]?.endsWith(ticketStr)) singlePrize += 15000000;
+                       if (w[0]?.endsWith(ticketStr.substring(1))) singlePrize += 400000;
+                       if (w[0]?.endsWith(ticketStr.substring(2))) singlePrize += 100000;
+                     } else if (numLen === 5 && w.length >= 27) {
+                       if (w[0] === ticketStr) singlePrize += 200000000;
+                       if (w[1] === ticketStr) singlePrize += 20000000;
+                       if (w[2] === ticketStr || w[3] === ticketStr) singlePrize += 5000000;
+                       for (let i = 4; i <= 9; i++) if (w[i] === ticketStr) singlePrize += 2000000;
+                       const t4 = ticketStr.substring(1);
+                       for (let i = 10; i <= 13; i++) if (w[i] === t4) singlePrize += 400000;
+                       for (let i = 14; i <= 19; i++) if (w[i] === t4) singlePrize += 200000;
+                       const t3 = ticketStr.substring(2);
+                       for (let i = 20; i <= 22; i++) if (w[i] === t3) singlePrize += 100000;
+                       const t2 = ticketStr.substring(3);
+                       for (let i = 23; i <= 26; i++) if (w[i] === t2) singlePrize += 40000;
+                       if (w[0]?.endsWith(t2)) singlePrize += 40000;
+                     }
+                  } else if (game.code === 'dientoan_636' || game.code === 'bao_636') {
+                     if (w2.includes(ticketStr)) singlePrize = 100000;
+                  } else if (game.code === 'than_tai_4') {
+                     if (w2.includes(ticketStr)) singlePrize = 20000;
+                  } else {
+                     if (w2.includes(ticketStr)) singlePrize = 10000;
+                  }
+                  ticketPrize += singlePrize;
+               });
+             }
+
+             if (ticketPrize > 0) {
+               isWinner = true;
+               prizeAmount += ticketPrize * (multiplier > 0 ? multiplier : 1);
+             }
            });
         }
       }

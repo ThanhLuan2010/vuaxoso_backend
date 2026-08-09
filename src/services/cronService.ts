@@ -30,11 +30,16 @@ export const startCronJobs = () => {
             game.riggedResult = '';
             await game.save();
           } else {
-            if (game.type === 'kienthiet') {
+            if (game.type === 'kienthiet' || (game.type === 'dientoan' && game.code !== 'dientoan_636')) {
               const winningNumbers: string[] = [];
               for (let p = 0; p < 9; p++) {
                 let length = 5;
-                if (p === 0) length = 6;
+                // For loto/thantai, prize 0 is 5 digits or 4 digits. Kienthiet is 6 digits usually.
+                if (p === 0) {
+                  length = game.type === 'dientoan' ? 5 : 6;
+                  if (game.code === 'MB') length = 5;
+                  if (game.code === 'than_tai_4') length = 4;
+                }
                 else if (p >= 5 && p <= 6) length = 4;
                 else if (p === 7) length = 3;
                 else if (p === 8) length = 2;
@@ -56,6 +61,9 @@ export const startCronJobs = () => {
               } else if (game.code === 'power_655') {
                 drawCount = 7;
                 maxBall = 55;
+              } else if (game.code === 'dientoan_636') {
+                drawCount = 6;
+                maxBall = 36;
               }
 
               const nums = new Set<string>();

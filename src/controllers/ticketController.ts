@@ -92,7 +92,7 @@ export const bulkGenerateTickets = async (req: any, res: Response) => {
 
     for (let i = 0; i < 7; i++) {
       ticketsData.push({
-        number: 'x' + String((seed * (i + 13) * 997) % 100000).padStart(5, '0'),
+        number: provinceId === 'MB' ? String((seed * (i + 13) * 997) % 100000).padStart(5, '0') : 'x' + String((seed * (i + 13) * 997) % 100000).padStart(5, '0'),
         price: 10000,
         ticketType: 'normal',
         multiplier: normalMultipliers[i % normalMultipliers.length],
@@ -103,7 +103,7 @@ export const bulkGenerateTickets = async (req: any, res: Response) => {
 
     for (let i = 0; i < 3; i++) {
       ticketsData.push({
-        number: String((seed * (i + 7) * 1337) % 1000000).padStart(6, '0'),
+        number: provinceId === 'MB' ? String((seed * (i + 7) * 1337) % 100000).padStart(5, '0') : String((seed * (i + 7) * 1337) % 1000000).padStart(6, '0'),
         price: 10000,
         ticketType: 'special',
         multiplier: specialMultipliers[i % specialMultipliers.length],

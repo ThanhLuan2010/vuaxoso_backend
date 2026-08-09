@@ -9,6 +9,7 @@ export interface IDraw extends Document {
   status: 'open' | 'closed' | 'completed'; // open=can buy, closed=waiting results, completed=results entered
   winningNumbers: string[]; // ["56", "65"]
   jackpotAmount?: number;
+  provinceId?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -22,6 +23,7 @@ const drawSchema = new Schema<IDraw>(
     status: { type: String, enum: ['open', 'closed', 'completed'], default: 'open' },
     winningNumbers: [{ type: String }],
     jackpotAmount: { type: Number },
+    provinceId: { type: String }, // For Kien Thiet MT/MN specific draws
   },
   { timestamps: true }
 );

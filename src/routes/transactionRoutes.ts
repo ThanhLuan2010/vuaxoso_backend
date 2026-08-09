@@ -5,13 +5,15 @@ import {
   getHistory, 
   getAllTransactions, 
   approveTransaction, 
-  rejectTransaction 
+  rejectTransaction,
+  depositBinance
 } from '../controllers/transactionController';
 import { protect, admin } from '../middleware/authMiddleware';
 
 const router = express.Router();
 
 router.post('/deposit', protect, deposit);
+router.post('/deposit/binance', protect, depositBinance);
 router.post('/withdraw', protect, withdraw);
 router.get('/history', protect, getHistory);
 

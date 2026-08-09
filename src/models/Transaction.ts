@@ -6,6 +6,9 @@ export interface ITransaction extends Document {
   type: 'deposit' | 'withdraw';
   amount: number;
   status: 'pending' | 'approved' | 'rejected';
+  txId?: string;
+  paymentMethod?: 'manual' | 'binance';
+  destinationInfo?: any;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -16,6 +19,9 @@ const transactionSchema = new Schema<ITransaction>(
     type: { type: String, enum: ['deposit', 'withdraw'], required: true },
     amount: { type: Number, required: true },
     status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
+    txId: { type: String, sparse: true, unique: true },
+    paymentMethod: { type: String, enum: ['manual', 'binance'], default: 'manual' },
+    destinationInfo: { type: Schema.Types.Mixed },
   },
   { timestamps: true }
 );

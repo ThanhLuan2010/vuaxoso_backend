@@ -7,6 +7,7 @@ export interface IGame extends Document {
   brandColor?: string;
   bgColor?: string;
   badge?: string; // e.g. "10p-1 kỳ"
+  subtext?: string; // e.g. "🏆 2.000.000.000đ"
   isActive: boolean;
   cronExpression?: string; // e.g. "*/10 * * * *"
   drawDurationMinutes?: number; // e.g. 10
@@ -24,6 +25,7 @@ const gameSchema = new Schema<IGame>(
     brandColor: { type: String },
     bgColor: { type: String },
     badge: { type: String },
+    subtext: { type: String },
     isActive: { type: Boolean, default: true },
     cronExpression: { type: String },
     drawDurationMinutes: { type: Number, default: 10 },

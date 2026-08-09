@@ -58,8 +58,12 @@ app.get('/', (req: Request, res: Response) => {
   res.send('Vua Xổ Số API is running...');
 });
 
-const PORT = process.env.PORT || 5001;
+let portValue = parseInt(process.env.PORT || '5001', 10);
+if (isNaN(portValue)) {
+  portValue = 5001;
+}
+const PORT = portValue;
 
-app.listen(Number(PORT), '0.0.0.0', () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT} (0.0.0.0)`);
 });

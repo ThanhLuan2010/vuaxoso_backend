@@ -7,7 +7,7 @@ export const getSetting = async (req: Request, res: Response) => {
     const setting = await Setting.findOne({ key });
     
     if (!setting) {
-      return res.status(404).json({ message: 'Setting not found' });
+      return res.json(null);
     }
     
     res.json(setting.value);

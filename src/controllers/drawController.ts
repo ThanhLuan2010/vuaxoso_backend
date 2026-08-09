@@ -97,8 +97,12 @@ export const getDrawResults = async (req: any, res: Response) => {
       if (type) gameQuery.type = type;
       if (code) {
         if (type === 'kienthiet') {
-          // Đối với xổ số kiến thiết, filter theo mã vùng (vd: mien_bac, mien_trung)
-          gameQuery.code = { $regex: code, $options: 'i' };
+          // Đối với xổ số kiến thiết, filter theo mã vùng (vd: mien_bac -> MB)
+          let dbCode = code;
+          if (code === 'mien_bac') dbCode = 'MB';
+          else if (code === 'mien_trung') dbCode = 'MT';
+          else if (code === 'mien_nam') dbCode = 'MN';
+          gameQuery.code = dbCode;
         } else {
           gameQuery.code = code;
         }
@@ -120,9 +124,23 @@ export const getDrawResults = async (req: any, res: Response) => {
       .populate('game')
       .sort({ updatedAt: -1 })
       .skip(skip)
-      .limit(limit);
+      .limit(limit)
+      .lean();
       
-    res.json(draws);
+    // Attach province details if available
+    const Province = require('../models/Province').default;
+    const provinces = await Province.find().lean();
+    const provinceMap = new Map();
+    provinces.forEach((p: any) => provinceMap.set(p.provinceId, p));
+
+    const enrichedDraws = draws.map((d: any) => {
+      if (d.provinceId && provinceMap.has(d.provinceId)) {
+        d.province = provinceMap.get(d.provinceId);
+      }
+      return d;
+    });
+
+    res.json(enrichedDraws);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -131,14 +149,15 @@ export const getDrawResults = async (req: any, res: Response) => {
 // Admin: Tạo kỳ quay mới
 export const createDraw = async (req: any, res: Response) => {
   try {
-    const { gameId, drawCode, openTime, closeTime, jackpotAmount } = req.body;
+    const { gameId, drawCode, openTime, closeTime, jackpotAmount, provinceId } = req.body;
     
     const draw = await Draw.create({
       game: gameId,
       drawCode,
       openTime,
       closeTime,
-      jackpotAmount
+      jackpotAmount,
+      provinceId
     });
     res.status(201).json(draw);
   } catch (error: any) {
@@ -149,7 +168,7 @@ export const createDraw = async (req: any, res: Response) => {
 // Admin: Cập nhật kết quả trúng thưởng
 export const enterResults = async (req: any, res: Response) => {
   try {
-    const { winningNumbers } = req.body;
+    const { winningNumbers, provinceId } = req.body;
     const draw = await Draw.findById(req.params.id).populate('game');
     
     if (!draw) {
@@ -157,6 +176,7 @@ export const enterResults = async (req: any, res: Response) => {
     }
 
     draw.winningNumbers = winningNumbers;
+    if (provinceId) draw.provinceId = provinceId;
     draw.status = 'completed';
     await draw.save();
 

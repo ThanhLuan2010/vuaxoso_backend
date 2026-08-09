@@ -7,6 +7,7 @@ export interface ITicket extends Document {
   multiplier?: number;
   provinceId: string;
   drawDate: string;
+  symbols?: string[];
   isSold: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -20,6 +21,7 @@ const TicketSchema: Schema = new Schema(
     multiplier: { type: Number },
     provinceId: { type: String, required: true },
     drawDate: { type: String, required: true },
+    symbols: [{ type: String }],
     isSold: { type: Boolean, default: false }
   },
   {

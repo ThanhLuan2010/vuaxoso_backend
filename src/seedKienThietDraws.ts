@@ -30,7 +30,7 @@ const seedKienThietDraws = async () => {
         
         for (let p = 0; p < 9; p++) {
           let length = 5;
-          if (p === 0) length = 6;
+          if (p === 0) length = game.code === 'MB' ? 5 : 6;
           else if (p >= 5 && p <= 6) length = 4;
           else if (p === 7) length = 3;
           else if (p === 8) length = 2;

@@ -41,7 +41,7 @@ const upload = multer({
 // @route   POST /api/upload
 // @desc    Upload image
 // @access  Private/Admin
-router.post('/', protect, admin, upload.single('image'), (req, res) => {
+router.post('/', protect, upload.single('image'), (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ message: 'Vui lòng chọn ảnh' });
