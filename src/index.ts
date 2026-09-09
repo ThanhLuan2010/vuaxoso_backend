@@ -15,6 +15,9 @@ import ticketRoutes from './routes/ticketRoutes';
 import provinceRoutes from './routes/provinceRoutes';
 import notificationRoutes from './routes/notificationRoutes';
 import coBuyRoutes from './routes/coBuyRoutes';
+import fraudRoutes from './routes/fraudRoutes';
+import logRoutes from './routes/logRoutes';
+import guideRoutes from './routes/guideRoutes';
 import { startCronJobs } from './services/cronService';
 import path from 'path';
 
@@ -53,6 +56,9 @@ app.use('/api/cobuy', coBuyRoutes);
 app.use('/api/tickets', ticketRoutes);
 app.use('/api/provinces', provinceRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/fraud', fraudRoutes);
+app.use('/api/logs', logRoutes);
+app.use('/api/guides', guideRoutes);
 
 app.get('/', (req: Request, res: Response) => {
   res.send('Vua Xổ Số API is running...');

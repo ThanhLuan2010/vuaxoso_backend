@@ -7,7 +7,7 @@ export interface IOrder extends Document {
   gameType: string;
   playType?: string;
   numbers?: string[];
-  items?: { id?: string; numbers: string[]; cost: number }[];
+  items?: { id?: string; numbers: string[]; specialNumbers?: string[]; cost: number }[];
   totalCost: number;
   status: 'pending' | 'completed' | 'cancelled';
   drawId?: string; // Kỳ quay (tùy chọn)
@@ -33,6 +33,7 @@ const orderSchema = new Schema<IOrder>(
       {
         id: { type: String },
         numbers: [{ type: String, required: true }],
+        specialNumbers: [{ type: String }],
         cost: { type: Number, required: true }
       }
     ],

@@ -30,7 +30,24 @@ export const startCronJobs = () => {
             game.riggedResult = '';
             await game.save();
           } else {
-            if (game.type === 'kienthiet' || (game.type === 'dientoan' && game.code !== 'dientoan_636')) {
+            if (game.code === 'than_tai_4') {
+              const winningNumbers: string[] = [];
+              const lengths = [4, 1, 2, 3];
+              lengths.forEach(len => {
+                let numStr = '';
+                for (let d = 0; d < len; d++) {
+                  numStr += Math.floor(Math.random() * 10).toString();
+                }
+                winningNumbers.push(numStr);
+              });
+              draw.winningNumbers = winningNumbers;
+            } else if (game.code === 'bingo18') {
+              const winningNumbers: string[] = [];
+              for (let d = 0; d < 3; d++) {
+                winningNumbers.push((Math.floor(Math.random() * 6) + 1).toString());
+              }
+              draw.winningNumbers = winningNumbers;
+            } else if (game.type === 'kienthiet' || (game.type === 'dientoan' && game.code !== 'dientoan_636')) {
               const winningNumbers: string[] = [];
               for (let p = 0; p < 9; p++) {
                 let length = 5;
@@ -38,7 +55,6 @@ export const startCronJobs = () => {
                 if (p === 0) {
                   length = game.type === 'dientoan' ? 5 : 6;
                   if (game.code === 'MB') length = 5;
-                  if (game.code === 'than_tai_4') length = 4;
                 }
                 else if (p >= 5 && p <= 6) length = 4;
                 else if (p === 7) length = 3;

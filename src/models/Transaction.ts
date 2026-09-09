@@ -9,6 +9,8 @@ export interface ITransaction extends Document {
   txId?: string;
   paymentMethod?: 'manual' | 'binance';
   destinationInfo?: any;
+  receiptImage?: string;
+  note?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -22,6 +24,8 @@ const transactionSchema = new Schema<ITransaction>(
     txId: { type: String, sparse: true, unique: true },
     paymentMethod: { type: String, enum: ['manual', 'binance'], default: 'manual' },
     destinationInfo: { type: Schema.Types.Mixed },
+    receiptImage: { type: String },
+    note: { type: String },
   },
   { timestamps: true }
 );

@@ -14,11 +14,19 @@ if (!fs.existsSync(uploadDir)) {
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, 'uploads/');
+    let folderName = req.query.folder ? String(req.query.folder) : '';
+    if (folderName && !/^[a-zA-Z0-9_-]+$/.test(folderName)) {
+      folderName = '';
+    }
+    const dir = folderName ? path.join(process.cwd(), 'uploads', folderName) : path.join(process.cwd(), 'uploads');
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    cb(null, folderName ? `uploads/${folderName}/` : 'uploads/');
   },
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
-    cb(null, `ticket-${Date.now()}${ext}`);
+    cb(null, `img-${Date.now()}${ext}`);
   }
 });
 
@@ -47,7 +55,12 @@ router.post('/', protect, upload.single('image'), (req, res) => {
       return res.status(400).json({ message: 'Vui lòng chọn ảnh' });
     }
     // Return relative URL
-    res.json({ url: `/uploads/${req.file.filename}` });
+    let folderName = req.query.folder ? String(req.query.folder) : '';
+    if (folderName && !/^[a-zA-Z0-9_-]+$/.test(folderName)) {
+      folderName = '';
+    }
+    const urlPath = folderName ? `/uploads/${folderName}/${req.file.filename}` : `/uploads/${req.file.filename}`;
+    res.json({ url: urlPath });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }

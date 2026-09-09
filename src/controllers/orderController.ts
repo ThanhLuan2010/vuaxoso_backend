@@ -5,10 +5,12 @@ import Ticket from '../models/Ticket';
 import Notification from '../models/Notification';
 import Draw from '../models/Draw';
 import Province from '../models/Province';
+import { sendEmail } from '../utils/sendEmail';
+import mongoose from 'mongoose';
 
 export const createOrder = async (req: any, res: Response) => {
   try {
-    const { gameType, drawId, items, playType } = req.body;
+    let { gameType, drawId, items, playType } = req.body;
     // items: [{ numbers: ['12', '34'], cost: 10000 }]
     
     if (!gameType || !items || !Array.isArray(items) || items.length === 0) {
@@ -50,7 +52,17 @@ export const createOrder = async (req: any, res: Response) => {
       }
     } else {
       // For Vietlott / Dien Toan
-      const draw = await Draw.findById(drawId);
+      let draw;
+      if (drawId === 'DUMMY_DRAW_ID') {
+        // Fetch the active draw for this gameType
+        const searchGameCode = gameType.includes('max_3d') ? 'max_3d' : gameType; // adjust if max3d variants use same draw
+        draw = await Draw.findOne({ game: searchGameCode, status: 'open' }).sort({ closeTime: 1 });
+      } else if (mongoose.Types.ObjectId.isValid(drawId)) {
+        draw = await Draw.findById(drawId);
+      } else {
+        return res.status(400).json({ message: 'Mã kỳ quay không hợp lệ (ObjectId format error)' });
+      }
+
       if (!draw) {
         return res.status(400).json({ message: 'Không tìm thấy kỳ quay' });
       }
@@ -60,8 +72,98 @@ export const createOrder = async (req: any, res: Response) => {
         // Double check specific rules for Vietlott/Dientoan
         return res.status(400).json({ message: 'Đã quá thời gian chốt vé tự động. Kỳ quay này đã đóng.' });
       }
+      
+      // Update drawId for order creation
+      drawId = draw._id;
     }
     // --- END CHECK TIME LIMIT ---
+
+    
+    // --- CHECK BET LIMITS ---
+    const getMaxAllowed = (pType: string) => {
+      const t = (pType || '').toLowerCase();
+      if (t.includes('xiên 2')) return Math.floor(4950 * 0.7);
+      if (t.includes('xiên 3')) return Math.floor(161700 * 0.7);
+      if (t.includes('xiên 4')) return Math.floor(3921225 * 0.7);
+      if (t.includes('3 số') || t.includes('3 càng')) return 700;
+      if (t.includes('4 số') || t.includes('4 càng')) return 7000;
+      if (t.includes('đề đầu') || t.includes('đề đuôi') || t.includes('xiên đb') || t.includes('xiên giải 1') || t.includes('xiên 3 đb') || t.includes('xiên 4 đb')) return 7;
+      return 70; 
+    };
+
+    const maxAllowed = getMaxAllowed(playType);
+    let totalNumbersInBet = 0;
+    items.forEach((item: any) => {
+      totalNumbersInBet += item.numbers.length;
+    });
+
+    if (totalNumbersInBet > maxAllowed) {
+      return res.status(400).json({ message: `Chỉ được cược tối đa 70% số lượng con (${maxAllowed} con) cho loại cược này` });
+    }
+
+    // --- CHECK 100M VND EXPOSURE LIMIT ---
+    const newExposure: Record<string, number> = {};
+    items.forEach((item: any) => {
+      const costPerNum = item.cost / item.numbers.length;
+      item.numbers.forEach((num: string) => {
+        newExposure[num] = (newExposure[num] || 0) + costPerNum;
+      });
+    });
+
+    const existingOrders = await Order.find({ gameType, drawId, status: { $ne: 'cancelled' } });
+    const currentExposure: Record<string, number> = {};
+    existingOrders.forEach((existingOrder) => {
+      if (existingOrder.items) {
+        existingOrder.items.forEach((item: any) => {
+          const costPerNum = item.cost / item.numbers.length;
+          item.numbers.forEach((num: string) => {
+            currentExposure[num] = (currentExposure[num] || 0) + costPerNum;
+          });
+        });
+      }
+    });
+
+    for (const num of Object.keys(newExposure)) {
+      if ((currentExposure[num] || 0) + newExposure[num] > 100000000) {
+        return res.status(400).json({ message: `Con số ${num} đã vượt quá hạn mức cược trong ngày (Max 100 triệu). Vui lòng giảm số tiền hoặc chọn số khác.` });
+      }
+    }
+    // --- END CHECK BET LIMITS ---
+
+    
+    // --- KENO LOGIC ---
+    if (gameType === 'keno' || gameType === 'bao_keno') {
+      const todayStart = new Date(vnDate);
+      todayStart.setHours(0, 0, 0, 0);
+      const todayEnd = new Date(vnDate);
+      todayEnd.setHours(23, 59, 59, 999);
+
+      const kenoOrders = await Order.find({
+        user: req.user.id,
+        gameType: { $in: ['keno', 'bao_keno'] },
+        createdAt: { $gte: todayStart, $lte: todayEnd },
+        status: { $ne: 'cancelled' }
+      });
+
+      let totalKenoNumbersToday = 0;
+      kenoOrders.forEach(o => {
+        if (o.items) {
+          o.items.forEach((item: any) => {
+            totalKenoNumbersToday += item.numbers.length;
+          });
+        }
+      });
+
+      let newKenoNumbers = 0;
+      items.forEach((item: any) => {
+        newKenoNumbers += item.numbers.length;
+      });
+
+      if (totalKenoNumbersToday + newKenoNumbers > 60) {
+        return res.status(400).json({ message: `Giới hạn số Keno: Max 60 số/1 khách/1 ngày. Bạn đã mua ${totalKenoNumbersToday} số hôm nay.` });
+      }
+    }
+    // --- END KENO LOGIC ---
 
     let totalCost = 0;
     items.forEach((item: any) => totalCost += item.cost);
@@ -102,6 +204,26 @@ export const createOrder = async (req: any, res: Response) => {
       category: 'important',
       orderId: order._id.toString()
     });
+
+    
+    // Send Realtime Email Alert
+    try {
+      const emailHtml = `
+        <h3>Có đơn cược mới!</h3>
+        <p><strong>User:</strong> ${user.name} (${user.phone})</p>
+        <p><strong>Mã đơn:</strong> ${order.orderId}</p>
+        <p><strong>Loại cược:</strong> ${playType || gameType}</p>
+        <p><strong>Kỳ quay/Đài:</strong> ${drawId}</p>
+        <p><strong>Tổng tiền:</strong> ${totalCost.toLocaleString('vi-VN')} đ</p>
+        <h4>Chi tiết số:</h4>
+        <ul>
+          ${items.map((i: any) => `<li>${i.numbers.join(', ')} - ${i.cost.toLocaleString('vi-VN')} đ</li>`).join('')}
+        </ul>
+      `;
+      await sendEmail('developervnteam@gmail.com', `[VuaXoSo] Cảnh báo đơn cược mới - ${order.orderId}`, emailHtml);
+    } catch (err) {
+      console.error('Failed to send order email:', err);
+    }
 
     res.status(201).json([order]);
   } catch (error: any) {

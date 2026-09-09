@@ -10,7 +10,7 @@ const seedDienToanDraws = async () => {
     await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/vuaxoso');
     console.log('MongoDB Connected');
 
-    const games = await Game.find({ type: 'dientoan', code: { $in: ['loto_235', 'loto_cap', 'dientoan_636'] } });
+    const games = await Game.find({ type: 'dientoan', code: { $in: ['loto_235', 'loto_cap', 'dientoan_636', 'than_tai_4', 'bingo18'] } });
 
     for (const game of games) {
       console.log(`Seeding draws for ${game.name}...`);
@@ -35,6 +35,19 @@ const seedDienToanDraws = async () => {
             nums.add(rnd.toString().padStart(2, '0'));
           }
           winningNumbers = Array.from(nums);
+        } else if (game.code === 'than_tai_4') {
+          const lengths = [4, 1, 2, 3];
+          lengths.forEach(len => {
+            let numStr = '';
+            for (let d = 0; d < len; d++) {
+              numStr += Math.floor(Math.random() * 10).toString();
+            }
+            winningNumbers.push(numStr);
+          });
+        } else if (game.code === 'bingo18') {
+          for (let d = 0; d < 3; d++) {
+            winningNumbers.push((Math.floor(Math.random() * 6) + 1).toString());
+          }
         }
 
         const draw = new Draw({

@@ -12,7 +12,9 @@ const MOCK_GAMES: any[] = [
   { code: 'mega_645', name: 'MEGA 6/45', type: 'vietlott', brandColor: '#004F9F', bgColor: '#E6EEF7', badge: 'Hôm nay xổ', cronExpression: '0 18 * * 3,5,0', drawDurationMinutes: 60, autoRandomResult: true },
   { code: 'max_3d', name: 'MAX 3D', type: 'vietlott', brandColor: '#E0115F', bgColor: '#FCE7F0', badge: 'Hôm nay xổ', cronExpression: '0 18 * * 1,3,5', drawDurationMinutes: 60, autoRandomResult: true },
   { code: 'max_3d_pro', name: 'MAX 3D Pro', type: 'vietlott', brandColor: '#E0115F', bgColor: '#FCE7F0', cronExpression: '0 18 * * 2,4,6', drawDurationMinutes: 60, autoRandomResult: true },
+  { code: 'max_4d', name: 'MAX 4D', type: 'vietlott', brandColor: '#0055A5', bgColor: '#E6F0FA', cronExpression: '0 18 * * 2,4,6', drawDurationMinutes: 60, autoRandomResult: true },
   { code: 'lotto_535', name: 'LOTTO 5/35', type: 'vietlott', brandColor: '#8B008B', bgColor: '#F5E6F5' },
+  { code: 'lotto_570', name: 'LOTTO 5/70', type: 'vietlott', brandColor: '#4B0082', bgColor: '#E6E6FA' },
   
   { code: 'loto_235', name: 'LÔ TÔ 2, 3, 5 Số', type: 'dientoan', brandColor: '#FF9A00', bgColor: '#FFF8F0', cronExpression: '0 18 * * *', drawDurationMinutes: 60 },
   { code: 'loto_cap', name: 'LÔ TÔ 2, 3, 4 Cặp', type: 'dientoan', brandColor: '#FF9A00', bgColor: '#FFF8F0', cronExpression: '0 18 * * *', drawDurationMinutes: 60 },
@@ -20,6 +22,7 @@ const MOCK_GAMES: any[] = [
   { code: 'truot_loto', name: 'TRƯỢT LÔ TÔ (4-8-10 cặp)', type: 'dientoan', brandColor: '#FF4D15', bgColor: '#FFF2EE', cronExpression: '0 18 * * *', drawDurationMinutes: 60 },
   { code: 'than_tai_4', name: 'Thần Tài 4 / ĐT 1-2-3', type: 'dientoan', brandColor: '#FF9A00', bgColor: '#FFF8F0', cronExpression: '0 18 * * *', drawDurationMinutes: 60 },
   { code: 'bao_636', name: 'BAO 6x36', type: 'dientoan', brandColor: '#D0021B', bgColor: '#FCE8EA', cronExpression: '0 18 * * 3,6', drawDurationMinutes: 60 },
+  { code: 'bingo18', name: 'ĐIỆN TOÁN BINGO18 (111-666)', type: 'dientoan', brandColor: '#0055A5', bgColor: '#E6F0FA', cronExpression: '0 18 * * *', drawDurationMinutes: 60 },
 
   { code: 'MB', name: 'Xổ số Miền Bắc', type: 'kienthiet', brandColor: '#E51F27', cronExpression: '15 18 * * *', drawDurationMinutes: 60 },
   { code: 'MT', name: 'Xổ số Miền Trung', type: 'kienthiet', brandColor: '#5C2D91', cronExpression: '15 17 * * *', drawDurationMinutes: 60 },

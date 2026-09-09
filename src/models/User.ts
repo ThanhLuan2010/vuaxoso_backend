@@ -9,6 +9,8 @@ export interface IUser extends Document {
   role: 'user' | 'admin';
   email?: string;
   emailVerified?: boolean;
+  emailOtp?: string;
+  emailOtpExpires?: Date;
   cccdNumber?: string;
   cccdImage?: string;
   address?: string;
@@ -32,6 +34,9 @@ export interface IUser extends Document {
   registerIp?: string;
   loginIp?: string;
   loginDevice?: string;
+  status: 'active' | 'locked' | 'review';
+  lastLoginAt?: Date;
+  lastPasswordChangedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -46,6 +51,8 @@ const userSchema = new Schema<IUser>(
     role: { type: String, enum: ['user', 'admin'], default: 'user' },
     email: { type: String },
     emailVerified: { type: Boolean, default: false },
+    emailOtp: { type: String },
+    emailOtpExpires: { type: Date },
     cccdNumber: { type: String },
     cccdImage: { type: String },
     address: { type: String },
@@ -63,6 +70,7 @@ const userSchema = new Schema<IUser>(
       {
         network: { type: String, enum: ['BEP20', 'TRC20'], required: true },
         address: { type: String, required: true },
+        qrCode: { type: String },
       }
     ],
     bankInfo: {
@@ -73,6 +81,9 @@ const userSchema = new Schema<IUser>(
     registerIp: { type: String },
     loginIp: { type: String },
     loginDevice: { type: String },
+    status: { type: String, enum: ['active', 'locked', 'review'], default: 'active' },
+    lastLoginAt: { type: Date },
+    lastPasswordChangedAt: { type: Date, default: Date.now },
   },
   { timestamps: true }
 );

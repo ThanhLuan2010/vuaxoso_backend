@@ -11,11 +11,13 @@ import axios from 'axios';
 export const deposit = async (req: any, res: Response) => {
   try {
     const amount = req.body.amount || 0; // Mặc định 0 nếu không truyền
+    const receiptImage = req.body.receiptImage;
 
     const transaction = await Transaction.create({
       user: req.user.id,
       type: 'deposit',
       amount,
+      receiptImage,
       status: 'pending',
     });
 
@@ -39,10 +41,13 @@ export const depositBinance = async (req: any, res: Response) => {
     }
 
     const setting = await Setting.findOne({ key: 'binance_config' });
-    if (!setting || !setting.value || !setting.value.apiKey || !setting.value.apiSecret) {
+    const apiKey = process.env.BINANCE_API_KEY;
+    const apiSecret = process.env.BINANCE_API_SECRET;
+    
+    if (!apiKey || !apiSecret) {
       return res.status(500).json({ message: 'Hệ thống chưa cấu hình nạp tiền tự động' });
     }
-    const { apiKey, apiSecret, exchangeRate } = setting.value;
+    const exchangeRate = setting?.value?.exchangeRate;
     const rate = exchangeRate || 25000;
 
     const timestamp = Date.now();
@@ -169,6 +174,7 @@ export const getAllTransactions = async (req: any, res: Response) => {
 // @route   PUT /api/wallet/admin/transactions/:id/approve
 export const approveTransaction = async (req: any, res: Response) => {
   try {
+    const { note } = req.body;
     const transaction = await Transaction.findById(req.params.id);
     if (!transaction) {
       return res.status(404).json({ message: 'Không tìm thấy giao dịch' });
@@ -184,11 +190,10 @@ export const approveTransaction = async (req: any, res: Response) => {
     }
 
     if (transaction.type === 'deposit') {
-      const { amount } = req.body;
+      const amount = transaction.amount;
       if (!amount || amount <= 0) {
-        return res.status(400).json({ message: 'Vui lòng nhập số tiền nạp hợp lệ' });
+        return res.status(400).json({ message: 'Số tiền nạp không hợp lệ' });
       }
-      transaction.amount = amount;
       user.balance += amount;
       await user.save();
       
@@ -210,6 +215,7 @@ export const approveTransaction = async (req: any, res: Response) => {
     }
 
     transaction.status = 'approved';
+    if (note) transaction.note = note;
     await transaction.save();
 
     res.json(transaction);
@@ -221,6 +227,7 @@ export const approveTransaction = async (req: any, res: Response) => {
 // @route   PUT /api/wallet/admin/transactions/:id/reject
 export const rejectTransaction = async (req: any, res: Response) => {
   try {
+    const { note } = req.body;
     const transaction = await Transaction.findById(req.params.id);
     if (!transaction) {
       return res.status(404).json({ message: 'Không tìm thấy giao dịch' });
@@ -258,6 +265,7 @@ export const rejectTransaction = async (req: any, res: Response) => {
     }
 
     transaction.status = 'rejected';
+    if (note) transaction.note = note;
     await transaction.save();
 
     res.json(transaction);
