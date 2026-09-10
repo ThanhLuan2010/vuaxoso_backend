@@ -47,6 +47,18 @@ export const startCronJobs = () => {
                 winningNumbers.push((Math.floor(Math.random() * 6) + 1).toString());
               }
               draw.winningNumbers = winningNumbers;
+            } else if (game.code === 'max_3d' || game.code === 'max_3d_pro' || game.code === 'max_4d') {
+              const winningNumbers: string[] = [];
+              const len = game.code === 'max_4d' ? 4 : 3;
+              // Max 3D / 4D typically has multiple prizes. Let's mock a few prizes.
+              for (let i = 0; i < 4; i++) {
+                let numStr = '';
+                for (let d = 0; d < len; d++) {
+                  numStr += Math.floor(Math.random() * 10).toString();
+                }
+                winningNumbers.push(numStr);
+              }
+              draw.winningNumbers = winningNumbers;
             } else if (game.type === 'kienthiet' || (game.type === 'dientoan' && game.code !== 'dientoan_636')) {
               const winningNumbers: string[] = [];
               for (let p = 0; p < 9; p++) {
@@ -71,7 +83,7 @@ export const startCronJobs = () => {
               let drawCount = 6;
               let maxBall = 45;
               
-              if (game.code === 'keno') {
+              if (game.code === 'keno' || game.code === 'bao_keno') {
                 drawCount = 20;
                 maxBall = 80;
               } else if (game.code === 'power_655') {
@@ -80,6 +92,12 @@ export const startCronJobs = () => {
               } else if (game.code === 'dientoan_636') {
                 drawCount = 6;
                 maxBall = 36;
+              } else if (game.code === 'lotto_535') {
+                drawCount = 5;
+                maxBall = 35;
+              } else if (game.code === 'lotto_570') {
+                drawCount = 5;
+                maxBall = 70;
               }
 
               const nums = new Set<string>();
