@@ -1,18 +1,19 @@
 import { Response } from 'express';
-import Order from '../models/Order';
-import User from '../models/User';
-import Ticket from '../models/Ticket';
-import Notification from '../models/Notification';
-import Draw from '../models/Draw';
-import Province from '../models/Province';
-import { sendEmail } from '../utils/sendEmail';
 import mongoose from 'mongoose';
+import Draw from '../models/Draw';
+import Game from '../models/Game';
+import Notification from '../models/Notification';
+import Order from '../models/Order';
+import Province from '../models/Province';
+import Ticket from '../models/Ticket';
+import User from '../models/User';
+import { sendEmail } from '../utils/sendEmail';
 
 export const createOrder = async (req: any, res: Response) => {
   try {
     let { gameType, drawId, items, playType } = req.body;
     // items: [{ numbers: ['12', '34'], cost: 10000 }]
-    
+
     if (!gameType || !items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: 'Giỏ hàng trống' });
     }
@@ -21,21 +22,21 @@ export const createOrder = async (req: any, res: Response) => {
     const now = new Date();
     const vnTimeStr = now.toLocaleString("en-US", { timeZone: "Asia/Ho_Chi_Minh" });
     const vnDate = new Date(vnTimeStr);
-    
+
     // For Kien Thiet
     if (gameType.startsWith('kienthiet_')) {
       const provinceId = gameType.replace('kienthiet_', '');
-      
+
       const todayDay = String(vnDate.getDate()).padStart(2, '0');
       const todayMonth = String(vnDate.getMonth() + 1).padStart(2, '0');
       const todayYear = vnDate.getFullYear();
       const todayStr = `${todayDay}/${todayMonth}/${todayYear}`; // e.g., "05/08/2026"
-      
+
       // The `drawId` from frontend for Kien Thiet is usually the date string e.g. "05/08/2026" (or "05/08/2026 (Hôm nay)")
       // Wait, the client sends "05/08/2026 (Hôm nay)" or just "05/08/2026" ?
       // Let's just extract the date part (first 10 chars)
       const targetDateStr = (drawId || '').substring(0, 10);
-      
+
       if (targetDateStr === todayStr) {
         const currentMinutes = vnDate.getHours() * 60 + vnDate.getMinutes();
         const province = await Province.findOne({ provinceId });
@@ -56,7 +57,11 @@ export const createOrder = async (req: any, res: Response) => {
       if (drawId === 'DUMMY_DRAW_ID') {
         // Fetch the active draw for this gameType
         const searchGameCode = gameType.includes('max_3d') ? 'max_3d' : gameType; // adjust if max3d variants use same draw
-        draw = await Draw.findOne({ game: searchGameCode, status: 'open' }).sort({ closeTime: 1 });
+        const gameDoc = await Game.findOne({ code: searchGameCode });
+        if (!gameDoc) {
+          return res.status(400).json({ message: 'Không tìm thấy loại hình vé số này' });
+        }
+        draw = await Draw.findOne({ game: gameDoc._id, status: 'open' }).sort({ closeTime: 1 });
       } else if (mongoose.Types.ObjectId.isValid(drawId)) {
         draw = await Draw.findById(drawId);
       } else {
@@ -66,19 +71,19 @@ export const createOrder = async (req: any, res: Response) => {
       if (!draw) {
         return res.status(400).json({ message: 'Không tìm thấy kỳ quay' });
       }
-      
+
       // If backend already changes status or if we manually check closeTime
       if (draw.status !== 'open' || now > draw.closeTime) {
         // Double check specific rules for Vietlott/Dientoan
         return res.status(400).json({ message: 'Đã quá thời gian chốt vé tự động. Kỳ quay này đã đóng.' });
       }
-      
+
       // Update drawId for order creation
       drawId = draw._id;
     }
     // --- END CHECK TIME LIMIT ---
 
-    
+
     // --- CHECK BET LIMITS ---
     const getMaxAllowed = (pType: string) => {
       const t = (pType || '').toLowerCase();
@@ -88,7 +93,7 @@ export const createOrder = async (req: any, res: Response) => {
       if (t.includes('3 số') || t.includes('3 càng')) return 700;
       if (t.includes('4 số') || t.includes('4 càng')) return 7000;
       if (t.includes('đề đầu') || t.includes('đề đuôi') || t.includes('xiên đb') || t.includes('xiên giải 1') || t.includes('xiên 3 đb') || t.includes('xiên 4 đb')) return 7;
-      return 70; 
+      return 70;
     };
 
     const maxAllowed = getMaxAllowed(playType);
@@ -130,7 +135,7 @@ export const createOrder = async (req: any, res: Response) => {
     }
     // --- END CHECK BET LIMITS ---
 
-    
+
     // --- KENO LOGIC ---
     if (gameType === 'keno' || gameType === 'bao_keno') {
       const todayStart = new Date(vnDate);
@@ -205,7 +210,7 @@ export const createOrder = async (req: any, res: Response) => {
       orderId: order._id.toString()
     });
 
-    
+
     // Send Realtime Email Alert
     try {
       const emailHtml = `
@@ -246,12 +251,12 @@ export const getOrderById = async (req: any, res: Response) => {
     if (!order) {
       return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
     }
-    
+
     // Check if the user is authorized to view this order (either admin or owner)
     if (order.user.toString() !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Không có quyền truy cập' });
     }
-    
+
     res.json(order);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -348,7 +353,7 @@ export const updateOrderAdmin = async (req: any, res: Response) => {
         });
       }
     }
-    
+
     if (ticketImageUrl) order.ticketImageUrl = ticketImageUrl;
 
     await order.save();

@@ -8,7 +8,32 @@ import AdminLog from '../models/AdminLog';
 
 export const getUsers = async (req: Request, res: Response) => {
   try {
-    const users = await User.aggregate([
+    const { search } = req.query;
+    const pipeline: any[] = [];
+
+    if (search && typeof search === 'string') {
+      const searchRegex = new RegExp(search, 'i');
+      pipeline.push({
+        $match: {
+          $or: [
+            { name: searchRegex },
+            { phone: searchRegex },
+            { email: searchRegex },
+            { cccdNumber: searchRegex },
+            { registerIp: searchRegex },
+            { loginIp: searchRegex },
+            { loginDevice: searchRegex },
+            { 'banks.accountNumber': searchRegex },
+            { 'banks.bankName': searchRegex },
+            { 'banks.accountName': searchRegex },
+            { 'bankInfo.accountNumber': searchRegex },
+            { 'wallets.address': searchRegex },
+          ]
+        }
+      });
+    }
+
+    pipeline.push(
       {
         $lookup: {
           from: 'transactions',
@@ -57,7 +82,8 @@ export const getUsers = async (req: Request, res: Response) => {
         }
       },
       { $sort: { createdAt: -1 } }
-    ]);
+    );
+    const users = await User.aggregate(pipeline);
     res.json(users);
   } catch (error) {
     res.status(500).json({ message: 'Error fetching users' });

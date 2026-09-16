@@ -21,9 +21,10 @@ export interface IUser extends Document {
     bankName: string;
     accountNumber: string;
     accountName: string;
+    qrCode?: string;
   }>;
   wallets?: Array<{
-    network: 'BEP20' | 'TRC20';
+    network: 'BEP20' | 'TRC20' | 'Binance Pay';
     address: string;
   }>;
   bankInfo?: {
@@ -64,11 +65,12 @@ const userSchema = new Schema<IUser>(
         bankName: { type: String, required: true },
         accountNumber: { type: String, required: true },
         accountName: { type: String, required: true },
+        qrCode: { type: String },
       }
     ],
     wallets: [
       {
-        network: { type: String, enum: ['BEP20', 'TRC20'], required: true },
+        network: { type: String, enum: ['BEP20', 'TRC20', 'Binance Pay'], required: true },
         address: { type: String, required: true },
         qrCode: { type: String },
       }

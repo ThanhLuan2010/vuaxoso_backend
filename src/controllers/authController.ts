@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import User from '../models/User';
+import UserLog from '../models/UserLog';
 import { sendEmail } from '../utils/sendEmail';
 
 const generateToken = (id: string) => {
@@ -14,7 +15,8 @@ export const registerUser = async (req: Request, res: Response) => {
   try {
     const { phone, name, password } = req.body;
     const ipHeader = req.headers['x-forwarded-for'];
-    const ip = (Array.isArray(ipHeader) ? ipHeader[0] : ipHeader) || req.socket.remoteAddress;
+    const ipString = Array.isArray(ipHeader) ? ipHeader[0] : ipHeader;
+    const ip = ipString ? ipString.split(',')[0].trim() : (req.socket.remoteAddress || '');
 
     const userExists = await User.findOne({ phone });
     if (userExists) {
@@ -33,6 +35,13 @@ export const registerUser = async (req: Request, res: Response) => {
     });
 
     if (user) {
+      await UserLog.create({
+        user: user._id,
+        action: 'REGISTER',
+        details: 'Đăng ký tài khoản mới',
+        ip: ip as string,
+      });
+
       res.status(201).json({
         _id: user.id,
         name: user.name,
@@ -53,7 +62,8 @@ export const loginUser = async (req: Request, res: Response) => {
   try {
     const { phone, password } = req.body;
     const ipHeader = req.headers['x-forwarded-for'];
-    const ip = (Array.isArray(ipHeader) ? ipHeader[0] : ipHeader) || req.socket.remoteAddress;
+    const ipString = Array.isArray(ipHeader) ? ipHeader[0] : ipHeader;
+    const ip = ipString ? ipString.split(',')[0].trim() : (req.socket.remoteAddress || '');
     const device = req.headers['user-agent'] || 'Unknown';
 
     const user = await User.findOne({ phone });
@@ -68,6 +78,14 @@ export const loginUser = async (req: Request, res: Response) => {
       user.loginDevice = device;
       user.lastLoginAt = new Date();
       await user.save();
+
+      await UserLog.create({
+        user: user._id,
+        action: 'LOGIN',
+        details: 'Đăng nhập vào hệ thống',
+        ip: ip as string,
+        device: device,
+      });
 
       res.json({
         _id: user.id,
@@ -141,6 +159,13 @@ export const updateProfile = async (req: any, res: Response) => {
       
       // Lock after first successful save
       user.isInfoUpdated = true;
+
+      await UserLog.create({
+        user: user._id,
+        action: 'UPDATE_PROFILE',
+        details: 'Cập nhật thông tin định danh cá nhân',
+        ip: (req.headers['x-forwarded-for'] || req.socket.remoteAddress) as string,
+      });
     }
 
     if (banks !== undefined) {

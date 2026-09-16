@@ -28,20 +28,20 @@ export const adminGetNotifications = async (req: any, res: Response) => {
   }
 };
 
-export const adminCreateNotification = async (req: any, res: Response) => {
-  try {
-    const { title, body } = req.body;
-    if (!title || !body) {
-      return res.status(400).json({ message: 'Tiêu đề và nội dung là bắt buộc' });
-    }
-
-    const notification = await Notification.create({
-      title,
-      body,
-      type: 'promo',
-      category: 'promo',
-      // user is undefined by default to make it global
-    });
+  export const adminCreateNotification = async (req: any, res: Response) => {
+    try {
+      const { title, body, user } = req.body;
+      if (!title || !body) {
+        return res.status(400).json({ message: 'Tiêu đề và nội dung là bắt buộc' });
+      }
+  
+      const notification = await Notification.create({
+        title,
+        body,
+        type: 'promo',
+        category: 'promo',
+        user: user || undefined,
+      });
 
     res.status(201).json(notification);
   } catch (error: any) {

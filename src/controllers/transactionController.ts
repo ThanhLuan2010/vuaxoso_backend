@@ -12,12 +12,18 @@ export const deposit = async (req: any, res: Response) => {
   try {
     const amount = req.body.amount || 0; // Mặc định 0 nếu không truyền
     const receiptImage = req.body.receiptImage;
+    const txId = req.body.txId;
+    const paymentMethod = req.body.paymentMethod || 'manual';
+    const destinationInfo = req.body.destinationInfo;
 
     const transaction = await Transaction.create({
       user: req.user.id,
       type: 'deposit',
       amount,
       receiptImage,
+      txId,
+      paymentMethod,
+      destinationInfo,
       status: 'pending',
     });
 

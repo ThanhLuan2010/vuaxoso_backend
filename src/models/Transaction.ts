@@ -7,7 +7,7 @@ export interface ITransaction extends Document {
   amount: number;
   status: 'pending' | 'approved' | 'rejected';
   txId?: string;
-  paymentMethod?: 'manual' | 'binance';
+  paymentMethod?: string;
   destinationInfo?: any;
   receiptImage?: string;
   note?: string;
@@ -22,7 +22,7 @@ const transactionSchema = new Schema<ITransaction>(
     amount: { type: Number, required: true },
     status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
     txId: { type: String, sparse: true, unique: true },
-    paymentMethod: { type: String, enum: ['manual', 'binance'], default: 'manual' },
+    paymentMethod: { type: String, default: 'manual' },
     destinationInfo: { type: Schema.Types.Mixed },
     receiptImage: { type: String },
     note: { type: String },
