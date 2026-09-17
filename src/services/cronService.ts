@@ -116,7 +116,11 @@ export const startCronJobs = () => {
           draw.status = 'closed';
           console.log(`CronService: Đã đóng kỳ quay ${draw.drawCode} của game ${game.name} (Chờ nhập kết quả)`);
         }
-        await draw.save();
+        try {
+          await draw.save();
+        } catch (err) {
+          console.error(`CronService: Lỗi lưu kỳ quay ${draw.drawCode} (VersionError)`, err);
+        }
         
         // Trả thưởng tự động nếu kỳ quay có kết quả (tự sinh hoặc thao túng)
         if (game.autoRandomResult) {
