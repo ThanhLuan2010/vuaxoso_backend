@@ -178,6 +178,11 @@ export const updateProfile = async (req: any, res: Response) => {
     }
 
     if (withdrawPassword) {
+      const isSameAsLogin = await bcrypt.compare(withdrawPassword, user.passwordHash);
+      if (isSameAsLogin) {
+        return res.status(400).json({ message: 'Mật Khẩu Rút Tiền phải khác với Mật khẩu Đăng Nhập' });
+      }
+
       const salt = await bcrypt.genSalt(10);
       user.withdrawPasswordHash = await bcrypt.hash(withdrawPassword, salt);
     }
