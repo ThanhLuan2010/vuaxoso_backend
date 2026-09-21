@@ -11,7 +11,7 @@ import { sendEmail } from '../utils/sendEmail';
 
 export const createOrder = async (req: any, res: Response) => {
   try {
-    let { gameType, drawId, items, playType } = req.body;
+    let { gameType, drawId, items, playType, provinceName, drawDate } = req.body;
     // items: [{ numbers: ['12', '34'], cost: 10000 }]
 
     if (!gameType || !items || !Array.isArray(items) || items.length === 0) {
@@ -213,14 +213,20 @@ export const createOrder = async (req: any, res: Response) => {
 
     // Send Realtime Email Alert
     try {
+      const orderDateStr = new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+      const provName = provinceName || (gameType.startsWith('kienthiet_') ? gameType.replace('kienthiet_', '').toUpperCase() : gameType);
+      const drawIdStr = drawDate || drawId;
+      
       const emailHtml = `
         <h3>Có đơn cược mới!</h3>
         <p><strong>User:</strong> ${user.name} (${user.phone})</p>
         <p><strong>Mã đơn:</strong> ${order.orderId}</p>
-        <p><strong>Loại cược:</strong> ${playType || gameType}</p>
-        <p><strong>Kỳ quay/Đài:</strong> ${drawId}</p>
+        <p><strong>Thời gian cược:</strong> ${orderDateStr}</p>
+        <p><strong>Đài / Game:</strong> ${provName}</p>
+        <p><strong>Loại cược:</strong> ${playType || 'Vé cơ bản'}</p>
+        <p><strong>Ngày xổ / Kỳ quay:</strong> ${drawIdStr}</p>
         <p><strong>Tổng tiền:</strong> ${totalCost.toLocaleString('vi-VN')} đ</p>
-        <h4>Chi tiết số:</h4>
+        <h4>Chi tiết vé:</h4>
         <ul>
           ${items.map((i: any) => `<li>${i.numbers.join(', ')} - ${i.cost.toLocaleString('vi-VN')} đ</li>`).join('')}
         </ul>

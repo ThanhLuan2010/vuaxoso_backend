@@ -8,6 +8,12 @@ export const getKienThietSchedule = async (req: any, res: Response) => {
     const daysOfWeek = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
     const today = new Date();
     
+    // Get current time in Vietnam (HH:mm format)
+    const vnTimeStr = today.toLocaleTimeString('en-US', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false, hour: '2-digit', minute: '2-digit' });
+    const mnCutoffPassed = vnTimeStr >= '16:10';
+    const mtCutoffPassed = vnTimeStr >= '17:10';
+    const mbCutoffPassed = vnTimeStr >= '18:10';
+    
     const formatDate = (date: Date) => {
       const dayName = daysOfWeek[date.getDay()];
       const day = String(date.getDate()).padStart(2, '0');
@@ -45,9 +51,9 @@ export const getKienThietSchedule = async (req: any, res: Response) => {
       { 
         dateString: formatDate(today) + " (Hôm nay)", 
         isToday: true, isTomorrow: false, isDayAfterTomorrow: false, 
-        mb: getRegionData(todayProvinces, 'MB'), 
-        mt: getRegionData(todayProvinces, 'MT'), 
-        mn: getRegionData(todayProvinces, 'MN') 
+        mb: mbCutoffPassed ? [] : getRegionData(todayProvinces, 'MB'), 
+        mt: mtCutoffPassed ? [] : getRegionData(todayProvinces, 'MT'), 
+        mn: mnCutoffPassed ? [] : getRegionData(todayProvinces, 'MN') 
       },
       { 
         dateString: formatDate(tomorrow) + " (Ngày mai)", 
