@@ -11,6 +11,8 @@ export interface IOrder extends Document {
   totalCost: number;
   status: 'pending' | 'completed' | 'cancelled';
   drawId?: string; // Kỳ quay (tùy chọn)
+  provinceName?: string;
+  drawDate?: string;
   isWinner?: boolean;
   prizeAmount?: number;
   ticketImageUrl?: string;
@@ -40,6 +42,8 @@ const orderSchema = new Schema<IOrder>(
     totalCost: { type: Number, required: true },
     status: { type: String, enum: ['pending', 'completed', 'cancelled'], default: 'pending' },
     drawId: { type: String },
+    provinceName: { type: String },
+    drawDate: { type: String },
     isWinner: { type: Boolean, default: false },
     prizeAmount: { type: Number, default: 0 },
     ticketImageUrl: { type: String },

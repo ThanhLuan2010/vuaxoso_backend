@@ -187,6 +187,8 @@ export const createOrder = async (req: any, res: Response) => {
       gameType,
       playType,
       drawId,
+      provinceName,
+      drawDate,
       items: items,
       totalCost: totalCost,
       status: 'pending'
@@ -244,7 +246,13 @@ export const createOrder = async (req: any, res: Response) => {
 
 export const getMyOrders = async (req: any, res: Response) => {
   try {
-    const orders = await Order.find({ user: req.user.id }).sort({ createdAt: -1 });
+    const orders = await Order.find({ user: req.user.id }).lean().sort({ createdAt: -1 });
+    for (const order of orders) {
+      if (order.drawId && mongoose.Types.ObjectId.isValid(order.drawId)) {
+        const draw = await Draw.findById(order.drawId).lean();
+        if (draw) order.drawId = draw.drawCode;
+      }
+    }
     res.json(orders);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -253,7 +261,7 @@ export const getMyOrders = async (req: any, res: Response) => {
 
 export const getOrderById = async (req: any, res: Response) => {
   try {
-    const order = await Order.findById(req.params.id);
+    const order = await Order.findById(req.params.id).lean();
     if (!order) {
       return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
     }
@@ -261,6 +269,11 @@ export const getOrderById = async (req: any, res: Response) => {
     // Check if the user is authorized to view this order (either admin or owner)
     if (order.user.toString() !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Không có quyền truy cập' });
+    }
+
+    if (order.drawId && mongoose.Types.ObjectId.isValid(order.drawId)) {
+      const draw = await Draw.findById(order.drawId).lean();
+      if (draw) order.drawId = draw.drawCode;
     }
 
     res.json(order);
