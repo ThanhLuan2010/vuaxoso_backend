@@ -120,6 +120,38 @@ export const withdraw = async (req: any, res: Response) => {
       return res.status(400).json({ message: 'Số tiền không hợp lệ' });
     }
 
+    const isCrypto = !!destinationInfo?.network;
+    if (isCrypto) {
+      if (!destinationInfo.amountUsdt) {
+        return res.status(400).json({ message: 'Số lượng USDT không hợp lệ' });
+      }
+      if (destinationInfo.amountUsdt < 10) {
+        return res.status(400).json({ message: 'Rút tối thiểu 10 USDT/1 lần rút' });
+      }
+      if (destinationInfo.amountUsdt > 8000) {
+        return res.status(400).json({ message: 'Rút tối đa 8000 USDT/1 lần rút' });
+      }
+    } else {
+      if (amount < 200000) {
+        return res.status(400).json({ message: 'Rút tối thiểu 200.000 VNĐ/1 lần rút' });
+      }
+      if (amount > 200000000) {
+        return res.status(400).json({ message: 'Rút tối đa 200.000.000 VNĐ/1 lần rút' });
+      }
+    }
+
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const withdrawalsToday = await Transaction.countDocuments({
+      user: req.user.id,
+      type: 'withdraw',
+      createdAt: { $gte: todayStart }
+    });
+
+    if (withdrawalsToday >= 5) {
+      return res.status(400).json({ message: 'Bạn chỉ được rút tối đa 5 lần/ngày' });
+    }
+
     if (!withdrawPassword) {
       return res.status(400).json({ message: 'Vui lòng nhập mật khẩu rút tiền' });
     }
