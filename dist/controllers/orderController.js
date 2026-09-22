@@ -176,6 +176,8 @@ const createOrder = async (req, res) => {
             gameType,
             playType,
             drawId,
+            provinceName,
+            drawDate,
             items: items,
             totalCost: totalCost,
             status: 'pending'
