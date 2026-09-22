@@ -295,7 +295,20 @@ export const getAllOrders = async (req: any, res: Response) => {
       query.createdAt = { $gte: startOfDay, $lte: endOfDay };
     }
 
-    const orders = await Order.find(query).populate('user', 'name phone').sort({ createdAt: -1 });
+    const orders = await Order.find(query).populate('user', 'name phone').lean().sort({ createdAt: -1 });
+
+    for (const order of orders) {
+      if (order.drawId && mongoose.Types.ObjectId.isValid(order.drawId)) {
+        const draw = await Draw.findById(order.drawId).lean();
+        if (draw) {
+          order.drawId = draw.drawCode;
+          if (!order.drawDate && draw.closeTime) {
+            order.drawDate = new Date(draw.closeTime).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+          }
+        }
+      }
+    }
+
     res.json(orders);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
