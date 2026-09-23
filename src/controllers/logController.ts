@@ -30,3 +30,27 @@ export const getUserLogs = async (req: Request, res: Response) => {
     res.status(500).json({ message: 'Error fetching user action logs' });
   }
 };
+
+export const logUserView = async (req: any, res: Response) => {
+  try {
+    const { targetUserId } = req.body;
+    
+    if (!targetUserId) {
+      return res.status(400).json({ message: 'Missing targetUserId' });
+    }
+
+    const log = new AdminLog({
+      adminId: req.user._id,
+      adminName: req.user.name,
+      targetUserId,
+      action: 'VIEW_USER',
+      details: 'Nhân viên xem chi tiết tài khoản người dùng',
+    });
+
+    await log.save();
+    res.status(201).json({ message: 'Log saved successfully' });
+  } catch (error) {
+    console.error('Error saving view log:', error);
+    res.status(500).json({ message: 'Error saving log' });
+  }
+};
