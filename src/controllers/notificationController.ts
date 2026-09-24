@@ -46,11 +46,11 @@ export const adminGetNotifications = async (req: any, res: Response) => {
 
       if (user) {
         await AdminLog.create({
+          adminId: req.user?._id,
           adminName: req.user?.name || 'Admin',
           targetUserId: user,
           action: 'Nhắn tin',
-          details: `Gửi tin nhắn: "${title}" - ${body}`,
-          ip: req.ip || req.connection?.remoteAddress
+          details: `Gửi tin nhắn: "${title}" - ${body}`
         });
       }
 
