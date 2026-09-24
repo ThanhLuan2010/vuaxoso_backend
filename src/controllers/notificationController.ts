@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import Notification from '../models/Notification';
+import AdminLog from '../models/AdminLog';
 
 export const getMyNotifications = async (req: any, res: Response) => {
   try {
@@ -42,6 +43,16 @@ export const adminGetNotifications = async (req: any, res: Response) => {
         category: 'promo',
         user: user || undefined,
       });
+
+      if (user) {
+        await AdminLog.create({
+          adminName: req.user?.name || 'Admin',
+          targetUserId: user,
+          action: 'Nhắn tin',
+          details: `Gửi tin nhắn: "${title}" - ${body}`,
+          ip: req.ip || req.connection?.remoteAddress
+        });
+      }
 
     res.status(201).json(notification);
   } catch (error: any) {
