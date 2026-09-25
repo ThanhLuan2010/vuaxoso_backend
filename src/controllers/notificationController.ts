@@ -7,6 +7,7 @@ export const getMyNotifications = async (req: any, res: Response) => {
     const userId = req.user.id;
     // Get notifications for this user, OR global notifications (user = null or undefined)
     const notifications = await Notification.find({
+      isHidden: { $ne: true },
       $or: [
         { user: userId },
         { user: { $exists: false }, type: 'promo' },
@@ -22,7 +23,7 @@ export const getMyNotifications = async (req: any, res: Response) => {
 
 export const adminGetNotifications = async (req: any, res: Response) => {
   try {
-    const notifications = await Notification.find().sort({ createdAt: -1 });
+    const notifications = await Notification.find().populate("user", "name phone").populate("sender", "name").sort({ createdAt: -1 });
     res.json(notifications);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -42,6 +43,7 @@ export const adminGetNotifications = async (req: any, res: Response) => {
         type: 'promo',
         category: 'promo',
         user: user || undefined,
+        sender: req.user?._id,
       });
 
       if (user) {
@@ -68,6 +70,22 @@ export const adminDeleteNotification = async (req: any, res: Response) => {
       return res.status(404).json({ message: 'Không tìm thấy thông báo' });
     }
     res.json({ message: 'Đã xóa thông báo' });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+
+export const adminToggleNotificationVisibility = async (req: any, res: Response) => {
+  try {
+    const { id } = req.params;
+    const notification = await Notification.findById(id);
+    if (!notification) {
+      return res.status(404).json({ message: 'Không tìm thấy thông báo' });
+    }
+    notification.isHidden = !notification.isHidden;
+    await notification.save();
+    res.json(notification);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }

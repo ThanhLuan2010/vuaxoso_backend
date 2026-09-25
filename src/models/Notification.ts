@@ -7,6 +7,8 @@ export interface INotification extends Document {
   orderId?: string;
   category: 'important' | 'promo';
   user?: mongoose.Types.ObjectId; // null if broadcast to all users
+  sender?: mongoose.Types.ObjectId;
+  isHidden?: boolean;
   isRead: boolean;
   createdAt: Date;
 }
@@ -19,6 +21,8 @@ const notificationSchema = new Schema(
     orderId: { type: String },
     category: { type: String, enum: ['important', 'promo'], required: true },
     user: { type: Schema.Types.ObjectId, ref: 'User' },
+    sender: { type: Schema.Types.ObjectId, ref: 'User' },
+    isHidden: { type: Boolean, default: false },
     isRead: { type: Boolean, default: false },
   },
   { timestamps: true }
