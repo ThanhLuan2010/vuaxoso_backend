@@ -1,3 +1,4 @@
+import AdminLog from '../models/AdminLog';
 import { Response } from 'express';
 import mongoose from 'mongoose';
 import Draw from '../models/Draw';
@@ -7,6 +8,7 @@ import Order from '../models/Order';
 import Province from '../models/Province';
 import Ticket from '../models/Ticket';
 import User from '../models/User';
+import BalanceHistory from '../models/BalanceHistory';
 import { sendEmail } from '../utils/sendEmail';
 
 export const createOrder = async (req: any, res: Response) => {
@@ -182,6 +184,8 @@ export const createOrder = async (req: any, res: Response) => {
     await user.save();
 
     const order = await Order.create({
+      balanceBefore,
+      balanceAfter,
       user: req.user.id,
       orderId: `ORD_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
       gameType,

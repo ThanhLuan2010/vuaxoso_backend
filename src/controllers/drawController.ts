@@ -1,3 +1,4 @@
+import AdminLog from '../models/AdminLog';
 import { Response } from 'express';
 import Draw from '../models/Draw';
 import Province from '../models/Province';
@@ -163,6 +164,7 @@ export const createDraw = async (req: any, res: Response) => {
       jackpotAmount,
       provinceId
     });
+    await AdminLog.create({ adminId: req.user?._id, adminName: req.user?.name || 'Admin', action: 'Tạo Kỳ Quay', details: `Tạo kỳ quay cho ngày: ${draw.date}` });
     res.status(201).json(draw);
   } catch (error: any) {
     res.status(500).json({ message: error.message });

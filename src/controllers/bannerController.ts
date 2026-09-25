@@ -1,3 +1,4 @@
+import AdminLog from '../models/AdminLog';
 import { Response } from 'express';
 import Banner from '../models/Banner';
 
@@ -25,6 +26,7 @@ export const getAllBanners = async (req: any, res: Response) => {
 export const createBanner = async (req: any, res: Response) => {
   try {
     const banner = await Banner.create(req.body);
+    await AdminLog.create({ adminId: req.user?._id, adminName: req.user?.name || 'Admin', action: 'Tạo Banner', details: `Tạo banner: ${banner.title || 'Không tên'}` });
     res.status(201).json(banner);
   } catch (error: any) {
     res.status(400).json({ message: error.message });
@@ -35,6 +37,7 @@ export const createBanner = async (req: any, res: Response) => {
 export const updateBanner = async (req: any, res: Response) => {
   try {
     const banner = await Banner.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if(banner) await AdminLog.create({ adminId: req.user?._id, adminName: req.user?.name || 'Admin', action: 'Cập nhật Banner', details: `Cập nhật banner: ${banner.title}` });
     if (!banner) return res.status(404).json({ message: 'Không tìm thấy banner' });
     res.json(banner);
   } catch (error: any) {
@@ -46,6 +49,7 @@ export const updateBanner = async (req: any, res: Response) => {
 export const deleteBanner = async (req: any, res: Response) => {
   try {
     const banner = await Banner.findByIdAndDelete(req.params.id);
+    if(banner) await AdminLog.create({ adminId: req.user?._id, adminName: req.user?.name || 'Admin', action: 'Xoá Banner', details: `Xoá banner: ${banner.title}` });
     if (!banner) return res.status(404).json({ message: 'Không tìm thấy banner' });
     res.json({ message: 'Đã xóa banner' });
   } catch (error: any) {

@@ -5,6 +5,7 @@ import User from '../models/User';
 import Order from '../models/Order';
 import Transaction from '../models/Transaction';
 import AdminLog from '../models/AdminLog';
+import BalanceHistory from '../models/BalanceHistory';
 
 export const getUsers = async (req: Request, res: Response) => {
   try {
@@ -104,7 +105,18 @@ export const updateUser = async (req: AuthRequest, res: Response) => {
     if (!adminUser) return res.status(401).json({ message: 'Unauthorized' });
 
     let details = [];
-    if (oldUser.balance !== Number(balance)) details.push(`Số dư: ${oldUser.balance} -> ${balance}`);
+    if (oldUser.balance !== Number(balance)) {
+      details.push(`Số dư: ${oldUser.balance} -> ${balance}`);
+      await BalanceHistory.create({
+        user: oldUser._id,
+        type: 'admin',
+        amount: Math.abs(Number(balance) - oldUser.balance),
+        balanceBefore: oldUser.balance,
+        balanceAfter: Number(balance),
+        description: 'Admin điều chỉnh số dư',
+        reference: adminUser._id.toString()
+      });
+    }
     if (oldUser.role !== role) details.push(`Quyền: ${oldUser.role} -> ${role}`);
     if (oldUser.isInfoUpdated !== isInfoUpdated) details.push(`Xác minh: ${oldUser.isInfoUpdated} -> ${isInfoUpdated}`);
     if (oldUser.name !== name) details.push(`Tên: ${oldUser.name} -> ${name}`);
@@ -235,5 +247,32 @@ export const resetWithdrawPassword = async (req: AuthRequest, res: Response) => 
     res.json({ message: 'Đặt lại mật khẩu rút tiền thành công' });
   } catch (error) {
     res.status(500).json({ message: 'Error resetting withdraw password' });
+  }
+};
+
+
+export const getUserBalanceHistory = async (req: any, res: any) => {
+  try {
+    const { id } = req.params;
+    const { page = 1, limit = 20 } = req.query;
+    
+    // We import here to avoid circular dependencies if any, or just require it
+    const BalanceHistory = require('../models/BalanceHistory').default;
+    
+    const history = await BalanceHistory.find({ user: id })
+      .sort({ createdAt: -1 })
+      .skip((Number(page) - 1) * Number(limit))
+      .limit(Number(limit));
+      
+    const total = await BalanceHistory.countDocuments({ user: id });
+    
+    res.json({
+      history,
+      totalPages: Math.ceil(total / Number(limit)),
+      currentPage: Number(page),
+      total
+    });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
   }
 };

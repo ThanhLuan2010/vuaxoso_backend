@@ -10,6 +10,8 @@ export interface ITransaction extends Document {
   paymentMethod?: string;
   destinationInfo?: any;
   receiptImage?: string;
+  balanceBefore?: number;
+  balanceAfter?: number;
   note?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -25,6 +27,8 @@ const transactionSchema = new Schema<ITransaction>(
     paymentMethod: { type: String, default: 'manual' },
     destinationInfo: { type: Schema.Types.Mixed },
     receiptImage: { type: String },
+    balanceBefore: { type: Number },
+    balanceAfter: { type: Number },
     note: { type: String },
   },
   { timestamps: true }

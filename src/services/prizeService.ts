@@ -2,6 +2,7 @@ import Draw from '../models/Draw';
 import Order from '../models/Order';
 import User from '../models/User';
 import Transaction from '../models/Transaction';
+import BalanceHistory from '../models/BalanceHistory';
 import Notification from '../models/Notification';
 import Game from '../models/Game';
 
@@ -796,8 +797,20 @@ export const processDrawResults = async (drawId: string) => {
           if (game.code === 'keno' || game.code === 'bao_keno') {
              finalPrize = prizeAmount * 0.9; // Trừ 10% thuế
           }
+          const balanceBefore = user.balance;
           user.balance += finalPrize;
+          const balanceAfter = user.balance;
           await user.save();
+          
+          await BalanceHistory.create({
+            user: user._id,
+            type: 'win',
+            amount: finalPrize,
+            balanceBefore,
+            balanceAfter,
+            description: 'Trả thưởng cược',
+            reference: order._id.toString()
+          });
 
           // Ghi lại giao dịch
           await Transaction.create({

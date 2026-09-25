@@ -1,3 +1,4 @@
+import AdminLog from '../models/AdminLog';
 import { Response } from 'express';
 import Transaction from '../models/Transaction';
 import User from '../models/User';
@@ -170,7 +171,9 @@ export const withdraw = async (req: any, res: Response) => {
       return res.status(401).json({ message: 'Mật khẩu rút tiền không đúng' });
     }
 
+    const balanceBefore = user.balance;
     user.balance -= amount;
+    const balanceAfter = user.balance;
     await user.save();
 
     const transaction = await Transaction.create({
@@ -179,6 +182,8 @@ export const withdraw = async (req: any, res: Response) => {
       amount,
       status: 'pending',
       destinationInfo,
+      balanceBefore,
+      balanceAfter
     });
     
     return res.status(201).json(transaction);
@@ -228,11 +233,20 @@ export const approveTransaction = async (req: any, res: Response) => {
     }
 
     if (transaction.type === 'deposit') {
-      const amount = transaction.amount;
+      let amount = transaction.amount;
       if (!amount || amount <= 0) {
         return res.status(400).json({ message: 'Số tiền nạp không hợp lệ' });
       }
+      
+      // Tự động trừ 17% cho thẻ cào
+      if (transaction.paymentMethod === 'scratch') {
+        amount = Math.floor(amount * 0.83);
+        transaction.amount = amount; // update the record to reflect the actual credited amount
+      }
+      
+      transaction.balanceBefore = user.balance;
       user.balance += amount;
+      transaction.balanceAfter = user.balance;
       await user.save();
       
       await Notification.create({
@@ -278,8 +292,20 @@ export const rejectTransaction = async (req: any, res: Response) => {
     if (transaction.type === 'withdraw') {
       const user = await User.findById(transaction.user);
       if (user) {
+        const balanceBefore = user.balance;
         user.balance += transaction.amount;
+        const balanceAfter = user.balance;
         await user.save();
+        
+        await BalanceHistory.create({
+          user: user._id,
+          type: 'refund',
+          amount: transaction.amount,
+          balanceBefore,
+          balanceAfter,
+          description: 'Hoàn tiền rút thất bại/từ chối',
+          reference: transaction._id.toString()
+        });
         
         await Notification.create({
           title: 'Từ chối rút tiền',
@@ -307,6 +333,23 @@ export const rejectTransaction = async (req: any, res: Response) => {
     await transaction.save();
 
     res.json(transaction);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const getMyBalanceHistory = async (req: any, res: Response) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const BalanceHistory = require('../models/BalanceHistory').default;
+    
+    const history = await BalanceHistory.find({ user: req.user.id })
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit);
+      
+    res.json(history);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }

@@ -1,3 +1,4 @@
+import AdminLog from '../models/AdminLog';
 import { Response } from 'express';
 import Ticket from '../models/Ticket';
 
@@ -43,6 +44,7 @@ export const createTicket = async (req: any, res: Response) => {
     const ticket = await Ticket.create({
       number, price, ticketType, multiplier, provinceId, drawDate
     });
+    await AdminLog.create({ adminId: req.user?._id, adminName: req.user?.name || 'Admin', action: 'Tạo Vé', details: `Tạo vé: ${ticket.number || ticket.title}` });
     res.status(201).json(ticket);
   } catch (error: any) {
     res.status(500).json({ message: error.message });

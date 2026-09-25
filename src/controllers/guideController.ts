@@ -1,3 +1,4 @@
+import AdminLog from '../models/AdminLog';
 import { Request, Response } from 'express';
 import Guide from '../models/Guide';
 

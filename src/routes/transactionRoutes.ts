@@ -2,7 +2,7 @@ import express from 'express';
 import { 
   deposit, 
   withdraw, 
-  getHistory, 
+  getHistory, getMyBalanceHistory, 
   getAllTransactions, 
   approveTransaction, 
   rejectTransaction,
@@ -15,7 +15,7 @@ const router = express.Router();
 router.post('/deposit', protect, deposit);
 router.post('/deposit/binance', protect, depositBinance);
 router.post('/withdraw', protect, withdraw);
-router.get('/history', protect, getHistory);
+router.get('/history', protect, getHistory, getMyBalanceHistory);
 
 // Admin routes
 router.get('/admin/transactions', protect, admin, getAllTransactions);

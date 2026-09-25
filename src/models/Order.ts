@@ -15,6 +15,8 @@ export interface IOrder extends Document {
   drawDate?: string;
   isWinner?: boolean;
   prizeAmount?: number;
+  balanceBefore?: number;
+  balanceAfter?: number;
   ticketImageUrl?: string;
   winningNumbers?: string[]; // Kết quả kỳ quay lưu vào để frontend hiển thị
   createdAt: Date;
@@ -46,6 +48,8 @@ const orderSchema = new Schema<IOrder>(
     drawDate: { type: String },
     isWinner: { type: Boolean, default: false },
     prizeAmount: { type: Number, default: 0 },
+    balanceBefore: { type: Number },
+    balanceAfter: { type: Number },
     ticketImageUrl: { type: String },
     winningNumbers: [{ type: String }],
   },

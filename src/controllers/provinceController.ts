@@ -1,3 +1,4 @@
+import AdminLog from '../models/AdminLog';
 import { Response } from 'express';
 import Province from '../models/Province';
 
@@ -17,6 +18,7 @@ export const createProvince = async (req: any, res: Response) => {
     if (existing) return res.status(400).json({ message: 'Mã tỉnh đã tồn tại' });
     
     const province = await Province.create({ provinceId, name, code, region, drawDays });
+    await AdminLog.create({ adminId: req.user?._id, adminName: req.user?.name || 'Admin', action: 'Tạo Tỉnh/Đài', details: `Tạo Tỉnh/Đài: ${province.name}` });
     res.status(201).json(province);
   } catch (error: any) {
     res.status(500).json({ message: error.message });

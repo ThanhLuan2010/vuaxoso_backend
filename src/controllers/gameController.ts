@@ -1,3 +1,4 @@
+import AdminLog from '../models/AdminLog';
 import { Response } from 'express';
 import Game from '../models/Game';
 
@@ -23,6 +24,7 @@ export const createGame = async (req: any, res: Response) => {
     const game = await Game.create({
       code, name, type, brandColor, bgColor, badge
     });
+    await AdminLog.create({ adminId: req.user?._id, adminName: req.user?.name || 'Admin', action: 'Tạo Game', details: `Tạo game: ${game.name}` });
     res.status(201).json(game);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
