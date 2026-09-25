@@ -54,3 +54,17 @@ export const logUserView = async (req: any, res: Response) => {
     res.status(500).json({ message: 'Error saving log' });
   }
 };
+
+
+export const deleteAdminLog = async (req: any, res: any) => {
+  try {
+    const { id } = req.params;
+    const log = await AdminLog.findByIdAndDelete(id);
+    if (!log) {
+      return res.status(404).json({ message: 'Không tìm thấy log' });
+    }
+    res.json({ message: 'Đã xóa log' });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};

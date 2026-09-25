@@ -30,14 +30,7 @@ export const updateSetting = async (req: any, res: Response) => {
 
     if (key === 'deposit_config' || key === 'binance_config') {
       const settingName = key === 'deposit_config' ? 'Tài khoản Ngân hàng' : 'Ví Binance';
-      let detailsStr = `Cập nhật ${settingName}`;
-      try {
-        if (typeof value === 'string') {
-           detailsStr += `: ${value}`;
-        } else {
-           detailsStr += `: ${JSON.stringify(value)}`;
-        }
-      } catch(e) {}
+      let detailsStr = `Cập nhật cấu hình ${settingName}`;
       
       await AdminLog.create({
         adminId: req.user?._id,
