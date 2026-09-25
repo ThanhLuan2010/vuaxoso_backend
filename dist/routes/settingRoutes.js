@@ -7,6 +7,7 @@ const express_1 = __importDefault(require("express"));
 const settingController_1 = require("../controllers/settingController");
 const authMiddleware_1 = require("../middleware/authMiddleware");
 const router = express_1.default.Router();
+router.put('/bulk', authMiddleware_1.protect, authMiddleware_1.admin, settingController_1.bulkUpdateSettings);
 router.get('/:key', settingController_1.getSetting);
 router.put('/:key', authMiddleware_1.protect, authMiddleware_1.admin, settingController_1.updateSetting);
 exports.default = router;

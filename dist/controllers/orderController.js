@@ -168,9 +168,13 @@ const createOrder = async (req, res) => {
         if (!user || user.balance < totalCost) {
             return res.status(400).json({ message: 'Số dư không đủ' });
         }
+        const balanceBefore = user.balance;
         user.balance -= totalCost;
+        const balanceAfter = user.balance;
         await user.save();
         const order = await Order_1.default.create({
+            balanceBefore,
+            balanceAfter,
             user: req.user.id,
             orderId: `ORD_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
             gameType,
@@ -277,7 +281,18 @@ const getAllOrders = async (req, res) => {
             endOfDay.setHours(23, 59, 59, 999);
             query.createdAt = { $gte: startOfDay, $lte: endOfDay };
         }
-        const orders = await Order_1.default.find(query).populate('user', 'name phone').sort({ createdAt: -1 });
+        const orders = await Order_1.default.find(query).populate('user', 'name phone').lean().sort({ createdAt: -1 });
+        for (const order of orders) {
+            if (order.drawId && mongoose_1.default.Types.ObjectId.isValid(order.drawId)) {
+                const draw = await Draw_1.default.findById(order.drawId).lean();
+                if (draw) {
+                    order.drawId = draw.drawCode;
+                    if (!order.drawDate && draw.closeTime) {
+                        order.drawDate = new Date(draw.closeTime).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+                    }
+                }
+            }
+        }
         res.json(orders);
     }
     catch (error) {

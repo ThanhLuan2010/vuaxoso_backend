@@ -43,6 +43,8 @@ const transactionSchema = new mongoose_1.Schema({
     paymentMethod: { type: String, default: 'manual' },
     destinationInfo: { type: mongoose_1.Schema.Types.Mixed },
     receiptImage: { type: String },
+    balanceBefore: { type: Number },
+    balanceAfter: { type: Number },
     note: { type: String },
 }, { timestamps: true });
 exports.default = mongoose_1.default.model('Transaction', transactionSchema);

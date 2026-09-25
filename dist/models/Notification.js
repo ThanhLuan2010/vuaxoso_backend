@@ -41,6 +41,8 @@ const notificationSchema = new mongoose_1.Schema({
     orderId: { type: String },
     category: { type: String, enum: ['important', 'promo'], required: true },
     user: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
+    sender: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
+    isHidden: { type: Boolean, default: false },
     isRead: { type: Boolean, default: false },
 }, { timestamps: true });
 exports.default = mongoose_1.default.model('Notification', notificationSchema);

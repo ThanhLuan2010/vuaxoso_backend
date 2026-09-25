@@ -3,13 +3,15 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.adminDeleteNotification = exports.adminCreateNotification = exports.adminGetNotifications = exports.getMyNotifications = void 0;
+exports.adminToggleNotificationVisibility = exports.adminDeleteNotification = exports.adminCreateNotification = exports.adminGetNotifications = exports.getMyNotifications = void 0;
 const Notification_1 = __importDefault(require("../models/Notification"));
+const AdminLog_1 = __importDefault(require("../models/AdminLog"));
 const getMyNotifications = async (req, res) => {
     try {
         const userId = req.user.id;
         // Get notifications for this user, OR global notifications (user = null or undefined)
         const notifications = await Notification_1.default.find({
+            isHidden: { $ne: true },
             $or: [
                 { user: userId },
                 { user: { $exists: false }, type: 'promo' },
@@ -25,7 +27,7 @@ const getMyNotifications = async (req, res) => {
 exports.getMyNotifications = getMyNotifications;
 const adminGetNotifications = async (req, res) => {
     try {
-        const notifications = await Notification_1.default.find().sort({ createdAt: -1 });
+        const notifications = await Notification_1.default.find().populate("user", "name phone").populate("sender", "name").sort({ createdAt: -1 });
         res.json(notifications);
     }
     catch (error) {
@@ -45,7 +47,17 @@ const adminCreateNotification = async (req, res) => {
             type: 'promo',
             category: 'promo',
             user: user || undefined,
+            sender: req.user?._id,
         });
+        if (user) {
+            await AdminLog_1.default.create({
+                adminId: req.user?._id,
+                adminName: req.user?.name || 'Admin',
+                targetUserId: user,
+                action: 'Nhắn tin',
+                details: `Gửi tin nhắn: "${title}" - ${body}`
+            });
+        }
         res.status(201).json(notification);
     }
     catch (error) {
@@ -57,6 +69,8 @@ const adminDeleteNotification = async (req, res) => {
     try {
         const { id } = req.params;
         const notification = await Notification_1.default.findByIdAndDelete(id);
+        if (notification)
+            await AdminLog_1.default.create({ adminId: req.user?._id, adminName: req.user?.name || 'Admin', action: 'Xoá thông báo', details: `Xoá thông báo: ${notification.title}` });
         if (!notification) {
             return res.status(404).json({ message: 'Không tìm thấy thông báo' });
         }
@@ -67,3 +81,20 @@ const adminDeleteNotification = async (req, res) => {
     }
 };
 exports.adminDeleteNotification = adminDeleteNotification;
+const adminToggleNotificationVisibility = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const notification = await Notification_1.default.findById(id);
+        if (!notification) {
+            return res.status(404).json({ message: 'Không tìm thấy thông báo' });
+        }
+        notification.isHidden = !notification.isHidden;
+        await notification.save();
+        await AdminLog_1.default.create({ adminId: req.user?._id, adminName: req.user?.name || 'Admin', action: 'Ẩn/Hiện thông báo', details: `Đã ${notification.isHidden ? 'ẩn' : 'hiện'} thông báo: ${notification.title}` });
+        res.json(notification);
+    }
+    catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+exports.adminToggleNotificationVisibility = adminToggleNotificationVisibility;

@@ -3,12 +3,13 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.resetWithdrawPassword = exports.resetPassword = exports.deleteUser = exports.getUserHistory = exports.updateUser = exports.getUsers = void 0;
+exports.getUserBalanceHistory = exports.resetWithdrawPassword = exports.resetPassword = exports.deleteUser = exports.getUserHistory = exports.updateUser = exports.getUsers = void 0;
 const bcrypt_1 = __importDefault(require("bcrypt"));
 const User_1 = __importDefault(require("../models/User"));
 const Order_1 = __importDefault(require("../models/Order"));
 const Transaction_1 = __importDefault(require("../models/Transaction"));
 const AdminLog_1 = __importDefault(require("../models/AdminLog"));
+const BalanceHistory_1 = __importDefault(require("../models/BalanceHistory"));
 const getUsers = async (req, res) => {
     try {
         const { search } = req.query;
@@ -99,8 +100,18 @@ const updateUser = async (req, res) => {
         if (!adminUser)
             return res.status(401).json({ message: 'Unauthorized' });
         let details = [];
-        if (oldUser.balance !== Number(balance))
+        if (oldUser.balance !== Number(balance)) {
             details.push(`Số dư: ${oldUser.balance} -> ${balance}`);
+            await BalanceHistory_1.default.create({
+                user: oldUser._id,
+                type: 'admin',
+                amount: Math.abs(Number(balance) - oldUser.balance),
+                balanceBefore: oldUser.balance,
+                balanceAfter: Number(balance),
+                description: 'Admin điều chỉnh số dư',
+                reference: adminUser._id.toString()
+            });
+        }
         if (oldUser.role !== role)
             details.push(`Quyền: ${oldUser.role} -> ${role}`);
         if (oldUser.isInfoUpdated !== isInfoUpdated)
@@ -230,3 +241,26 @@ const resetWithdrawPassword = async (req, res) => {
     }
 };
 exports.resetWithdrawPassword = resetWithdrawPassword;
+const getUserBalanceHistory = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { page = 1, limit = 20 } = req.query;
+        // We import here to avoid circular dependencies if any, or just require it
+        const BalanceHistory = require('../models/BalanceHistory').default;
+        const history = await BalanceHistory.find({ user: id })
+            .sort({ createdAt: -1 })
+            .skip((Number(page) - 1) * Number(limit))
+            .limit(Number(limit));
+        const total = await BalanceHistory.countDocuments({ user: id });
+        res.json({
+            history,
+            totalPages: Math.ceil(total / Number(limit)),
+            currentPage: Number(page),
+            total
+        });
+    }
+    catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+exports.getUserBalanceHistory = getUserBalanceHistory;

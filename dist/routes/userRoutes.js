@@ -9,6 +9,7 @@ const authMiddleware_1 = require("../middleware/authMiddleware");
 const router = express_1.default.Router();
 router.get('/', authMiddleware_1.protect, authMiddleware_1.admin, userController_1.getUsers);
 router.get('/:id/history', authMiddleware_1.protect, authMiddleware_1.admin, userController_1.getUserHistory);
+router.get('/:id/balance-history', authMiddleware_1.protect, authMiddleware_1.admin, userController_1.getUserBalanceHistory);
 router.put('/:id', authMiddleware_1.protect, authMiddleware_1.admin, userController_1.updateUser);
 router.delete('/:id', authMiddleware_1.protect, authMiddleware_1.admin, userController_1.deleteUser);
 router.post('/:id/reset-password', authMiddleware_1.protect, authMiddleware_1.admin, userController_1.resetPassword);

@@ -12,4 +12,5 @@ router.get('/my-notifications', authMiddleware_1.protect, notificationController
 router.get('/admin', authMiddleware_1.protect, authMiddleware_1.admin, notificationController_1.adminGetNotifications);
 router.post('/admin', authMiddleware_1.protect, authMiddleware_1.admin, notificationController_1.adminCreateNotification);
 router.delete('/admin/:id', authMiddleware_1.protect, authMiddleware_1.admin, notificationController_1.adminDeleteNotification);
+router.put('/admin/:id/toggle-visibility', authMiddleware_1.protect, authMiddleware_1.admin, notificationController_1.adminToggleNotificationVisibility);
 exports.default = router;

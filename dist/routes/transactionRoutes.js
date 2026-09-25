@@ -10,7 +10,7 @@ const router = express_1.default.Router();
 router.post('/deposit', authMiddleware_1.protect, transactionController_1.deposit);
 router.post('/deposit/binance', authMiddleware_1.protect, transactionController_1.depositBinance);
 router.post('/withdraw', authMiddleware_1.protect, transactionController_1.withdraw);
-router.get('/history', authMiddleware_1.protect, transactionController_1.getHistory);
+router.get('/history', authMiddleware_1.protect, transactionController_1.getHistory, transactionController_1.getMyBalanceHistory);
 // Admin routes
 router.get('/admin/transactions', authMiddleware_1.protect, authMiddleware_1.admin, transactionController_1.getAllTransactions);
 router.put('/admin/transactions/:id/approve', authMiddleware_1.protect, authMiddleware_1.admin, transactionController_1.approveTransaction);

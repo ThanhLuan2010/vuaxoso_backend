@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.seedProvinces = exports.deleteProvince = exports.updateProvince = exports.createProvince = exports.getAllProvinces = void 0;
+const AdminLog_1 = __importDefault(require("../models/AdminLog"));
 const Province_1 = __importDefault(require("../models/Province"));
 const getAllProvinces = async (req, res) => {
     try {
@@ -22,6 +23,7 @@ const createProvince = async (req, res) => {
         if (existing)
             return res.status(400).json({ message: 'Mã tỉnh đã tồn tại' });
         const province = await Province_1.default.create({ provinceId, name, code, region, drawDays });
+        await AdminLog_1.default.create({ adminId: req.user?._id, adminName: req.user?.name || 'Admin', action: 'Tạo Tỉnh/Đài', details: `Tạo Tỉnh/Đài: ${province.name}` });
         res.status(201).json(province);
     }
     catch (error) {

@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getAllDraws = exports.enterResults = exports.createDraw = exports.getDrawResults = exports.getActiveDraws = exports.getKienThietSchedule = void 0;
+const AdminLog_1 = __importDefault(require("../models/AdminLog"));
 const Draw_1 = __importDefault(require("../models/Draw"));
 const Province_1 = __importDefault(require("../models/Province"));
 const prizeService_1 = require("../services/prizeService");
@@ -153,6 +154,7 @@ const createDraw = async (req, res) => {
             jackpotAmount,
             provinceId
         });
+        await AdminLog_1.default.create({ adminId: req.user?._id, adminName: req.user?.name || 'Admin', action: 'Tạo Kỳ Quay', details: `Tạo kỳ quay: ${draw.drawCode}` });
         res.status(201).json(draw);
     }
     catch (error) {

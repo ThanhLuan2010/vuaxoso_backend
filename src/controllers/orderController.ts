@@ -180,7 +180,9 @@ export const createOrder = async (req: any, res: Response) => {
       return res.status(400).json({ message: 'Số dư không đủ' });
     }
 
+    const balanceBefore = user.balance;
     user.balance -= totalCost;
+    const balanceAfter = user.balance;
     await user.save();
 
     const order = await Order.create({

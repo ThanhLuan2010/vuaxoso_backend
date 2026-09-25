@@ -4,6 +4,7 @@ import Transaction from '../models/Transaction';
 import User from '../models/User';
 import Notification from '../models/Notification';
 import Setting from '../models/Setting';
+import BalanceHistory from '../models/BalanceHistory';
 import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import axios from 'axios';
@@ -342,7 +343,6 @@ export const getMyBalanceHistory = async (req: any, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
-    const BalanceHistory = require('../models/BalanceHistory').default;
     
     const history = await BalanceHistory.find({ user: req.user.id })
       .sort({ createdAt: -1 })

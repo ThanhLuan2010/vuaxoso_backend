@@ -34,33 +34,13 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
-const orderSchema = new mongoose_1.Schema({
+const balanceHistorySchema = new mongoose_1.Schema({
     user: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
-    orderId: { type: String, required: true, unique: true },
-    gameType: {
-        type: String,
-        required: true
-    },
-    playType: { type: String },
-    numbers: [{ type: String }],
-    items: [
-        {
-            id: { type: String },
-            numbers: [{ type: String, required: true }],
-            specialNumbers: [{ type: String }],
-            cost: { type: Number, required: true }
-        }
-    ],
-    totalCost: { type: Number, required: true },
-    status: { type: String, enum: ['pending', 'completed', 'cancelled'], default: 'pending' },
-    drawId: { type: String },
-    provinceName: { type: String },
-    drawDate: { type: String },
-    isWinner: { type: Boolean, default: false },
-    prizeAmount: { type: Number, default: 0 },
-    balanceBefore: { type: Number },
-    balanceAfter: { type: Number },
-    ticketImageUrl: { type: String },
-    winningNumbers: [{ type: String }],
+    type: { type: String, enum: ['deposit', 'withdraw', 'bet', 'win', 'refund', 'admin', 'other'], required: true },
+    amount: { type: Number, required: true },
+    balanceBefore: { type: Number, required: true },
+    balanceAfter: { type: Number, required: true },
+    description: { type: String },
+    reference: { type: String },
 }, { timestamps: true });
-exports.default = mongoose_1.default.model('Order', orderSchema);
+exports.default = mongoose_1.default.model('BalanceHistory', balanceHistorySchema);

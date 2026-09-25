@@ -10,4 +10,6 @@ const router = express_1.default.Router();
 router.get('/', authMiddleware_1.protect, authMiddleware_1.admin, logController_1.getAdminLogs);
 router.get('/user/:userId', authMiddleware_1.protect, authMiddleware_1.admin, logController_1.getUserAdminLogs);
 router.get('/user-actions/:userId', authMiddleware_1.protect, authMiddleware_1.admin, logController_1.getUserLogs);
+router.post('/view-user', authMiddleware_1.protect, authMiddleware_1.admin, logController_1.logUserView);
+router.delete('/:id', authMiddleware_1.protect, authMiddleware_1.admin, logController_1.deleteAdminLog);
 exports.default = router;

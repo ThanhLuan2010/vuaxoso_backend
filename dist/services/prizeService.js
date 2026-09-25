@@ -8,6 +8,7 @@ const Draw_1 = __importDefault(require("../models/Draw"));
 const Order_1 = __importDefault(require("../models/Order"));
 const User_1 = __importDefault(require("../models/User"));
 const Transaction_1 = __importDefault(require("../models/Transaction"));
+const BalanceHistory_1 = __importDefault(require("../models/BalanceHistory"));
 const Notification_1 = __importDefault(require("../models/Notification"));
 const getCombinationsList = (array, k) => {
     const result = [];
@@ -952,8 +953,19 @@ const processDrawResults = async (drawId) => {
                     if (game.code === 'keno' || game.code === 'bao_keno') {
                         finalPrize = prizeAmount * 0.9; // Trừ 10% thuế
                     }
+                    const balanceBefore = user.balance;
                     user.balance += finalPrize;
+                    const balanceAfter = user.balance;
                     await user.save();
+                    await BalanceHistory_1.default.create({
+                        user: user._id,
+                        type: 'win',
+                        amount: finalPrize,
+                        balanceBefore,
+                        balanceAfter,
+                        description: 'Trả thưởng cược',
+                        reference: order._id.toString()
+                    });
                     // Ghi lại giao dịch
                     await Transaction_1.default.create({
                         user: user._id,

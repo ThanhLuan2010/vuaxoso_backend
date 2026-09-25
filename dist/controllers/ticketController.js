@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.bulkGenerateTickets = exports.deleteTicket = exports.updateTicket = exports.createTicket = exports.getAllTickets = exports.getTickets = void 0;
+const AdminLog_1 = __importDefault(require("../models/AdminLog"));
 const Ticket_1 = __importDefault(require("../models/Ticket"));
 const getTickets = async (req, res) => {
     try {
@@ -47,6 +48,7 @@ const createTicket = async (req, res) => {
         const ticket = await Ticket_1.default.create({
             number, price, ticketType, multiplier, provinceId, drawDate
         });
+        await AdminLog_1.default.create({ adminId: req.user?._id, adminName: req.user?.name || 'Admin', action: 'Tạo Vé', details: `Tạo vé: ${ticket.number}` });
         res.status(201).json(ticket);
     }
     catch (error) {

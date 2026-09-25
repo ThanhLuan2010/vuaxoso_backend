@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.updateGame = exports.createGame = exports.getGames = void 0;
+const AdminLog_1 = __importDefault(require("../models/AdminLog"));
 const Game_1 = __importDefault(require("../models/Game"));
 const getGames = async (req, res) => {
     try {
@@ -26,6 +27,7 @@ const createGame = async (req, res) => {
         const game = await Game_1.default.create({
             code, name, type, brandColor, bgColor, badge
         });
+        await AdminLog_1.default.create({ adminId: req.user?._id, adminName: req.user?.name || 'Admin', action: 'Tạo Game', details: `Tạo game: ${game.name}` });
         res.status(201).json(game);
     }
     catch (error) {

@@ -3,11 +3,12 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.rejectTransaction = exports.approveTransaction = exports.getAllTransactions = exports.getHistory = exports.withdraw = exports.depositBinance = exports.deposit = void 0;
+exports.getMyBalanceHistory = exports.rejectTransaction = exports.approveTransaction = exports.getAllTransactions = exports.getHistory = exports.withdraw = exports.depositBinance = exports.deposit = void 0;
 const Transaction_1 = __importDefault(require("../models/Transaction"));
 const User_1 = __importDefault(require("../models/User"));
 const Notification_1 = __importDefault(require("../models/Notification"));
 const Setting_1 = __importDefault(require("../models/Setting"));
+const BalanceHistory_1 = __importDefault(require("../models/BalanceHistory"));
 const crypto_1 = __importDefault(require("crypto"));
 const bcrypt_1 = __importDefault(require("bcrypt"));
 const axios_1 = __importDefault(require("axios"));
@@ -109,6 +110,36 @@ const withdraw = async (req, res) => {
         if (!amount || amount <= 0) {
             return res.status(400).json({ message: 'Số tiền không hợp lệ' });
         }
+        const isCrypto = !!destinationInfo?.network;
+        if (isCrypto) {
+            if (!destinationInfo.amountUsdt) {
+                return res.status(400).json({ message: 'Số lượng USDT không hợp lệ' });
+            }
+            if (destinationInfo.amountUsdt < 10) {
+                return res.status(400).json({ message: 'Rút tối thiểu 10 USDT/1 lần rút' });
+            }
+            if (destinationInfo.amountUsdt > 8000) {
+                return res.status(400).json({ message: 'Rút tối đa 8000 USDT/1 lần rút' });
+            }
+        }
+        else {
+            if (amount < 200000) {
+                return res.status(400).json({ message: 'Rút tối thiểu 200.000 VNĐ/1 lần rút' });
+            }
+            if (amount > 200000000) {
+                return res.status(400).json({ message: 'Rút tối đa 200.000.000 VNĐ/1 lần rút' });
+            }
+        }
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        const withdrawalsToday = await Transaction_1.default.countDocuments({
+            user: req.user.id,
+            type: 'withdraw',
+            createdAt: { $gte: todayStart }
+        });
+        if (withdrawalsToday >= 5) {
+            return res.status(400).json({ message: 'Bạn chỉ được rút tối đa 5 lần/ngày' });
+        }
         if (!withdrawPassword) {
             return res.status(400).json({ message: 'Vui lòng nhập mật khẩu rút tiền' });
         }
@@ -123,7 +154,9 @@ const withdraw = async (req, res) => {
         if (!isMatch) {
             return res.status(401).json({ message: 'Mật khẩu rút tiền không đúng' });
         }
+        const balanceBefore = user.balance;
         user.balance -= amount;
+        const balanceAfter = user.balance;
         await user.save();
         const transaction = await Transaction_1.default.create({
             user: req.user.id,
@@ -131,6 +164,8 @@ const withdraw = async (req, res) => {
             amount,
             status: 'pending',
             destinationInfo,
+            balanceBefore,
+            balanceAfter
         });
         return res.status(201).json(transaction);
     }
@@ -178,11 +213,18 @@ const approveTransaction = async (req, res) => {
             return res.status(404).json({ message: 'Người dùng không tồn tại' });
         }
         if (transaction.type === 'deposit') {
-            const amount = transaction.amount;
+            let amount = transaction.amount;
             if (!amount || amount <= 0) {
                 return res.status(400).json({ message: 'Số tiền nạp không hợp lệ' });
             }
+            // Tự động trừ 17% cho thẻ cào
+            if (transaction.paymentMethod === 'scratch') {
+                amount = Math.floor(amount * 0.83);
+                transaction.amount = amount; // update the record to reflect the actual credited amount
+            }
+            transaction.balanceBefore = user.balance;
             user.balance += amount;
+            transaction.balanceAfter = user.balance;
             await user.save();
             await Notification_1.default.create({
                 title: 'Nạp tiền tài khoản dự thưởng',
@@ -226,8 +268,19 @@ const rejectTransaction = async (req, res) => {
         if (transaction.type === 'withdraw') {
             const user = await User_1.default.findById(transaction.user);
             if (user) {
+                const balanceBefore = user.balance;
                 user.balance += transaction.amount;
+                const balanceAfter = user.balance;
                 await user.save();
+                await BalanceHistory_1.default.create({
+                    user: user._id,
+                    type: 'refund',
+                    amount: transaction.amount,
+                    balanceBefore,
+                    balanceAfter,
+                    description: 'Hoàn tiền rút thất bại/từ chối',
+                    reference: transaction._id.toString()
+                });
                 await Notification_1.default.create({
                     title: 'Từ chối rút tiền',
                     body: `Yêu cầu rút ${transaction.amount.toLocaleString('vi-VN')} đ của bạn đã bị từ chối. Số tiền đã được hoàn lại.`,
@@ -260,3 +313,18 @@ const rejectTransaction = async (req, res) => {
     }
 };
 exports.rejectTransaction = rejectTransaction;
+const getMyBalanceHistory = async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 20;
+        const history = await BalanceHistory_1.default.find({ user: req.user.id })
+            .sort({ createdAt: -1 })
+            .skip((page - 1) * limit)
+            .limit(limit);
+        res.json(history);
+    }
+    catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+exports.getMyBalanceHistory = getMyBalanceHistory;
