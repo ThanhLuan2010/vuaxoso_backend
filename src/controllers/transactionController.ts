@@ -172,7 +172,7 @@ export const withdraw = async (req: any, res: Response) => {
 
     const isMatch = await bcrypt.compare(withdrawPassword, user.withdrawPasswordHash);
     if (!isMatch) {
-      return res.status(401).json({ message: 'Mật khẩu rút tiền không đúng' });
+      return res.status(400).json({ message: 'Mật khẩu rút tiền không đúng' });
     }
 
     const balanceBefore = user.balance;
@@ -188,6 +188,16 @@ export const withdraw = async (req: any, res: Response) => {
       destinationInfo,
       balanceBefore,
       balanceAfter
+    });
+
+    await BalanceHistory.create({
+      user: user._id,
+      type: 'withdraw',
+      amount: amount,
+      balanceBefore,
+      balanceAfter,
+      description: 'Yêu cầu rút tiền',
+      reference: transaction._id.toString()
     });
     await UserLog.create({ user: req.user.id, action: 'WITHDRAW_CREATED', details: `Tạo lệnh rút ${amount.toLocaleString('vi-VN')}đ` });
     res.status(201).json(transaction);
@@ -252,6 +262,16 @@ export const approveTransaction = async (req: any, res: Response) => {
       user.balance += amount;
       transaction.balanceAfter = user.balance;
       await user.save();
+      
+      await BalanceHistory.create({
+        user: user._id,
+        type: 'deposit',
+        amount: amount,
+        balanceBefore: transaction.balanceBefore,
+        balanceAfter: transaction.balanceAfter,
+        description: 'Nạp tiền (Admin duyệt)',
+        reference: transaction._id.toString()
+      });
       
       await Notification.create({
         title: 'Nạp tiền tài khoản dự thưởng',
