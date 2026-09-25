@@ -57,9 +57,11 @@ function getChanges(oldObj: any, newObj: any, path: string = ""): any[] {
     if (oldVal === newVal) continue;
     
     if (Array.isArray(oldVal) || Array.isArray(newVal)) {
-      // Simple array comparison (JSON stringify) for simplicity in configs like banks/wallets
-      if (JSON.stringify(oldVal) !== JSON.stringify(newVal)) {
-         changes.push({ field: currentPath, old: oldVal, new: newVal });
+      const oArr = Array.isArray(oldVal) ? oldVal : [];
+      const nArr = Array.isArray(newVal) ? newVal : [];
+      const maxLen = Math.max(oArr.length, nArr.length);
+      for (let i = 0; i < maxLen; i++) {
+        changes.push(...getChanges(oArr[i], nArr[i], `${currentPath}[${i}]`));
       }
     } else if (typeof oldVal === 'object' && oldVal !== null && typeof newVal === 'object' && newVal !== null) {
       changes.push(...getChanges(oldVal, newVal, currentPath));
