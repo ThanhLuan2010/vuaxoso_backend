@@ -9,4 +9,6 @@ router.get('/user/:userId', protect, admin, getUserAdminLogs);
 router.get('/user-actions/:userId', protect, admin, getUserLogs);
 router.post('/view-user', protect, admin, logUserView);
 
+router.delete('/:id', protect, admin, deleteAdminLog);
+
 export default router;
