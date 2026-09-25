@@ -2,6 +2,7 @@ import AdminLog from '../models/AdminLog';
 import { Response } from 'express';
 import Transaction from '../models/Transaction';
 import User from '../models/User';
+import UserLog from '../models/UserLog';
 import Notification from '../models/Notification';
 import Setting from '../models/Setting';
 import BalanceHistory from '../models/BalanceHistory';
@@ -29,6 +30,7 @@ export const deposit = async (req: any, res: Response) => {
       status: 'pending',
     });
 
+    await UserLog.create({ user: req.user.id, action: 'DEPOSIT_CREATED', details: `Tạo lệnh nạp ${Number(amount).toLocaleString('vi-VN')}đ` });
     res.status(201).json(transaction);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -107,6 +109,7 @@ export const depositBinance = async (req: any, res: Response) => {
       user: user._id,
     });
 
+    await UserLog.create({ user: req.user.id, action: 'DEPOSIT_CREATED', details: `Tạo lệnh nạp ${amountVnd.toLocaleString('vi-VN')}đ` });
     res.status(201).json(transaction);
   } catch (error: any) {
     console.error('Binance Deposit Error:', error.response?.data || error.message);
@@ -186,8 +189,8 @@ export const withdraw = async (req: any, res: Response) => {
       balanceBefore,
       balanceAfter
     });
-    
-    return res.status(201).json(transaction);
+    await UserLog.create({ user: req.user.id, action: 'WITHDRAW_CREATED', details: `Tạo lệnh rút ${amount.toLocaleString('vi-VN')}đ` });
+    res.status(201).json(transaction);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
