@@ -203,10 +203,22 @@ export const createOrder = async (req: any, res: Response) => {
     if (gameType.startsWith('kienthiet_')) {
       const provinceId = gameType.replace('kienthiet_', '');
       const nums = items.flatMap((item: any) => item.numbers.flatMap((n: string) => n.split(' ')));
-      await Ticket.updateMany(
-        { provinceId, number: { $in: nums }, isSold: false },
-        { isSold: true }
-      );
+      const numCounts: Record<string, number> = {};
+      nums.forEach((n: string) => { numCounts[n] = (numCounts[n] || 0) + 1; });
+      for (const [num, count] of Object.entries(numCounts)) {
+        const ticket = await Ticket.findOne({ provinceId, number: num, isSold: false });
+        if (ticket) {
+          const currentMult = ticket.multiplier || 1;
+          const newMult = currentMult - count;
+          if (newMult <= 0) {
+            ticket.isSold = true;
+            ticket.multiplier = 0;
+          } else {
+            ticket.multiplier = newMult;
+          }
+          await ticket.save();
+        }
+      }
     }
 
     await Notification.create({
