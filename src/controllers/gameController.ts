@@ -4,7 +4,18 @@ import Game from '../models/Game';
 
 export const getGames = async (req: any, res: Response) => {
   try {
-    const games = await Game.find({ isActive: true });
+    const { search, admin } = req.query;
+    const query: any = {};
+    if (admin !== 'true') {
+      query.isActive = true;
+    }
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { code: { $regex: search, $options: 'i' } }
+      ];
+    }
+    const games = await Game.find(query);
     res.json(games);
   } catch (error: any) {
     res.status(500).json({ message: error.message });

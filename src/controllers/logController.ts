@@ -4,7 +4,30 @@ import UserLog from '../models/UserLog';
 
 export const getAdminLogs = async (req: Request, res: Response) => {
   try {
-    const logs = await AdminLog.find().sort({ createdAt: -1 }).populate('targetUserId', 'name phone').limit(500);
+    const { search } = req.query;
+    let filter: any = {};
+
+    if (search) {
+      const User = require('../models/User').default;
+      const users = await User.find({
+        $or: [
+          { name: { $regex: search, $options: 'i' } },
+          { phone: { $regex: search, $options: 'i' } }
+        ]
+      }).select('_id');
+      const userIds = users.map((u: any) => u._id);
+
+      filter = {
+        $or: [
+          { adminName: { $regex: search, $options: 'i' } },
+          { action: { $regex: search, $options: 'i' } },
+          { details: { $regex: search, $options: 'i' } },
+          { targetUserId: { $in: userIds } }
+        ]
+      };
+    }
+
+    const logs = await AdminLog.find(filter).sort({ createdAt: -1 }).populate('targetUserId', 'name phone').limit(500);
     res.json(logs);
   } catch (error) {
     res.status(500).json({ message: 'Error fetching logs' });

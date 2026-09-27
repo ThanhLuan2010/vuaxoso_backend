@@ -19,11 +19,12 @@ export const getAllTickets = async (req: any, res: Response) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
-    const { provinceId, drawDate } = req.query;
+    const { provinceId, drawDate, search } = req.query;
 
     const query: any = {};
     if (provinceId) query.provinceId = provinceId;
     if (drawDate) query.drawDate = drawDate;
+    if (search) query.number = { $regex: search, $options: 'i' };
 
     const skip = (page - 1) * limit;
 

@@ -221,7 +221,27 @@ export const getHistory = async (req: any, res: Response) => {
 // @route   GET /api/wallet/admin/transactions
 export const getAllTransactions = async (req: any, res: Response) => {
   try {
-    const transactions = await Transaction.find().populate('user', 'name phone').sort({ createdAt: -1 });
+    const { search } = req.query;
+    let filter: any = {};
+    if (search) {
+      const User = require('../models/User').default;
+      const users = await User.find({
+        $or: [
+          { name: { $regex: search, $options: 'i' } },
+          { phone: { $regex: search, $options: 'i' } }
+        ]
+      }).select('_id');
+      const userIds = users.map((u: any) => u._id);
+
+      filter = {
+        $or: [
+          { txId: { $regex: search, $options: 'i' } },
+          { note: { $regex: search, $options: 'i' } },
+          { user: { $in: userIds } }
+        ]
+      };
+    }
+    const transactions = await Transaction.find(filter).populate('user', 'name phone').sort({ createdAt: -1 });
     res.json(transactions);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
