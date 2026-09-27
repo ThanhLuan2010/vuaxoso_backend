@@ -42,7 +42,7 @@ export const createTicket = async (req: any, res: Response) => {
   try {
     const { number, price, ticketType, multiplier, provinceId, drawDate, imageUrl } = req.body;
     const ticket = await Ticket.create({
-      number, price, ticketType, multiplier, provinceId, drawDate, imageUrl
+      number, price, ticketType, multiplier, originalMultiplier: multiplier, provinceId, drawDate, imageUrl
     });
     await AdminLog.create({ adminId: req.user?._id, adminName: req.user?.name || 'Admin', action: 'Tạo Vé', details: `Tạo vé: ${ticket.number}` });
     res.status(201).json(ticket);
@@ -98,6 +98,7 @@ export const bulkGenerateTickets = async (req: any, res: Response) => {
         price: 10000,
         ticketType: 'normal',
         multiplier: normalMultipliers[i % normalMultipliers.length],
+        originalMultiplier: normalMultipliers[i % normalMultipliers.length],
         provinceId,
         drawDate
       });
@@ -109,6 +110,7 @@ export const bulkGenerateTickets = async (req: any, res: Response) => {
         price: 10000,
         ticketType: 'special',
         multiplier: specialMultipliers[i % specialMultipliers.length],
+        originalMultiplier: specialMultipliers[i % specialMultipliers.length],
         provinceId,
         drawDate
       });

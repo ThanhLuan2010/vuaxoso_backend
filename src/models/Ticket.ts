@@ -5,6 +5,7 @@ export interface ITicket extends Document {
   price: number;
   ticketType: 'normal' | 'special';
   multiplier?: number;
+  originalMultiplier?: number;
   provinceId: string;
   drawDate: string;
   symbols?: string[];
@@ -20,6 +21,7 @@ const TicketSchema: Schema = new Schema(
     price: { type: Number, default: 10000 },
     ticketType: { type: String, enum: ['normal', 'special'], default: 'normal' },
     multiplier: { type: Number },
+    originalMultiplier: { type: Number },
     provinceId: { type: String, required: true },
     drawDate: { type: String, required: true },
     symbols: [{ type: String }],
