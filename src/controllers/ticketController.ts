@@ -40,9 +40,9 @@ export const getAllTickets = async (req: any, res: Response) => {
 
 export const createTicket = async (req: any, res: Response) => {
   try {
-    const { number, price, ticketType, multiplier, provinceId, drawDate } = req.body;
+    const { number, price, ticketType, multiplier, provinceId, drawDate, imageUrl } = req.body;
     const ticket = await Ticket.create({
-      number, price, ticketType, multiplier, provinceId, drawDate
+      number, price, ticketType, multiplier, provinceId, drawDate, imageUrl
     });
     await AdminLog.create({ adminId: req.user?._id, adminName: req.user?.name || 'Admin', action: 'Tạo Vé', details: `Tạo vé: ${ticket.number}` });
     res.status(201).json(ticket);

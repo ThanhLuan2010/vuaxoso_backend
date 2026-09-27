@@ -8,6 +8,7 @@ export interface ITicket extends Document {
   provinceId: string;
   drawDate: string;
   symbols?: string[];
+  imageUrl?: string;
   isSold: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -22,6 +23,7 @@ const TicketSchema: Schema = new Schema(
     provinceId: { type: String, required: true },
     drawDate: { type: String, required: true },
     symbols: [{ type: String }],
+    imageUrl: { type: String },
     isSold: { type: Boolean, default: false }
   },
   {
