@@ -94,10 +94,12 @@ export const bulkGenerateTickets = async (req: any, res: Response) => {
     for (let i = 0; i < drawDate.length; i++) seed += drawDate.charCodeAt(i);
 
     for (let i = 0; i < 7; i++) {
+      const isMB = provinceId === 'MB';
+      const numberStr = isMB ? String((seed * (i + 13) * 997) % 100000).padStart(5, '0') : 'x' + String((seed * (i + 13) * 997) % 100000).padStart(5, '0');
       ticketsData.push({
-        number: provinceId === 'MB' ? String((seed * (i + 13) * 997) % 100000).padStart(5, '0') : 'x' + String((seed * (i + 13) * 997) % 100000).padStart(5, '0'),
+        number: numberStr,
         price: 10000,
-        ticketType: 'normal',
+        ticketType: (isMB ? 'normal' : 'special'), // Non-MB: 'x' is special
         multiplier: normalMultipliers[i % normalMultipliers.length],
         originalMultiplier: normalMultipliers[i % normalMultipliers.length],
         provinceId,
@@ -106,10 +108,12 @@ export const bulkGenerateTickets = async (req: any, res: Response) => {
     }
 
     for (let i = 0; i < 3; i++) {
+      const isMB = provinceId === 'MB';
+      const numberStr = isMB ? String((seed * (i + 7) * 1337) % 100000).padStart(5, '0') : String((seed * (i + 7) * 1337) % 1000000).padStart(6, '0');
       ticketsData.push({
-        number: provinceId === 'MB' ? String((seed * (i + 7) * 1337) % 100000).padStart(5, '0') : String((seed * (i + 7) * 1337) % 1000000).padStart(6, '0'),
+        number: numberStr,
         price: 10000,
-        ticketType: 'special',
+        ticketType: (isMB ? 'special' : 'normal'), // Non-MB: 6 digits is normal
         multiplier: specialMultipliers[i % specialMultipliers.length],
         originalMultiplier: specialMultipliers[i % specialMultipliers.length],
         provinceId,
