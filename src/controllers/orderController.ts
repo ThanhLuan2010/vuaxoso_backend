@@ -185,6 +185,10 @@ export const createOrder = async (req: any, res: Response) => {
     const balanceAfter = user.balance;
     await user.save();
 
+    const rawIp = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || req.ip || '';
+    const ipAddress = Array.isArray(rawIp) ? rawIp[0] : (typeof rawIp === 'string' ? rawIp.split(',')[0].trim() : rawIp);
+    const loginDevice = req.headers['user-agent'] || '';
+
     const order = await Order.create({
       balanceBefore,
       balanceAfter,
@@ -197,7 +201,9 @@ export const createOrder = async (req: any, res: Response) => {
       drawDate,
       items: items,
       totalCost: totalCost,
-      status: 'pending'
+      status: 'pending',
+      ipAddress: ipAddress,
+      loginDevice: loginDevice
     });
 
     if (gameType.startsWith('kienthiet_')) {
@@ -313,9 +319,16 @@ export const getAllOrders = async (req: any, res: Response) => {
       query.createdAt = { $gte: startOfDay, $lte: endOfDay };
     }
 
-    const orders = await Order.find(query).populate('user', 'name phone').lean().sort({ createdAt: -1 });
+    const orders = await Order.find(query).populate('user', 'name phone loginIp registerIp loginDevice').lean().sort({ createdAt: -1 });
 
     for (const order of orders) {
+      if (!order.ipAddress) {
+        order.ipAddress = (order.user as any)?.loginIp || (order.user as any)?.registerIp || '';
+      }
+      if (!order.loginDevice) {
+        order.loginDevice = (order.user as any)?.loginDevice || '';
+      }
+      
       if (order.drawId && mongoose.Types.ObjectId.isValid(order.drawId)) {
         const draw = await Draw.findById(order.drawId).lean();
         if (draw) {

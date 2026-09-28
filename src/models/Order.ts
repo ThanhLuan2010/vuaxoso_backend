@@ -19,6 +19,8 @@ export interface IOrder extends Document {
   balanceAfter?: number;
   ticketImageUrl?: string;
   winningNumbers?: string[]; // Kết quả kỳ quay lưu vào để frontend hiển thị
+  ipAddress?: string;
+  loginDevice?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -54,6 +56,8 @@ const orderSchema = new Schema<IOrder>(
     balanceAfter: { type: Number },
     ticketImageUrl: { type: String },
     winningNumbers: [{ type: String }],
+    ipAddress: { type: String },
+    loginDevice: { type: String },
   },
   { timestamps: true }
 );
