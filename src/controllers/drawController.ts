@@ -8,17 +8,17 @@ export const getKienThietSchedule = async (req: any, res: Response) => {
   try {
     const daysOfWeek = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
     const today = new Date();
-    
+
     const vnTimeStr = today.toLocaleTimeString('en-US', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false, hour: '2-digit', minute: '2-digit' });
     const [hour, min] = vnTimeStr.split(':').map(Number);
-    
+
     let baseOffset = 0;
     if (hour > 18 || (hour === 18 && min >= 30)) {
       baseOffset = 1;
       today.setDate(today.getDate() + 1); // shift base day to tomorrow
     }
 
-    
+
     const formatDate = (date: Date) => {
       const dayName = daysOfWeek[date.getDay()];
       const day = String(date.getDate()).padStart(2, '0');
@@ -49,33 +49,33 @@ export const getKienThietSchedule = async (req: any, res: Response) => {
       Province.find({ drawDays: dayAfterDay })
     ]);
 
-    const getRegionData = (provs: any[], region: string) => 
+    const getRegionData = (provs: any[], region: string) =>
       provs.filter(p => p.region === region).map(mapProvince);
 
     const schedule = [
-      { 
-        dateString: formatDate(today) + (baseOffset === 0 ? " (Hôm nay)" : " (Ngày mai)"), 
-        isToday: baseOffset === 0, isTomorrow: baseOffset === 1, isDayAfterTomorrow: baseOffset === 2, 
+      {
+        dateString: formatDate(today) + (baseOffset === 0 ? " (Hôm nay)" : " (Ngày mai)"),
+        isToday: baseOffset === 0, isTomorrow: baseOffset === 1, isDayAfterTomorrow: baseOffset === 2,
         offset: baseOffset,
-        mb: getRegionData(todayProvinces, 'MB'), 
-        mt: getRegionData(todayProvinces, 'MT'), 
-        mn: getRegionData(todayProvinces, 'MN') 
+        mb: getRegionData(todayProvinces, 'MB'),
+        mt: getRegionData(todayProvinces, 'MT'),
+        mn: getRegionData(todayProvinces, 'MN')
       },
-      { 
-        dateString: formatDate(tomorrow) + (baseOffset === 0 ? " (Ngày mai)" : " (Ngày kia)"), 
-        isToday: false, isTomorrow: baseOffset === 0, isDayAfterTomorrow: baseOffset === 1, 
+      {
+        dateString: formatDate(tomorrow) + (baseOffset === 0 ? " (Ngày mai)" : " (Ngày kia)"),
+        isToday: false, isTomorrow: baseOffset === 0, isDayAfterTomorrow: baseOffset === 1,
         offset: baseOffset + 1,
-        mb: getRegionData(tomorrowProvinces, 'MB'), 
-        mt: getRegionData(tomorrowProvinces, 'MT'), 
-        mn: getRegionData(tomorrowProvinces, 'MN') 
+        mb: getRegionData(tomorrowProvinces, 'MB'),
+        mt: getRegionData(tomorrowProvinces, 'MT'),
+        mn: getRegionData(tomorrowProvinces, 'MN')
       },
-      { 
-        dateString: formatDate(dayAfter) + (baseOffset === 0 ? " (Ngày kia)" : ""), 
-        isToday: false, isTomorrow: false, isDayAfterTomorrow: baseOffset === 0, 
+      {
+        dateString: formatDate(dayAfter) + (baseOffset === 0 ? " (Ngày kia)" : ""),
+        isToday: false, isTomorrow: false, isDayAfterTomorrow: baseOffset === 0,
         offset: baseOffset + 2,
-        mb: getRegionData(dayAfterProvinces, 'MB'), 
-        mt: getRegionData(dayAfterProvinces, 'MT'), 
-        mn: getRegionData(dayAfterProvinces, 'MN') 
+        mb: getRegionData(dayAfterProvinces, 'MB'),
+        mt: getRegionData(dayAfterProvinces, 'MT'),
+        mn: getRegionData(dayAfterProvinces, 'MN')
       }
     ];
 
@@ -128,7 +128,7 @@ export const getDrawResults = async (req: any, res: Response) => {
       const Game = require('../models/Game').default;
       const matchingGames = await Game.find(gameQuery);
       const gameIds = matchingGames.map((g: any) => g._id);
-      
+
       drawQuery.game = { $in: gameIds };
     }
 
@@ -140,7 +140,7 @@ export const getDrawResults = async (req: any, res: Response) => {
       .skip(skip)
       .limit(limit)
       .lean();
-      
+
     // Attach province details if available
     const Province = require('../models/Province').default;
     const provinces = await Province.find().lean();
@@ -164,7 +164,7 @@ export const getDrawResults = async (req: any, res: Response) => {
 export const createDraw = async (req: any, res: Response) => {
   try {
     const { gameId, drawCode, openTime, closeTime, jackpotAmount, provinceId } = req.body;
-    
+
     const draw = await Draw.create({
       game: gameId,
       drawCode,
@@ -185,7 +185,7 @@ export const enterResults = async (req: any, res: Response) => {
   try {
     const { winningNumbers, provinceId } = req.body;
     const draw = await Draw.findById(req.params.id).populate('game');
-    
+
     if (!draw) {
       return res.status(404).json({ message: 'Không tìm thấy kỳ quay' });
     }
@@ -205,7 +205,7 @@ export const enterResults = async (req: any, res: Response) => {
       if (activeDraws === 0) {
         const openTime = new Date();
         const closeTime = new Date(openTime.getTime() + (game.drawDurationMinutes || 10) * 60000);
-        
+
         let nextDrawCode = '';
         const match = draw.drawCode.match(/#?(\d+)/);
         if (match) {

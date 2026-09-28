@@ -104,7 +104,8 @@ export const createOrder = async (req: any, res: Response) => {
       totalNumbersInBet += item.numbers.length;
     });
 
-    if (!gameType.startsWith('kienthiet_') && totalNumbersInBet > maxAllowed) {
+    const isVietlott = ['keno', 'bao_keno', 'power', 'mega', 'max_3d', 'max_3d_pro', 'max_3d_plus', 'bingo18'].includes(gameType);
+    if (!gameType.startsWith('kienthiet_') && !isVietlott && totalNumbersInBet > maxAllowed) {
       return res.status(400).json({ message: `Chỉ được cược tối đa 70% số lượng con (${maxAllowed} con) cho loại cược này` });
     }
 
