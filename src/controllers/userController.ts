@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { AuthRequest } from '../middleware/authMiddleware';
+import { EncryptionHelper } from '../utils/EncryptionHelper';
 import bcrypt from 'bcrypt';
 import User from '../models/User';
 import Order from '../models/Order';
@@ -14,21 +15,32 @@ export const getUsers = async (req: Request, res: Response) => {
 
     if (search && typeof search === 'string') {
       const searchRegex = new RegExp(search, 'i');
+      
+      // Attempt to encrypt the search term for exact match fields
+      const exactEncryptedPhone = EncryptionHelper.encryptDeterministic(search);
+      const exactEncrypted = EncryptionHelper.encrypt(search);
+
       pipeline.push({
         $match: {
           $or: [
             { name: searchRegex },
             { phone: searchRegex },
+            { phone: exactEncryptedPhone },
             { email: searchRegex },
+            { email: exactEncrypted },
             { cccdNumber: searchRegex },
+            { cccdNumber: exactEncrypted },
             { registerIp: searchRegex },
             { loginIp: searchRegex },
             { loginDevice: searchRegex },
             { 'banks.accountNumber': searchRegex },
+            { 'banks.accountNumber': exactEncrypted },
             { 'banks.bankName': searchRegex },
             { 'banks.accountName': searchRegex },
             { 'bankInfo.accountNumber': searchRegex },
+            { 'bankInfo.accountNumber': exactEncrypted },
             { 'wallets.address': searchRegex },
+            { 'wallets.address': exactEncrypted },
           ]
         }
       });
@@ -84,7 +96,29 @@ export const getUsers = async (req: Request, res: Response) => {
       },
       { $sort: { createdAt: -1 } }
     );
-    const users = await User.aggregate(pipeline);
+    const rawUsers = await User.aggregate(pipeline);
+    const users = rawUsers.map(u => {
+      if (u.phone) u.phone = EncryptionHelper.decryptDeterministic(u.phone);
+      if (u.email) u.email = EncryptionHelper.decrypt(u.email);
+      if (u.cccdNumber) u.cccdNumber = EncryptionHelper.decrypt(u.cccdNumber);
+      if (u.address) u.address = EncryptionHelper.decrypt(u.address);
+      if (u.banks) {
+        u.banks = u.banks.map((b: any) => {
+          if (b.accountNumber) b.accountNumber = EncryptionHelper.decrypt(b.accountNumber);
+          return b;
+        });
+      }
+      if (u.wallets) {
+        u.wallets = u.wallets.map((w: any) => {
+          if (w.address) w.address = EncryptionHelper.decrypt(w.address);
+          return w;
+        });
+      }
+      if (u.bankInfo?.accountNumber) {
+        u.bankInfo.accountNumber = EncryptionHelper.decrypt(u.bankInfo.accountNumber);
+      }
+      return u;
+    });
     res.json(users);
   } catch (error) {
     res.status(500).json({ message: 'Error fetching users' });

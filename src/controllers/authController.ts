@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import User from '../models/User';
 import UserLog from '../models/UserLog';
 import { sendEmail } from '../utils/sendEmail';
+import { EncryptionHelper } from '../utils/EncryptionHelper';
 
 const generateToken = (id: string) => {
   return jwt.sign({ id }, process.env.JWT_SECRET || 'supersecretjwtkey_vuaxoso_2026', {
@@ -18,7 +19,8 @@ export const registerUser = async (req: Request, res: Response) => {
     const ipString = Array.isArray(ipHeader) ? ipHeader[0] : ipHeader;
     const ip = ipString ? ipString.split(',')[0].trim() : (req.socket.remoteAddress || '');
 
-    const userExists = await User.findOne({ phone });
+    const encryptedPhone = EncryptionHelper.encryptDeterministic(phone);
+    const userExists = await User.findOne({ phone: encryptedPhone });
     if (userExists) {
       return res.status(400).json({ message: 'Số điện thoại đã tồn tại' });
     }
@@ -66,11 +68,33 @@ export const loginUser = async (req: Request, res: Response) => {
     const ip = ipString ? ipString.split(',')[0].trim() : (req.socket.remoteAddress || '');
     const device = req.headers['user-agent'] || 'Unknown';
 
-    const user = await User.findOne({ phone });
+    const encryptedPhone = EncryptionHelper.encryptDeterministic(phone);
+    const user = await User.findOne({ phone: encryptedPhone });
 
     if (user && (await bcrypt.compare(password, user.passwordHash))) {
       if (user.status === 'locked') {
         return res.status(401).json({ message: 'Tài khoản của bạn đã bị khoá. Vui lòng liên hệ CSKH.' });
+      }
+
+      // Check password expiration
+      const now = new Date();
+      let isExpired = false;
+      const lastChangedAt = user.lastPasswordChangedAt || user.createdAt || new Date('2020-01-01');
+
+      if (user.role === 'user') {
+        const daysDiff = (now.getTime() - lastChangedAt.getTime()) / (1000 * 3600 * 24);
+        if (daysDiff >= 60) isExpired = true;
+      } else if (user.role === 'staff') {
+        const daysDiff = (now.getTime() - lastChangedAt.getTime()) / (1000 * 3600 * 24);
+        if (daysDiff >= 30) isExpired = true;
+      }
+
+      if (isExpired) {
+        return res.status(403).json({ 
+          code: 'PASSWORD_EXPIRED', 
+          message: 'Mật khẩu của bạn đã hết hạn. Vui lòng đổi mật khẩu mới để tiếp tục.',
+          userId: user._id
+        });
       }
 
       // Update login info
@@ -313,6 +337,31 @@ export const changePassword = async (req: any, res: Response) => {
     await user.save();
 
     res.json({ message: 'Đổi mật khẩu thành công' });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const changeExpiredPassword = async (req: Request, res: Response) => {
+  try {
+    const { phone, oldPassword, newPassword } = req.body;
+    if (!phone || !oldPassword || !newPassword) {
+      return res.status(400).json({ message: 'Vui lòng cung cấp đủ thông tin' });
+    }
+
+    const encryptedPhone = EncryptionHelper.encryptDeterministic(phone);
+    const user = await User.findOne({ phone: encryptedPhone });
+    if (!user) return res.status(404).json({ message: 'Không tìm thấy người dùng' });
+
+    const isMatch = await bcrypt.compare(oldPassword, user.passwordHash);
+    if (!isMatch) return res.status(400).json({ message: 'Mật khẩu hiện tại không đúng' });
+
+    const salt = await bcrypt.genSalt(10);
+    user.passwordHash = await bcrypt.hash(newPassword, salt);
+    user.lastPasswordChangedAt = new Date();
+    await user.save();
+
+    res.json({ message: 'Đổi mật khẩu thành công. Vui lòng đăng nhập lại.' });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }

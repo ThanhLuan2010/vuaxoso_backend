@@ -11,6 +11,7 @@ export interface ITicket extends Document {
   symbols?: string[];
   imageUrl?: string;
   isSold: boolean;
+  isLocked?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -26,7 +27,8 @@ const TicketSchema: Schema = new Schema(
     drawDate: { type: String, required: true },
     symbols: [{ type: String }],
     imageUrl: { type: String },
-    isSold: { type: Boolean, default: false }
+    isSold: { type: Boolean, default: false },
+    isLocked: { type: Boolean, default: false }
   },
   {
     timestamps: true

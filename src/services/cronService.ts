@@ -3,6 +3,10 @@ import Game from '../models/Game';
 import Draw from '../models/Draw';
 import { CronExpressionParser } from 'cron-parser';
 import { processDrawResults } from './prizeService';
+import Order from '../models/Order';
+import Transaction from '../models/Transaction';
+import fs from 'fs';
+import path from 'path';
 
 export const startCronJobs = () => {
   console.log('CronService: Bắt đầu tiến trình tự động hóa kỳ quay (chạy mỗi phút).');
@@ -180,6 +184,67 @@ export const startCronJobs = () => {
       }
     } catch (error) {
       console.error('CronService: Lỗi xử lý cron', error);
+    }
+  });
+
+  // Cleanup Cron (chạy mỗi ngày vào lúc 2:00 AM)
+  cron.schedule('0 2 * * *', async () => {
+    try {
+      console.log('CronService: Bắt đầu tiến trình dọn dẹp dữ liệu (Data Retention).');
+      const now = new Date();
+      
+      // 1. Delete Orders older than 2 months (60 days)
+      const twoMonthsAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+      
+      // Optional: Xuất dữ liệu ra file trước khi xoá. 
+      // Do yêu cầu "Xuất và xoá", ta ghi thẳng ra file backup
+      const oldOrders = await Order.find({ createdAt: { $lt: twoMonthsAgo } });
+      if (oldOrders.length > 0) {
+        const backupDir = path.join(process.cwd(), 'uploads', 'backups');
+        if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
+        const backupFile = path.join(backupDir, `orders_backup_${Date.now()}.json`);
+        fs.writeFileSync(backupFile, JSON.stringify(oldOrders));
+        console.log(`CronService: Đã xuất ${oldOrders.length} đơn cược cũ ra file backup.`);
+        
+        const orderDelRes = await Order.deleteMany({ createdAt: { $lt: twoMonthsAgo } });
+        console.log(`CronService: Đã xoá ${orderDelRes.deletedCount} đơn cược cũ hơn 2 tháng.`);
+      }
+
+      // 2. Delete Transactions older than 1 year (365 days)
+      const oneYearAgo = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+      const txDelRes = await Transaction.deleteMany({ createdAt: { $lt: oneYearAgo } });
+      console.log(`CronService: Đã xoá ${txDelRes.deletedCount} giao dịch cũ hơn 1 năm.`);
+
+      // 3. Remove receipt images for deposits older than 1 month (30 days)
+      const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const oldReceipts = await Transaction.find({ 
+        createdAt: { $lt: oneMonthAgo }, 
+        type: 'deposit', 
+        receiptImage: { $ne: null } 
+      });
+      
+      let receiptCount = 0;
+      for (const tx of oldReceipts) {
+        if (tx.receiptImage) {
+          try {
+             let imgPath = tx.receiptImage;
+             if (imgPath.startsWith('/')) imgPath = imgPath.substring(1);
+             const filePath = path.join(process.cwd(), imgPath);
+             if (fs.existsSync(filePath)) {
+               fs.unlinkSync(filePath);
+             }
+             tx.receiptImage = undefined;
+             await tx.save();
+             receiptCount++;
+          } catch(err) {
+             console.error(`Lỗi xoá ảnh hoá đơn ${tx._id}:`, err);
+          }
+        }
+      }
+      console.log(`CronService: Đã xoá ${receiptCount} file ảnh sao kê nạp tiền cũ hơn 1 tháng.`);
+      
+    } catch (err) {
+      console.error('CronService: Lỗi tiến trình dọn dẹp', err);
     }
   });
 };
