@@ -319,6 +319,20 @@ export const getAllOrders = async (req: any, res: Response) => {
       query.createdAt = { $gte: startOfDay, $lte: endOfDay };
     }
 
+    if (req.query.search) {
+      const searchRegex = new RegExp(req.query.search as string, 'i');
+      
+      const users = await User.find({
+        $or: [{ name: searchRegex }, { phone: searchRegex }]
+      }).select('_id');
+      const userIds = users.map(u => u._id);
+
+      query.$or = [
+        { orderId: searchRegex },
+        { user: { $in: userIds } }
+      ];
+    }
+
     const orders = await Order.find(query).populate('user', 'name phone loginIp registerIp loginDevice').lean().sort({ createdAt: -1 });
 
     for (const order of orders) {
