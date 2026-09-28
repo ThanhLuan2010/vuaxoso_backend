@@ -20,7 +20,10 @@ export const registerUser = async (req: Request, res: Response) => {
     const ip = ipString ? ipString.split(',')[0].trim() : (req.socket.remoteAddress || '');
 
     const encryptedPhone = EncryptionHelper.encryptDeterministic(phone);
-    const userExists = await User.findOne({ phone: encryptedPhone });
+    let userExists = await User.findOne({ phone: encryptedPhone });
+    if (!userExists) {
+      userExists = await User.findOne({ phone }); // fallback for unmigrated data
+    }
     if (userExists) {
       return res.status(400).json({ message: 'Số điện thoại đã tồn tại' });
     }
@@ -69,7 +72,10 @@ export const loginUser = async (req: Request, res: Response) => {
     const device = req.headers['user-agent'] || 'Unknown';
 
     const encryptedPhone = EncryptionHelper.encryptDeterministic(phone);
-    const user = await User.findOne({ phone: encryptedPhone });
+    let user = await User.findOne({ phone: encryptedPhone });
+    if (!user) {
+      user = await User.findOne({ phone }); // fallback
+    }
 
     if (user && (await bcrypt.compare(password, user.passwordHash))) {
       if (user.status === 'locked') {
@@ -350,7 +356,10 @@ export const changeExpiredPassword = async (req: Request, res: Response) => {
     }
 
     const encryptedPhone = EncryptionHelper.encryptDeterministic(phone);
-    const user = await User.findOne({ phone: encryptedPhone });
+    let user = await User.findOne({ phone: encryptedPhone });
+    if (!user) {
+      user = await User.findOne({ phone });
+    }
     if (!user) return res.status(404).json({ message: 'Không tìm thấy người dùng' });
 
     const isMatch = await bcrypt.compare(oldPassword, user.passwordHash);
