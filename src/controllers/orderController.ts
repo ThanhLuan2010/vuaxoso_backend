@@ -104,7 +104,7 @@ export const createOrder = async (req: any, res: Response) => {
       totalNumbersInBet += item.numbers.length;
     });
 
-    if (totalNumbersInBet > maxAllowed) {
+    if (!gameType.startsWith('kienthiet_') && totalNumbersInBet > maxAllowed) {
       return res.status(400).json({ message: `Chỉ được cược tối đa 70% số lượng con (${maxAllowed} con) cho loại cược này` });
     }
 
