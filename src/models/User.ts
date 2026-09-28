@@ -49,8 +49,8 @@ const userSchema = new Schema<IUser>(
       type: String, 
       required: true, 
       unique: true,
-      get: (v: string) => EncryptionHelper.decryptDeterministic(v),
-      set: (v: string) => EncryptionHelper.encryptDeterministic(v)
+      get: (v: string) => EncryptionHelper.decryptDeterministic(v) as string,
+      set: (v: string) => EncryptionHelper.encryptDeterministic(v) as string
     },
     name: { type: String, required: true },
     passwordHash: { type: String, required: true },
@@ -59,22 +59,22 @@ const userSchema = new Schema<IUser>(
     role: { type: String, enum: ['user', 'admin', 'staff'], default: 'user' },
     email: { 
       type: String,
-      get: (v: string) => EncryptionHelper.decrypt(v),
-      set: (v: string) => EncryptionHelper.encrypt(v)
+      get: (v: string) => EncryptionHelper.decrypt(v) as string,
+      set: (v: string) => EncryptionHelper.encrypt(v) as string
     },
     emailVerified: { type: Boolean, default: false },
     emailOtp: { type: String },
     emailOtpExpires: { type: Date },
     cccdNumber: { 
       type: String,
-      get: (v: string) => EncryptionHelper.decrypt(v),
-      set: (v: string) => EncryptionHelper.encrypt(v)
+      get: (v: string) => EncryptionHelper.decrypt(v) as string,
+      set: (v: string) => EncryptionHelper.encrypt(v) as string
     },
     cccdImage: { type: String },
     address: { 
       type: String,
-      get: (v: string) => EncryptionHelper.decrypt(v),
-      set: (v: string) => EncryptionHelper.encrypt(v)
+      get: (v: string) => EncryptionHelper.decrypt(v) as string,
+      set: (v: string) => EncryptionHelper.encrypt(v) as string
     },
     isInfoUpdated: { type: Boolean, default: false },
     withdrawPasswordHash: { type: String },
@@ -85,8 +85,8 @@ const userSchema = new Schema<IUser>(
         accountNumber: { 
           type: String, 
           required: true,
-          get: (v: string) => EncryptionHelper.decrypt(v),
-          set: (v: string) => EncryptionHelper.encrypt(v)
+          get: (v: string) => EncryptionHelper.decrypt(v) as string,
+          set: (v: string) => EncryptionHelper.encrypt(v) as string
         },
         accountName: { type: String, required: true },
         qrCode: { type: String },
@@ -98,8 +98,8 @@ const userSchema = new Schema<IUser>(
         address: { 
           type: String, 
           required: true,
-          get: (v: string) => EncryptionHelper.decrypt(v),
-          set: (v: string) => EncryptionHelper.encrypt(v)
+          get: (v: string) => EncryptionHelper.decrypt(v) as string,
+          set: (v: string) => EncryptionHelper.encrypt(v) as string
         },
         qrCode: { type: String },
       }

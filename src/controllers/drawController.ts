@@ -9,8 +9,14 @@ export const getKienThietSchedule = async (req: any, res: Response) => {
     const daysOfWeek = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
     const today = new Date();
     
-    // Get current time in Vietnam (HH:mm format)
     const vnTimeStr = today.toLocaleTimeString('en-US', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false, hour: '2-digit', minute: '2-digit' });
+    const [hour, min] = vnTimeStr.split(':').map(Number);
+    
+    let baseOffset = 0;
+    if (hour > 18 || (hour === 18 && min >= 30)) {
+      baseOffset = 1;
+      today.setDate(today.getDate() + 1); // shift base day to tomorrow
+    }
 
     
     const formatDate = (date: Date) => {
@@ -48,22 +54,25 @@ export const getKienThietSchedule = async (req: any, res: Response) => {
 
     const schedule = [
       { 
-        dateString: formatDate(today) + " (Hôm nay)", 
-        isToday: true, isTomorrow: false, isDayAfterTomorrow: false, 
+        dateString: formatDate(today) + (baseOffset === 0 ? " (Hôm nay)" : " (Ngày mai)"), 
+        isToday: baseOffset === 0, isTomorrow: baseOffset === 1, isDayAfterTomorrow: baseOffset === 2, 
+        offset: baseOffset,
         mb: getRegionData(todayProvinces, 'MB'), 
         mt: getRegionData(todayProvinces, 'MT'), 
         mn: getRegionData(todayProvinces, 'MN') 
       },
       { 
-        dateString: formatDate(tomorrow) + " (Ngày mai)", 
-        isToday: false, isTomorrow: true, isDayAfterTomorrow: false, 
+        dateString: formatDate(tomorrow) + (baseOffset === 0 ? " (Ngày mai)" : " (Ngày kia)"), 
+        isToday: false, isTomorrow: baseOffset === 0, isDayAfterTomorrow: baseOffset === 1, 
+        offset: baseOffset + 1,
         mb: getRegionData(tomorrowProvinces, 'MB'), 
         mt: getRegionData(tomorrowProvinces, 'MT'), 
         mn: getRegionData(tomorrowProvinces, 'MN') 
       },
       { 
-        dateString: formatDate(dayAfter) + " (Ngày kia)", 
-        isToday: false, isTomorrow: false, isDayAfterTomorrow: true, 
+        dateString: formatDate(dayAfter) + (baseOffset === 0 ? " (Ngày kia)" : ""), 
+        isToday: false, isTomorrow: false, isDayAfterTomorrow: baseOffset === 0, 
+        offset: baseOffset + 2,
         mb: getRegionData(dayAfterProvinces, 'MB'), 
         mt: getRegionData(dayAfterProvinces, 'MT'), 
         mn: getRegionData(dayAfterProvinces, 'MN') 
