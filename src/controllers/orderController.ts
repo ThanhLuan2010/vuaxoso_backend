@@ -214,13 +214,20 @@ export const createOrder = async (req: any, res: Response) => {
       for (const [num, count] of Object.entries(numCounts)) {
         const ticket = await Ticket.findOne({ provinceId, number: num, isSold: false });
         if (ticket) {
+          const isSpecial = num.toLowerCase().startsWith('x');
           const currentMult = ticket.multiplier || 1;
-          const newMult = currentMult - count;
-          if (newMult <= 0) {
+          
+          if (isSpecial) {
             ticket.isSold = true;
             ticket.multiplier = 0;
           } else {
-            ticket.multiplier = newMult;
+            const newMult = currentMult - count;
+            if (newMult <= 0) {
+              ticket.isSold = true;
+              ticket.multiplier = 0;
+            } else {
+              ticket.multiplier = newMult;
+            }
           }
           await ticket.save();
         }
