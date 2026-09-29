@@ -5,6 +5,18 @@ import Draw from './models/Draw';
 
 dotenv.config();
 
+function getVNCutoffDate(date: Date, vnHour = 17, vnMinute = 20): Date {
+  const vnStr = date.toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
+  const [year, month, day] = vnStr.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day, vnHour - 7, vnMinute, 0, 0));
+}
+
+function getVNDayOfWeek(date: Date): number {
+  const dayStr = date.toLocaleDateString('en-US', { timeZone: 'Asia/Ho_Chi_Minh', weekday: 'short' });
+  const dayMap: Record<string, number> = { 'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6 };
+  return dayMap[dayStr] ?? date.getDay();
+}
+
 const seedPower655Draws = async () => {
   try {
     const mongoUri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/vuaxoso';
@@ -20,7 +32,7 @@ const seedPower655Draws = async () => {
         brandColor: '#D0021B',
         bgColor: '#FCE8EA',
         cronExpression: '0 18 * * 2,4,6',
-        drawDurationMinutes: 60,
+        drawDurationMinutes: 0,
         autoRandomResult: true
       });
       console.log('Đã khởi tạo game POWER 6/55');
@@ -37,16 +49,11 @@ const seedPower655Draws = async () => {
     let checkDate = new Date(now);
 
     while (drawDates.length < 10) {
-      const dayOfWeek = checkDate.getDay();
+      const dayOfWeek = getVNDayOfWeek(checkDate);
       if (drawDays.includes(dayOfWeek)) {
-        const cutoff = new Date(checkDate);
-        cutoff.setHours(17, 20, 0, 0);
+        const cutoff = getVNCutoffDate(checkDate, 17, 20);
 
-        if (checkDate.toDateString() === now.toDateString()) {
-          if (now < cutoff) {
-            drawDates.push(cutoff);
-          }
-        } else {
+        if (cutoff > now) {
           drawDates.push(cutoff);
         }
       }

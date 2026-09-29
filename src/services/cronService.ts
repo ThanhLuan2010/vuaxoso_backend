@@ -8,6 +8,18 @@ import Transaction from '../models/Transaction';
 import fs from 'fs';
 import path from 'path';
 
+function getVNCutoffDate(date: Date, vnHour = 17, vnMinute = 20): Date {
+  const vnStr = date.toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
+  const [year, month, day] = vnStr.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day, vnHour - 7, vnMinute, 0, 0));
+}
+
+function getVNDayOfWeek(date: Date): number {
+  const dayStr = date.toLocaleDateString('en-US', { timeZone: 'Asia/Ho_Chi_Minh', weekday: 'short' });
+  const dayMap: Record<string, number> = { 'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6 };
+  return dayMap[dayStr] ?? date.getDay();
+}
+
 export const ensureUpcomingDraws = async () => {
   try {
     const now = new Date();
@@ -38,10 +50,9 @@ export const ensureUpcomingDraws = async () => {
         const needed = 10 - openDraws.length;
         let created = 0;
         while (created < needed) {
-          const dayOfWeek = checkDate.getDay();
+          const dayOfWeek = getVNDayOfWeek(checkDate);
           if (drawDays.includes(dayOfWeek)) {
-            const cutoff = new Date(checkDate);
-            cutoff.setHours(17, 20, 0, 0);
+            const cutoff = getVNCutoffDate(checkDate, 17, 20);
 
             if (cutoff > now) {
               lastDrawNum += 1;
