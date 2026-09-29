@@ -164,6 +164,51 @@ export const getActiveDraws = async (req: any, res: Response) => {
             lastCloseTime = closeTime;
           }
         }
+      } else if (game.code === 'power_655') {
+        const openDraws = await Draw.find({
+          game: game._id,
+          status: 'open',
+          closeTime: { $gt: now }
+        }).sort({ closeTime: 1 });
+
+        if (openDraws.length < 10) {
+          const drawDays = [2, 4, 6];
+          let lastCloseTime = openDraws.length > 0 ? new Date(openDraws[openDraws.length - 1].closeTime) : now;
+          let lastDrawNum = 1323 + openDraws.length;
+          if (openDraws.length > 0) {
+            const match = openDraws[openDraws.length - 1].drawCode.match(/#?(\d+)/);
+            if (match) lastDrawNum = parseInt(match[1]);
+          }
+
+          let checkDate = new Date(lastCloseTime);
+          if (openDraws.length > 0) {
+            checkDate.setDate(checkDate.getDate() + 1);
+          }
+
+          const needed = 10 - openDraws.length;
+          let created = 0;
+          while (created < needed) {
+            const dayOfWeek = checkDate.getDay();
+            if (drawDays.includes(dayOfWeek)) {
+              const cutoff = new Date(checkDate);
+              cutoff.setHours(17, 20, 0, 0);
+
+              if (cutoff > now) {
+                lastDrawNum += 1;
+                const drawCode = `#${lastDrawNum}`;
+                await Draw.create({
+                  game: game._id,
+                  drawCode,
+                  openTime: new Date(cutoff.getTime() - 2 * 24 * 3600 * 1000),
+                  closeTime: cutoff,
+                  status: 'open'
+                });
+                created++;
+              }
+            }
+            checkDate.setDate(checkDate.getDate() + 1);
+          }
+        }
       }
     }
 

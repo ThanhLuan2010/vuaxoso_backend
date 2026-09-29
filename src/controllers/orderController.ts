@@ -10,6 +10,7 @@ import Ticket from '../models/Ticket';
 import User from '../models/User';
 import BalanceHistory from '../models/BalanceHistory';
 import { sendEmail } from '../utils/sendEmail';
+import { EncryptionHelper } from '../utils/EncryptionHelper';
 
 export const createOrder = async (req: any, res: Response) => {
   try {
@@ -146,26 +147,20 @@ export const createOrder = async (req: any, res: Response) => {
     // --- END CHECK BET LIMITS ---
 
 
-    // --- KENO LOGIC (Tạm thời bỏ giới hạn 60 số/ngày) ---
-    /*
+    // --- KENO LOGIC ---
     if (gameType === 'keno' || gameType === 'bao_keno') {
-      const todayStart = new Date(vnDate);
-      todayStart.setHours(0, 0, 0, 0);
-      const todayEnd = new Date(vnDate);
-      todayEnd.setHours(23, 59, 59, 999);
-
       const kenoOrders = await Order.find({
         user: req.user.id,
         gameType: { $in: ['keno', 'bao_keno'] },
-        createdAt: { $gte: todayStart, $lte: todayEnd },
+        drawId: drawId,
         status: { $ne: 'cancelled' }
       });
 
-      let totalKenoNumbersToday = 0;
+      let totalKenoNumbersThisDraw = 0;
       kenoOrders.forEach(o => {
         if (o.items) {
           o.items.forEach((item: any) => {
-            totalKenoNumbersToday += item.numbers.length;
+            totalKenoNumbersThisDraw += item.numbers.length;
           });
         }
       });
@@ -175,11 +170,10 @@ export const createOrder = async (req: any, res: Response) => {
         newKenoNumbers += item.numbers.length;
       });
 
-      if (totalKenoNumbersToday + newKenoNumbers > 60) {
-        return res.status(400).json({ message: `Giới hạn số Keno: Max 60 số/1 khách/1 ngày. Bạn đã mua ${totalKenoNumbersToday} số hôm nay.` });
+      if (totalKenoNumbersThisDraw + newKenoNumbers > 60) {
+        return res.status(400).json({ message: `Giới hạn số Keno: Max 60 số/1 khách/1 kỳ quay. Bạn đã mua ${totalKenoNumbersThisDraw} số trong kỳ quay này.` });
       }
     }
-    */
     // --- END KENO LOGIC ---
 
     let totalCost = 0;
@@ -337,10 +331,12 @@ export const getAllOrders = async (req: any, res: Response) => {
     }
 
     if (req.query.search) {
-      const searchRegex = new RegExp(req.query.search as string, 'i');
+      const searchStr = req.query.search as string;
+      const searchRegex = new RegExp(searchStr, 'i');
+      const exactEncryptedPhone = EncryptionHelper.encryptDeterministic(searchStr);
       
       const users = await User.find({
-        $or: [{ name: searchRegex }, { phone: searchRegex }]
+        $or: [{ name: searchRegex }, { phone: searchRegex }, { phone: exactEncryptedPhone }]
       }).select('_id');
       const userIds = users.map(u => u._id);
 
@@ -353,6 +349,9 @@ export const getAllOrders = async (req: any, res: Response) => {
     const orders = await Order.find(query).populate('user', 'name phone loginIp registerIp loginDevice').lean().sort({ createdAt: -1 });
 
     for (const order of orders) {
+      if (order.user && typeof (order.user as any).phone === 'string') {
+        (order.user as any).phone = EncryptionHelper.decryptDeterministic((order.user as any).phone);
+      }
       if (!order.ipAddress) {
         order.ipAddress = (order.user as any)?.loginIp || (order.user as any)?.registerIp || '';
       }

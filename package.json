@@ -6,7 +6,8 @@
     "dev": "nodemon -e ts,js,json src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "setup:fast-games": "ts-node src/scripts/setup-fast-games.ts"
+    "setup:fast-games": "ts-node src/scripts/setup-fast-games.ts",
+    "seed:power": "ts-node src/seedPower655.ts"
   },
   "keywords": [],
   "author": "",
