@@ -146,7 +146,8 @@ export const createOrder = async (req: any, res: Response) => {
     // --- END CHECK BET LIMITS ---
 
 
-    // --- KENO LOGIC ---
+    // --- KENO LOGIC (Tạm thời bỏ giới hạn 60 số/ngày) ---
+    /*
     if (gameType === 'keno' || gameType === 'bao_keno') {
       const todayStart = new Date(vnDate);
       todayStart.setHours(0, 0, 0, 0);
@@ -178,6 +179,7 @@ export const createOrder = async (req: any, res: Response) => {
         return res.status(400).json({ message: `Giới hạn số Keno: Max 60 số/1 khách/1 ngày. Bạn đã mua ${totalKenoNumbersToday} số hôm nay.` });
       }
     }
+    */
     // --- END KENO LOGIC ---
 
     let totalCost = 0;
