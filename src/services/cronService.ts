@@ -8,11 +8,112 @@ import Transaction from '../models/Transaction';
 import fs from 'fs';
 import path from 'path';
 
+export const ensureUpcomingDraws = async () => {
+  try {
+    const now = new Date();
+
+    // 1. Power 6/55: Đảm bảo luôn có sẵn 10 kỳ quay Thứ 3,5,7 (17h20)
+    const powerGame = await Game.findOne({ code: 'power_655' });
+    if (powerGame) {
+      const openDraws = await Draw.find({
+        game: powerGame._id,
+        status: 'open',
+        closeTime: { $gt: now }
+      }).sort({ closeTime: 1 });
+
+      if (openDraws.length < 10) {
+        const drawDays = [2, 4, 6];
+        let lastCloseTime = openDraws.length > 0 ? new Date(openDraws[openDraws.length - 1].closeTime) : now;
+        let lastDrawNum = 1323 + openDraws.length;
+        if (openDraws.length > 0) {
+          const match = openDraws[openDraws.length - 1].drawCode.match(/#?(\d+)/);
+          if (match) lastDrawNum = parseInt(match[1]);
+        }
+
+        let checkDate = new Date(lastCloseTime);
+        if (openDraws.length > 0) {
+          checkDate.setDate(checkDate.getDate() + 1);
+        }
+
+        const needed = 10 - openDraws.length;
+        let created = 0;
+        while (created < needed) {
+          const dayOfWeek = checkDate.getDay();
+          if (drawDays.includes(dayOfWeek)) {
+            const cutoff = new Date(checkDate);
+            cutoff.setHours(17, 20, 0, 0);
+
+            if (cutoff > now) {
+              lastDrawNum += 1;
+              const drawCode = `#${lastDrawNum}`;
+              await Draw.create({
+                game: powerGame._id,
+                drawCode,
+                openTime: new Date(cutoff.getTime() - 2 * 24 * 3600 * 1000),
+                closeTime: cutoff,
+                status: 'open'
+              });
+              created++;
+            }
+          }
+          checkDate.setDate(checkDate.getDate() + 1);
+        }
+      }
+    }
+
+    // 2. Keno: Đảm bảo luôn có sẵn 10 kỳ quay 8 phút
+    const kenoGames = await Game.find({ code: { $in: ['keno', 'bao_keno', 'clln_keno'] } });
+    for (const kg of kenoGames) {
+      const openDraws = await Draw.find({
+        game: kg._id,
+        status: 'open',
+        closeTime: { $gt: now }
+      }).sort({ closeTime: 1 });
+
+      if (openDraws.length < 10) {
+        let lastCloseTime = now;
+        let lastDrawNum = 1244;
+        if (openDraws.length > 0) {
+          const last = openDraws[openDraws.length - 1];
+          lastCloseTime = new Date(last.closeTime);
+          const match = last.drawCode.match(/#?(\d+)/);
+          if (match) lastDrawNum = parseInt(match[1]);
+        }
+
+        const durationMinutes = kg.drawDurationMinutes || 8;
+        const needed = 10 - openDraws.length;
+        for (let i = 0; i < needed; i++) {
+          const openTime = new Date(lastCloseTime.getTime());
+          const closeTime = new Date(openTime.getTime() + durationMinutes * 60 * 1000);
+          lastDrawNum += 1;
+          const drawCode = `#${lastDrawNum}`;
+
+          await Draw.create({
+            game: kg._id,
+            drawCode,
+            openTime,
+            closeTime,
+            status: 'open'
+          });
+
+          lastCloseTime = closeTime;
+        }
+      }
+    }
+  } catch (err) {
+    console.error('CronService: Lỗi ensureUpcomingDraws:', err);
+  }
+};
+
 export const startCronJobs = () => {
   console.log('CronService: Bắt đầu tiến trình tự động hóa kỳ quay (chạy mỗi phút).');
 
+  // Chạy ngay khi start server để tạo sẵn 10 kỳ quay
+  ensureUpcomingDraws();
+
   cron.schedule('* * * * *', async () => {
     try {
+      await ensureUpcomingDraws();
       const now = new Date();
       
       // 1. Đóng các kỳ quay đã hết giờ
