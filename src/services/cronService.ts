@@ -27,6 +27,13 @@ export const ensureUpcomingDraws = async () => {
     // 1. Power 6/55: Đảm bảo luôn có sẵn 10 kỳ quay Thứ 3,5,7 (17h20)
     const powerGame = await Game.findOne({ code: 'power_655' });
     if (powerGame) {
+      const todayCutoff = getVNCutoffDate(now, 17, 20);
+      await Draw.deleteMany({
+        game: powerGame._id,
+        status: 'open',
+        closeTime: { $lte: now >= todayCutoff ? todayCutoff : now }
+      });
+
       const openDraws = await Draw.find({
         game: powerGame._id,
         status: 'open',
