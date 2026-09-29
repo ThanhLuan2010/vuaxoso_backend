@@ -5,8 +5,8 @@ import Game from './models/Game';
 dotenv.config();
 
 const MOCK_GAMES: any[] = [
-  { code: 'keno', name: 'KENO', type: 'vietlott', brandColor: '#FF4D15', bgColor: '#FFF2EE', badge: '2p-1 kỳ', cronExpression: '*/2 * * * *', drawDurationMinutes: 2, autoRandomResult: true },
-  { code: 'bao_keno', name: 'BAO KENO', type: 'vietlott', brandColor: '#FF4D15', bgColor: '#FFF2EE', badge: '2p-1 kỳ', cronExpression: '*/2 * * * *', drawDurationMinutes: 2, autoRandomResult: true },
+  { code: 'keno', name: 'KENO', type: 'vietlott', brandColor: '#FF4D15', bgColor: '#FFF2EE', badge: '8p-1 kỳ', cronExpression: '*/8 * * * *', drawDurationMinutes: 8, autoRandomResult: true },
+  { code: 'bao_keno', name: 'BAO KENO', type: 'vietlott', brandColor: '#FF4D15', bgColor: '#FFF2EE', badge: '8p-1 kỳ', cronExpression: '*/8 * * * *', drawDurationMinutes: 8, autoRandomResult: true },
   { code: 'mua_chung', name: 'MUA CHUNG', type: 'vietlott', brandColor: '#0095FF', bgColor: '#E6F4FF' },
   { code: 'power_655', name: 'POWER 6/55', type: 'vietlott', brandColor: '#D0021B', bgColor: '#FCE8EA', cronExpression: '0 18 * * 2,4,6', drawDurationMinutes: 60, autoRandomResult: true },
   { code: 'mega_645', name: 'MEGA 6/45', type: 'vietlott', brandColor: '#004F9F', bgColor: '#E6EEF7', badge: 'Hôm nay xổ', cronExpression: '0 18 * * 3,5,0', drawDurationMinutes: 60, autoRandomResult: true },

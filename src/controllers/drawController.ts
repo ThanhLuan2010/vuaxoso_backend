@@ -88,7 +88,86 @@ export const getKienThietSchedule = async (req: any, res: Response) => {
 // Public: Lấy danh sách các kỳ quay đang mở
 export const getActiveDraws = async (req: any, res: Response) => {
   try {
-    const draws = await Draw.find({ status: 'open' }).populate('game');
+    const Game = require('../models/Game').default;
+    const games = await Game.find({ isActive: true });
+    const now = new Date();
+
+    for (const game of games) {
+      if (game.code === 'keno' || game.code === 'bao_keno' || game.code === 'clln_keno') {
+        const expiredDraws = await Draw.find({
+          game: game._id,
+          status: 'open',
+          closeTime: { $lte: now }
+        });
+
+        for (const d of expiredDraws) {
+          if (game.autoRandomResult) {
+            const winningNumbers: string[] = [];
+            const nums = new Set<string>();
+            while (nums.size < 20) {
+              const rnd = Math.floor(Math.random() * 80) + 1;
+              nums.add(rnd.toString().padStart(2, '0'));
+            }
+            d.winningNumbers = Array.from(nums);
+            d.status = 'completed';
+          } else {
+            d.status = 'closed';
+          }
+          await d.save();
+          if (game.autoRandomResult) {
+            try {
+              processDrawResults(d._id.toString());
+            } catch (err) {}
+          }
+        }
+
+        const durationMinutes = game.drawDurationMinutes || 8;
+        const openDraws = await Draw.find({
+          game: game._id,
+          status: 'open',
+          closeTime: { $gt: now }
+        }).sort({ closeTime: 1 });
+
+        if (openDraws.length < 10) {
+          let lastCloseTime = now;
+          let lastDrawNum = 1244;
+
+          if (openDraws.length > 0) {
+            const last = openDraws[openDraws.length - 1];
+            lastCloseTime = new Date(last.closeTime);
+            const match = last.drawCode.match(/#?(\d+)/);
+            if (match) lastDrawNum = parseInt(match[1]);
+          } else {
+            const lastCompleted = await Draw.findOne({ game: game._id }).sort({ closeTime: -1 });
+            if (lastCompleted) {
+              lastCloseTime = new Date(Math.max(now.getTime(), new Date(lastCompleted.closeTime).getTime()));
+              const match = lastCompleted.drawCode.match(/#?(\d+)/);
+              if (match) lastDrawNum = parseInt(match[1]);
+            }
+          }
+
+          const needed = 10 - openDraws.length;
+          for (let i = 0; i < needed; i++) {
+            const openTime = new Date(lastCloseTime.getTime());
+            const closeTime = new Date(openTime.getTime() + durationMinutes * 60 * 1000);
+            lastDrawNum += 1;
+            const drawCode = `#${lastDrawNum}`;
+
+            await Draw.create({
+              game: game._id,
+              drawCode,
+              openTime,
+              closeTime,
+              status: 'open'
+            });
+
+            lastCloseTime = closeTime;
+          }
+        }
+      }
+    }
+
+    const draws = await Draw.find({ status: 'open', closeTime: { $gt: now } }).populate('game').sort({ closeTime: 1 });
     res.json(draws);
   } catch (error: any) {
     res.status(500).json({ message: error.message });

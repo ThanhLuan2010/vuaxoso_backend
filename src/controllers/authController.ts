@@ -74,7 +74,15 @@ export const loginUser = async (req: Request, res: Response) => {
     const encryptedPhone = EncryptionHelper.encryptDeterministic(phone);
     let user = await User.findOne({ phone: encryptedPhone });
     if (!user) {
-      user = await User.findOne({ phone }); // fallback
+      // Fallback cho sđt cũ chưa mã hoá trong DB
+      const rawUser = await User.collection.findOne({ phone: phone });
+      if (rawUser) {
+        user = await User.findById(rawUser._id);
+        if (user) {
+          user.phone = phone; // tự động mã hoá khi lưu lại
+          await user.save();
+        }
+      }
     }
 
     if (user && (await bcrypt.compare(password, user.passwordHash))) {
@@ -96,8 +104,8 @@ export const loginUser = async (req: Request, res: Response) => {
       }
 
       if (isExpired) {
-        return res.status(403).json({ 
-          code: 'PASSWORD_EXPIRED', 
+        return res.status(403).json({
+          code: 'PASSWORD_EXPIRED',
           message: 'Mật khẩu của bạn đã hết hạn. Vui lòng đổi mật khẩu mới để tiếp tục.',
           userId: user._id
         });
@@ -164,7 +172,7 @@ export const updateProfile = async (req: any, res: Response) => {
     }
 
     const { name, address, email, cccdImage, cccdNumber, banks, wallets, withdrawPassword } = req.body;
-    
+
     // Check if user is trying to update basic profile info
     const isUpdatingProfileInfo = name !== undefined || address !== undefined || email !== undefined || cccdImage !== undefined || cccdNumber !== undefined;
 
@@ -186,7 +194,7 @@ export const updateProfile = async (req: any, res: Response) => {
       user.email = email;
       user.cccdImage = cccdImage;
       user.cccdNumber = cccdNumber;
-      
+
       // Lock after first successful save
       user.isInfoUpdated = true;
 
@@ -218,7 +226,7 @@ export const updateProfile = async (req: any, res: Response) => {
     }
 
     await user.save();
-    
+
     const userObj = user.toObject();
     const hasWithdrawPassword = !!userObj.withdrawPasswordHash;
     delete (userObj as any).withdrawPasswordHash;
@@ -245,7 +253,7 @@ export const sendEmailOtp = async (req: any, res: Response) => {
 
     // Generate 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    
+
     // Save to user with 10 minutes expiration
     user.emailOtp = otp;
     user.emailOtpExpires = new Date(Date.now() + 10 * 60 * 1000);
@@ -307,7 +315,7 @@ export const verifyEmailOtp = async (req: any, res: Response) => {
     user.emailOtp = undefined;
     user.emailOtpExpires = undefined;
     await user.save();
-    
+
     const userObj = user.toObject();
     const hasWithdrawPassword = !!userObj.withdrawPasswordHash;
     delete (userObj as any).withdrawPasswordHash;
@@ -339,7 +347,7 @@ export const changePassword = async (req: any, res: Response) => {
 
     const salt = await bcrypt.genSalt(10);
     user.passwordHash = await bcrypt.hash(newPassword, salt);
-    
+
     await user.save();
 
     res.json({ message: 'Đổi mật khẩu thành công' });

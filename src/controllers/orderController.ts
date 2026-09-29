@@ -56,28 +56,35 @@ export const createOrder = async (req: any, res: Response) => {
     } else {
       // For Vietlott / Dien Toan
       let draw;
+      const searchGameCode = gameType.includes('max_3d') ? 'max_3d' : ((gameType === 'bao_keno' || gameType === 'clln_keno') ? 'keno' : gameType);
+      const gameDoc = await Game.findOne({ code: searchGameCode });
+
       if (drawId === 'DUMMY_DRAW_ID') {
-        // Fetch the active draw for this gameType
-        const searchGameCode = gameType.includes('max_3d') ? 'max_3d' : gameType; // adjust if max3d variants use same draw
-        const gameDoc = await Game.findOne({ code: searchGameCode });
         if (!gameDoc) {
           return res.status(400).json({ message: 'Không tìm thấy loại hình vé số này' });
         }
-        draw = await Draw.findOne({ game: gameDoc._id, status: 'open' }).sort({ closeTime: 1 });
+        draw = await Draw.findOne({ game: gameDoc._id, status: 'open', closeTime: { $gt: now } }).sort({ closeTime: 1 });
       } else if (mongoose.Types.ObjectId.isValid(drawId)) {
         draw = await Draw.findById(drawId);
-      } else {
-        return res.status(400).json({ message: 'Mã kỳ quay không hợp lệ (ObjectId format error)' });
+      } else if (typeof drawId === 'string' && drawId.trim().length > 0) {
+        if (gameDoc) {
+          const cleanCode = drawId.startsWith('#') ? drawId : `#${drawId}`;
+          draw = await Draw.findOne({ game: gameDoc._id, drawCode: { $in: [drawId, cleanCode] } });
+        }
+      }
+
+      // If draw not found or specified draw is closed/expired, fallback to current active open draw for this game
+      if (!draw || draw.status !== 'open' || now > draw.closeTime) {
+        if (gameDoc) {
+          const fallbackDraw = await Draw.findOne({ game: gameDoc._id, status: 'open', closeTime: { $gt: now } }).sort({ closeTime: 1 });
+          if (fallbackDraw) {
+            draw = fallbackDraw;
+          }
+        }
       }
 
       if (!draw) {
-        return res.status(400).json({ message: 'Không tìm thấy kỳ quay' });
-      }
-
-      // If backend already changes status or if we manually check closeTime
-      if (draw.status !== 'open' || now > draw.closeTime) {
-        // Double check specific rules for Vietlott/Dientoan
-        return res.status(400).json({ message: 'Đã quá thời gian chốt vé tự động. Kỳ quay này đã đóng.' });
+        return res.status(400).json({ message: 'Không tìm thấy kỳ quay khả dụng' });
       }
 
       // Update drawId for order creation
