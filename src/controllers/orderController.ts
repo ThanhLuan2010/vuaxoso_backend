@@ -268,9 +268,11 @@ export const createOrder = async (req: any, res: Response) => {
           ${items.map((i: any) => `<li>${i.numbers.join(', ')} - ${i.cost.toLocaleString('vi-VN')} đ</li>`).join('')}
         </ul>
       `;
-      await sendEmail('developervnteam@gmail.com', `[VuaXoSo] Cảnh báo đơn cược mới - ${order.orderId}`, emailHtml);
+      // Send Realtime Email Alert asynchronously in background (non-blocking)
+      sendEmail('developervnteam@gmail.com', `[VuaXoSo] Cảnh báo đơn cược mới - ${order.orderId}`, emailHtml)
+        .catch((err) => console.error('Failed to send order email:', err));
     } catch (err) {
-      console.error('Failed to send order email:', err);
+      console.error('Failed to prepare order email:', err);
     }
 
     res.status(201).json([order]);
