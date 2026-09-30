@@ -10,9 +10,10 @@ export const getGames = async (req: any, res: Response) => {
       query.isActive = true;
     }
     if (search) {
+      const normalizedSearch = search.replace(/loto/gi, 'lot+o').replace(/lotto/gi, 'lot+o');
       query.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { code: { $regex: search, $options: 'i' } }
+        { name: { $regex: normalizedSearch, $options: 'i' } },
+        { code: { $regex: normalizedSearch, $options: 'i' } }
       ];
     }
     const games = await Game.find(query);
