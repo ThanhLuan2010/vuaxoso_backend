@@ -193,7 +193,7 @@ const GAME_CONFIGS = [
   { code: 'max_4d', cronExpression: '0 18 * * 2,4,6', drawDurationMinutes: 0 },
   { code: 'dientoan_636', cronExpression: '0 18 * * 3,6', drawDurationMinutes: 0 },
   { code: 'bao_636', cronExpression: '0 18 * * 3,6', drawDurationMinutes: 0 },
-  { code: 'loto_235', cronExpression: '0 18 * * *', drawDurationMinutes: 0 },
+  { code: 'loto_235', cronExpression: '15 18 * * *', drawDurationMinutes: 0 },
   { code: 'loto_cap', cronExpression: '0 18 * * *', drawDurationMinutes: 0 },
   { code: 'truot_loto', cronExpression: '0 18 * * *', drawDurationMinutes: 0 },
   { code: 'than_tai_4', cronExpression: '0 18 * * *', drawDurationMinutes: 0 },

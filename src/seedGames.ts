@@ -16,7 +16,7 @@ const MOCK_GAMES: any[] = [
   { code: 'lotto_535', name: 'LOTTO 5/35', type: 'vietlott', brandColor: '#8B008B', bgColor: '#F5E6F5', cronExpression: '0 13,21 * * *', drawDurationMinutes: 0 },
   { code: 'lotto_570', name: 'LOTTO 5/70', type: 'vietlott', brandColor: '#4B0082', bgColor: '#E6E6FA', cronExpression: '0 13,21 * * *', drawDurationMinutes: 0 },
   
-  { code: 'loto_235', name: 'LÔ TÔ 2, 3, 5 Số', type: 'dientoan', brandColor: '#FF9A00', bgColor: '#FFF8F0', cronExpression: '0 18 * * *', drawDurationMinutes: 60 },
+  { code: 'loto_235', name: 'LÔ TÔ 2,3,5', type: 'dientoan', brandColor: '#FF9A00', bgColor: '#FFF8F0', cronExpression: '15 18 * * *', drawDurationMinutes: 60 },
   { code: 'loto_cap', name: 'LÔ TÔ 2, 3, 4 Cặp', type: 'dientoan', brandColor: '#FF9A00', bgColor: '#FFF8F0', cronExpression: '0 18 * * *', drawDurationMinutes: 60 },
   { code: 'dientoan_636', name: 'ĐIỆN TOÁN 6x36', type: 'dientoan', brandColor: '#004F9F', bgColor: '#E6EEF7', badge: 'T4 & T7', cronExpression: '0 18 * * 3,6', drawDurationMinutes: 60 },
   { code: 'truot_loto', name: 'TRƯỢT LÔ TÔ (4-8-10 cặp)', type: 'dientoan', brandColor: '#FF4D15', bgColor: '#FFF2EE', cronExpression: '0 18 * * *', drawDurationMinutes: 60 },

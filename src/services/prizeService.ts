@@ -531,62 +531,51 @@ export const processDrawResults = async (drawId: string) => {
                   let singlePrize = 0;
                   if (game.code === 'loto_235' || game.code.includes('loto')) {
                      const numLen = ticketStr.length;
+                     const betAmount = board.cost || 10000;
                      
                      if (order.playType?.includes('Bao 2 số')) {
-                        // Bao 2 số: Trúng 2 số cuối của 27 giải
+                        // Bao 2 số: Trúng 2 số cuối của 27 giải (x2.7)
                         if (w.length >= 27 && numLen === 2) {
                            for (let i = 0; i < 27; i++) {
                               if (w[i]?.endsWith(ticketStr)) {
-                                 singlePrize += 900000;
+                                 singlePrize += betAmount * 2.7;
                               }
                            }
                         }
                      } else if (order.playType === 'Lô tô 2 số' && numLen === 2) {
-                        // Trúng 2 số cuối ĐB, 2 số đầu ĐB, 2 số cuối G1, 2 số đầu G1
+                        // Trúng 2 số: x90
                         if (w[0]?.length >= 5) {
-                           if (w[0].slice(-2) === ticketStr) singlePrize += 900000;
-                           if (w[0].slice(0, 2) === ticketStr) singlePrize += 900000;
+                           if (w[0].slice(-2) === ticketStr) singlePrize += betAmount * 90;
+                           if (w[0].slice(0, 2) === ticketStr) singlePrize += betAmount * 90;
                         }
                         if (w[1]?.length >= 5) {
-                           if (w[1].slice(-2) === ticketStr) singlePrize += 900000;
-                           if (w[1].slice(0, 2) === ticketStr) singlePrize += 900000;
+                           if (w[1].slice(-2) === ticketStr) singlePrize += betAmount * 90;
+                           if (w[1].slice(0, 2) === ticketStr) singlePrize += betAmount * 90;
                         }
                      } else if (order.playType === 'Lô tô 3 số' && numLen === 3) {
-                        // Trúng 3 số cuối ĐB, 3 số đầu ĐB, 3 số cuối G1, 3 số đầu G1
+                        // Trúng 3 số: x900
                         if (w[0]?.length >= 5) {
-                           if (w[0].slice(-3) === ticketStr) singlePrize += 9000000;
-                           if (w[0].slice(0, 3) === ticketStr) singlePrize += 9000000;
+                           if (w[0].slice(-3) === ticketStr) singlePrize += betAmount * 900;
+                           if (w[0].slice(0, 3) === ticketStr) singlePrize += betAmount * 900;
                         }
                         if (w[1]?.length >= 5) {
-                           if (w[1].slice(-3) === ticketStr) singlePrize += 9000000;
-                           if (w[1].slice(0, 3) === ticketStr) singlePrize += 9000000;
+                           if (w[1].slice(-3) === ticketStr) singlePrize += betAmount * 900;
+                           if (w[1].slice(0, 3) === ticketStr) singlePrize += betAmount * 900;
                         }
-                     } else if (order.playType === 'Lô tô 5 số' && numLen === 5 && w.length >= 27) {
-                        // Giải ĐB, Giải Nhất (w[0], w[1]) -> x8000 = 80,000,000
-                        if (w[0] === ticketStr) singlePrize += 80000000;
-                        if (w[1] === ticketStr) singlePrize += 80000000;
-                        // 2 lần Giải Nhì (w[2], w[3]) -> x1000 = 10,000,000
-                        if (w[2] === ticketStr) singlePrize += 10000000;
-                        if (w[3] === ticketStr) singlePrize += 10000000;
-                        // 6 lần Giải Ba (w[4]..w[9]) -> x400 = 4,000,000
-                        for (let i = 4; i <= 9; i++) {
-                           if (w[i] === ticketStr) singlePrize += 4000000;
+                     } else if (order.playType === 'Lô tô 4 số' && numLen === 4) {
+                        // Trúng 4 số: x9000
+                        if (w[0]?.length >= 5) {
+                           if (w[0].slice(-4) === ticketStr) singlePrize += betAmount * 9000;
+                           if (w[0].slice(0, 4) === ticketStr) singlePrize += betAmount * 9000;
                         }
-                        // 10 lần Giải Tư và Năm (w[10]..w[19]) -> x50 = 500,000 (so 4 chữ số cuối)
-                        const t4 = ticketStr.slice(-4);
-                        for (let i = 10; i <= 19; i++) {
-                           if (w[i]?.endsWith(t4)) singlePrize += 500000;
+                        if (w[1]?.length >= 5) {
+                           if (w[1].slice(-4) === ticketStr) singlePrize += betAmount * 9000;
+                           if (w[1].slice(0, 4) === ticketStr) singlePrize += betAmount * 9000;
                         }
-                        // 3 lần Giải Sáu (w[20]..w[22]) -> x60 = 600,000 (so 3 chữ số cuối)
-                        const t3 = ticketStr.slice(-3);
-                        for (let i = 20; i <= 22; i++) {
-                           if (w[i]?.endsWith(t3)) singlePrize += 600000;
-                        }
-                        // 4 lần Giải Bảy (w[23]..w[26]) -> x30 = 300,000 (so 2 chữ số cuối)
-                        const t2 = ticketStr.slice(-2);
-                        for (let i = 23; i <= 26; i++) {
-                           if (w[i]?.endsWith(t2)) singlePrize += 300000;
-                        }
+                     } else if (order.playType === 'Lô tô 5 số' && numLen === 5) {
+                        // Trúng 5 số: x90,000
+                        if (w[0] === ticketStr) singlePrize += betAmount * 90000;
+                        if (w[1] === ticketStr) singlePrize += betAmount * 90000;
                      }
                   } else {
                      if (w2.includes(ticketStr)) singlePrize = 10000;
@@ -597,7 +586,7 @@ export const processDrawResults = async (drawId: string) => {
 
              if (ticketPrize > 0) {
                isWinner = true;
-               prizeAmount += ticketPrize * (multiplier > 0 ? multiplier : 1);
+               prizeAmount += (game.code === 'loto_235' || game.code.includes('loto')) ? ticketPrize : ticketPrize * (multiplier > 0 ? multiplier : 1);
              }
            });
         }
