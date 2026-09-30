@@ -31,11 +31,10 @@ export const ensureUpcomingDraws = async () => {
 
     for (const game of scheduledGames) {
       const todayCutoff = getVNCutoffDate(now, 17, 20);
-      await Draw.deleteMany({
-        game: game._id,
-        status: 'open',
-        closeTime: { $lte: now >= todayCutoff ? todayCutoff : now }
-      });
+      await Draw.updateMany(
+        { game: game._id, status: 'open', closeTime: { $lte: now } },
+        { $set: { status: 'closed' } }
+      );
 
       const openDraws = await Draw.find({
         game: game._id,
