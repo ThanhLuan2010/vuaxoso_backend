@@ -44,7 +44,7 @@ export const ensureUpcomingDraws = async () => {
 
       if (openDraws.length < 10) {
         if (game.code === 'lotto_535') {
-          let lastDrawNum = 800;
+          let lastDrawNum = 1300;
           const allDraws = await Draw.find({ game: game._id }).sort({ closeTime: -1 });
           if (allDraws.length > 0) {
             const match = allDraws[0].drawCode.match(/#?(\d+)/);

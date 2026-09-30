@@ -53,7 +53,7 @@ const seedLotto535Draws = async () => {
       checkDay.setDate(checkDay.getDate() + 1);
     }
 
-    const baseNum = 801;
+    const baseNum = 1313;
     for (let i = 0; i < cutoffs.length; i++) {
       const closeTime = cutoffs[i];
       const openTime = i === 0 ? new Date(now.getTime() - 60000) : new Date(cutoffs[i - 1].getTime() + 1000);
