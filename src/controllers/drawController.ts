@@ -368,22 +368,19 @@ export const enterResults = async (req: any, res: Response) => {
     // Chạy logic dò vé để trả thưởng cho User (Phase 3)
     await processDrawResults(draw._id.toString());
 
-    // Auto-create next draw if no active draw exists
+    // Auto-create next draw if no active draw exists (Only for Keno / fast-interval games)
     const game = draw.game as any;
-    if (game && !game.code.startsWith('kienthiet_')) {
+    if (game && (game.code.includes('keno') || game.code === 'bingo18')) {
       const activeDraws = await Draw.countDocuments({ game: game._id, status: 'open' });
       if (activeDraws === 0) {
+        const durationMinutes = game.drawDurationMinutes || 8;
         const openTime = new Date();
-        const closeTime = new Date(openTime.getTime() + (game.drawDurationMinutes || 10) * 60000);
+        const closeTime = new Date(openTime.getTime() + durationMinutes * 60000);
 
         let nextDrawCode = '';
         const match = draw.drawCode.match(/#?(\d+)/);
         if (match) {
-          const step = game.drawDurationMinutes || 1;
-          // For Keno (#HHMM), if it crosses 60 minutes it might need special handling, but 
-          // a simple increment is usually what the user expects when testing manually.
-          // Let's just do a simple math increment.
-          const nextNum = parseInt(match[1]) + step;
+          const nextNum = parseInt(match[1]) + 1;
           nextDrawCode = `#${nextNum}`;
         } else {
           nextDrawCode = `#${Date.now()}`;
