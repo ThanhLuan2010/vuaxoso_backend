@@ -43,6 +43,44 @@ export const ensureUpcomingDraws = async () => {
       }).sort({ closeTime: 1 });
 
       if (openDraws.length < 10) {
+        if (game.code === 'lotto_535') {
+          let lastDrawNum = 800;
+          const allDraws = await Draw.find({ game: game._id }).sort({ closeTime: -1 });
+          if (allDraws.length > 0) {
+            const match = allDraws[0].drawCode.match(/#?(\d+)/);
+            if (match) lastDrawNum = parseInt(match[1]);
+          }
+
+          let checkDay = new Date(now);
+          const needed = 10 - openDraws.length;
+          let created = 0;
+          while (created < needed) {
+            const cutoffs = [
+              getVNCutoffDate(checkDay, 12, 0),
+              getVNCutoffDate(checkDay, 20, 0)
+            ];
+            for (const cutoff of cutoffs) {
+              if (cutoff > now) {
+                const exists = await Draw.findOne({ game: game._id, closeTime: cutoff });
+                if (!exists && created < needed) {
+                  lastDrawNum += 1;
+                  const drawCode = `#${String(lastDrawNum).padStart(4, '0')}`;
+                  await Draw.create({
+                    game: game._id,
+                    drawCode,
+                    openTime: new Date(cutoff.getTime() - 8 * 3600 * 1000),
+                    closeTime: cutoff,
+                    status: 'open'
+                  });
+                  created++;
+                }
+              }
+            }
+            checkDay.setDate(checkDay.getDate() + 1);
+          }
+          continue;
+        }
+
         let drawDays = [0, 1, 2, 3, 4, 5, 6];
         if (game.code === 'power_655' || game.code === 'max_3d_pro' || game.code === 'max_4d') {
           drawDays = [2, 4, 6];
