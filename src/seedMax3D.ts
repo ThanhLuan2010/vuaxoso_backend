@@ -25,7 +25,7 @@ const seedMax3DDraws = async () => {
 
     const max3dConfigs = [
       { code: 'max_3d', name: 'MAX 3D', days: [1, 3, 5], baseNum: 850 },
-      { code: 'max_3d_pro', name: 'MAX 3D PRO', days: [2, 4, 6], baseNum: 450 }
+      { code: 'max_3d_pro', name: 'MAX 3D PRO', days: [2, 4, 6], baseNum: 1539 }
     ];
 
     const now = new Date();
