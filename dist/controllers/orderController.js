@@ -13,6 +13,7 @@ const Province_1 = __importDefault(require("../models/Province"));
 const Ticket_1 = __importDefault(require("../models/Ticket"));
 const User_1 = __importDefault(require("../models/User"));
 const sendEmail_1 = require("../utils/sendEmail");
+const EncryptionHelper_1 = require("../utils/EncryptionHelper");
 const createOrder = async (req, res) => {
     try {
         let { gameType, drawId, items, playType, provinceName, drawDate } = req.body;
@@ -55,28 +56,34 @@ const createOrder = async (req, res) => {
         else {
             // For Vietlott / Dien Toan
             let draw;
+            const searchGameCode = gameType.includes('max_3d') ? 'max_3d' : ((gameType === 'bao_keno' || gameType === 'clln_keno') ? 'keno' : gameType);
+            const gameDoc = await Game_1.default.findOne({ code: searchGameCode });
             if (drawId === 'DUMMY_DRAW_ID') {
-                // Fetch the active draw for this gameType
-                const searchGameCode = gameType.includes('max_3d') ? 'max_3d' : gameType; // adjust if max3d variants use same draw
-                const gameDoc = await Game_1.default.findOne({ code: searchGameCode });
                 if (!gameDoc) {
                     return res.status(400).json({ message: 'Không tìm thấy loại hình vé số này' });
                 }
-                draw = await Draw_1.default.findOne({ game: gameDoc._id, status: 'open' }).sort({ closeTime: 1 });
+                draw = await Draw_1.default.findOne({ game: gameDoc._id, status: 'open', closeTime: { $gt: now } }).sort({ closeTime: 1 });
             }
             else if (mongoose_1.default.Types.ObjectId.isValid(drawId)) {
                 draw = await Draw_1.default.findById(drawId);
             }
-            else {
-                return res.status(400).json({ message: 'Mã kỳ quay không hợp lệ (ObjectId format error)' });
+            else if (typeof drawId === 'string' && drawId.trim().length > 0) {
+                if (gameDoc) {
+                    const cleanCode = drawId.startsWith('#') ? drawId : `#${drawId}`;
+                    draw = await Draw_1.default.findOne({ game: gameDoc._id, drawCode: { $in: [drawId, cleanCode] } });
+                }
+            }
+            // If draw not found or specified draw is closed/expired, fallback to current active open draw for this game
+            if (!draw || draw.status !== 'open' || now > draw.closeTime) {
+                if (gameDoc) {
+                    const fallbackDraw = await Draw_1.default.findOne({ game: gameDoc._id, status: 'open', closeTime: { $gt: now } }).sort({ closeTime: 1 });
+                    if (fallbackDraw) {
+                        draw = fallbackDraw;
+                    }
+                }
             }
             if (!draw) {
-                return res.status(400).json({ message: 'Không tìm thấy kỳ quay' });
-            }
-            // If backend already changes status or if we manually check closeTime
-            if (draw.status !== 'open' || now > draw.closeTime) {
-                // Double check specific rules for Vietlott/Dientoan
-                return res.status(400).json({ message: 'Đã quá thời gian chốt vé tự động. Kỳ quay này đã đóng.' });
+                return res.status(400).json({ message: 'Không tìm thấy kỳ quay khả dụng' });
             }
             // Update drawId for order creation
             drawId = draw._id;
@@ -104,9 +111,11 @@ const createOrder = async (req, res) => {
         items.forEach((item) => {
             totalNumbersInBet += item.numbers.length;
         });
-        if (totalNumbersInBet > maxAllowed) {
-            return res.status(400).json({ message: `Chỉ được cược tối đa 70% số lượng con (${maxAllowed} con) cho loại cược này` });
-        }
+        // Disabled 70% bet limit restriction to allow users to bet up to 100% of numbers
+        // const isVietlott = ['keno', 'bao_keno', 'power', 'mega', 'max_3d', 'max_3d_pro', 'max_3d_plus', 'bingo18', 'lotto_535', 'lotto_570', 'loto_235', 'loto_cap', 'dientoan_636', 'truot_loto', 'than_tai_4'].includes(gameType);
+        // if (!gameType.startsWith('kienthiet_') && !isVietlott && totalNumbersInBet > maxAllowed) {
+        //   return res.status(400).json({ message: `Chỉ được cược tối đa 70% số lượng con (${maxAllowed} con) cho loại cược này` });
+        // }
         // --- CHECK 100M VND EXPOSURE LIMIT ---
         const newExposure = {};
         items.forEach((item) => {
@@ -135,21 +144,17 @@ const createOrder = async (req, res) => {
         // --- END CHECK BET LIMITS ---
         // --- KENO LOGIC ---
         if (gameType === 'keno' || gameType === 'bao_keno') {
-            const todayStart = new Date(vnDate);
-            todayStart.setHours(0, 0, 0, 0);
-            const todayEnd = new Date(vnDate);
-            todayEnd.setHours(23, 59, 59, 999);
             const kenoOrders = await Order_1.default.find({
                 user: req.user.id,
                 gameType: { $in: ['keno', 'bao_keno'] },
-                createdAt: { $gte: todayStart, $lte: todayEnd },
+                drawId: drawId,
                 status: { $ne: 'cancelled' }
             });
-            let totalKenoNumbersToday = 0;
+            let totalKenoNumbersThisDraw = 0;
             kenoOrders.forEach(o => {
                 if (o.items) {
                     o.items.forEach((item) => {
-                        totalKenoNumbersToday += item.numbers.length;
+                        totalKenoNumbersThisDraw += item.numbers.length;
                     });
                 }
             });
@@ -157,8 +162,8 @@ const createOrder = async (req, res) => {
             items.forEach((item) => {
                 newKenoNumbers += item.numbers.length;
             });
-            if (totalKenoNumbersToday + newKenoNumbers > 60) {
-                return res.status(400).json({ message: `Giới hạn số Keno: Max 60 số/1 khách/1 ngày. Bạn đã mua ${totalKenoNumbersToday} số hôm nay.` });
+            if (totalKenoNumbersThisDraw + newKenoNumbers > 60) {
+                return res.status(400).json({ message: `Giới hạn số Keno: Max 60 số/1 khách/1 kỳ quay. Bạn đã mua ${totalKenoNumbersThisDraw} số trong kỳ quay này.` });
             }
         }
         // --- END KENO LOGIC ---
@@ -172,6 +177,9 @@ const createOrder = async (req, res) => {
         user.balance -= totalCost;
         const balanceAfter = user.balance;
         await user.save();
+        const rawIp = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || req.ip || '';
+        const ipAddress = Array.isArray(rawIp) ? rawIp[0] : (typeof rawIp === 'string' ? rawIp.split(',')[0].trim() : rawIp);
+        const loginDevice = req.headers['user-agent'] || '';
         const order = await Order_1.default.create({
             balanceBefore,
             balanceAfter,
@@ -184,12 +192,37 @@ const createOrder = async (req, res) => {
             drawDate,
             items: items,
             totalCost: totalCost,
-            status: 'pending'
+            status: 'pending',
+            ipAddress: ipAddress,
+            loginDevice: loginDevice
         });
         if (gameType.startsWith('kienthiet_')) {
             const provinceId = gameType.replace('kienthiet_', '');
             const nums = items.flatMap((item) => item.numbers.flatMap((n) => n.split(' ')));
-            await Ticket_1.default.updateMany({ provinceId, number: { $in: nums }, isSold: false }, { isSold: true });
+            const numCounts = {};
+            nums.forEach((n) => { numCounts[n] = (numCounts[n] || 0) + 1; });
+            for (const [num, count] of Object.entries(numCounts)) {
+                const ticket = await Ticket_1.default.findOne({ provinceId, number: num, isSold: false });
+                if (ticket) {
+                    const isSpecial = num.toLowerCase().startsWith('x');
+                    const currentMult = ticket.multiplier || 1;
+                    if (isSpecial) {
+                        ticket.isSold = true;
+                        ticket.multiplier = 0;
+                    }
+                    else {
+                        const newMult = currentMult - count;
+                        if (newMult <= 0) {
+                            ticket.isSold = true;
+                            ticket.multiplier = 0;
+                        }
+                        else {
+                            ticket.multiplier = newMult;
+                        }
+                    }
+                    await ticket.save();
+                }
+            }
         }
         await Notification_1.default.create({
             user: user._id,
@@ -218,10 +251,12 @@ const createOrder = async (req, res) => {
           ${items.map((i) => `<li>${i.numbers.join(', ')} - ${i.cost.toLocaleString('vi-VN')} đ</li>`).join('')}
         </ul>
       `;
-            await (0, sendEmail_1.sendEmail)('developervnteam@gmail.com', `[VuaXoSo] Cảnh báo đơn cược mới - ${order.orderId}`, emailHtml);
+            // Send Realtime Email Alert asynchronously in background (non-blocking)
+            (0, sendEmail_1.sendEmail)('developervnteam@gmail.com', `[VuaXoSo] Cảnh báo đơn cược mới - ${order.orderId}`, emailHtml)
+                .catch((err) => console.error('Failed to send order email:', err));
         }
         catch (err) {
-            console.error('Failed to send order email:', err);
+            console.error('Failed to prepare order email:', err);
         }
         res.status(201).json([order]);
     }
@@ -281,8 +316,30 @@ const getAllOrders = async (req, res) => {
             endOfDay.setHours(23, 59, 59, 999);
             query.createdAt = { $gte: startOfDay, $lte: endOfDay };
         }
-        const orders = await Order_1.default.find(query).populate('user', 'name phone').lean().sort({ createdAt: -1 });
+        if (req.query.search) {
+            const searchStr = req.query.search;
+            const searchRegex = new RegExp(searchStr, 'i');
+            const exactEncryptedPhone = EncryptionHelper_1.EncryptionHelper.encryptDeterministic(searchStr);
+            const users = await User_1.default.find({
+                $or: [{ name: searchRegex }, { phone: searchRegex }, { phone: exactEncryptedPhone }]
+            }).select('_id');
+            const userIds = users.map(u => u._id);
+            query.$or = [
+                { orderId: searchRegex },
+                { user: { $in: userIds } }
+            ];
+        }
+        const orders = await Order_1.default.find(query).populate('user', 'name phone loginIp registerIp loginDevice').lean().sort({ createdAt: -1 });
         for (const order of orders) {
+            if (order.user && typeof order.user.phone === 'string') {
+                order.user.phone = EncryptionHelper_1.EncryptionHelper.decryptDeterministic(order.user.phone);
+            }
+            if (!order.ipAddress) {
+                order.ipAddress = order.user?.loginIp || order.user?.registerIp || '';
+            }
+            if (!order.loginDevice) {
+                order.loginDevice = order.user?.loginDevice || '';
+            }
             if (order.drawId && mongoose_1.default.Types.ObjectId.isValid(order.drawId)) {
                 const draw = await Draw_1.default.findById(order.drawId).lean();
                 if (draw) {

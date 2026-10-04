@@ -8,7 +8,27 @@ const AdminLog_1 = __importDefault(require("../models/AdminLog"));
 const UserLog_1 = __importDefault(require("../models/UserLog"));
 const getAdminLogs = async (req, res) => {
     try {
-        const logs = await AdminLog_1.default.find().sort({ createdAt: -1 }).populate('targetUserId', 'name phone').limit(500);
+        const { search } = req.query;
+        let filter = {};
+        if (search) {
+            const User = require('../models/User').default;
+            const users = await User.find({
+                $or: [
+                    { name: { $regex: search, $options: 'i' } },
+                    { phone: { $regex: search, $options: 'i' } }
+                ]
+            }).select('_id');
+            const userIds = users.map((u) => u._id);
+            filter = {
+                $or: [
+                    { adminName: { $regex: search, $options: 'i' } },
+                    { action: { $regex: search, $options: 'i' } },
+                    { details: { $regex: search, $options: 'i' } },
+                    { targetUserId: { $in: userIds } }
+                ]
+            };
+        }
+        const logs = await AdminLog_1.default.find(filter).sort({ createdAt: -1 }).populate('targetUserId', 'name phone').limit(500);
         res.json(logs);
     }
     catch (error) {

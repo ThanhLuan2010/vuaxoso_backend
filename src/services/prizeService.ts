@@ -521,9 +521,10 @@ export const processDrawResults = async (drawId: string) => {
                // Player wins if ALL of their selected numbers appear in the results (w2)
                const allHit = board.numbers.every(num => w2.includes(num));
                if (allHit) {
-                 if (order.playType === 'Lô tô 2 cặp') ticketPrize = 150000; // x15
-                 if (order.playType === 'Lô tô 3 cặp') ticketPrize = 650000; // x65
-                 if (order.playType === 'Lô tô 4 cặp') ticketPrize = 1700000; // x170
+                 const betAmount = board.cost || 10000;
+                  if (order.playType === 'Lô tô 2 cặp') ticketPrize = betAmount * 15; // x15
+                  if (order.playType === 'Lô tô 3 cặp') ticketPrize = betAmount * 65; // x65
+                  if (order.playType === 'Lô tô 4 cặp') ticketPrize = betAmount * 170; // x170
                }
              } else {
                // loto_235 or standard games (evaluate per ticket)

@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getUserBalanceHistory = exports.resetWithdrawPassword = exports.resetPassword = exports.deleteUser = exports.getUserHistory = exports.updateUser = exports.getUsers = void 0;
+const EncryptionHelper_1 = require("../utils/EncryptionHelper");
 const bcrypt_1 = __importDefault(require("bcrypt"));
 const User_1 = __importDefault(require("../models/User"));
 const Order_1 = __importDefault(require("../models/Order"));
@@ -16,21 +17,30 @@ const getUsers = async (req, res) => {
         const pipeline = [];
         if (search && typeof search === 'string') {
             const searchRegex = new RegExp(search, 'i');
+            // Attempt to encrypt the search term for exact match fields
+            const exactEncryptedPhone = EncryptionHelper_1.EncryptionHelper.encryptDeterministic(search);
+            const exactEncrypted = EncryptionHelper_1.EncryptionHelper.encrypt(search);
             pipeline.push({
                 $match: {
                     $or: [
                         { name: searchRegex },
                         { phone: searchRegex },
+                        { phone: exactEncryptedPhone },
                         { email: searchRegex },
+                        { email: exactEncrypted },
                         { cccdNumber: searchRegex },
+                        { cccdNumber: exactEncrypted },
                         { registerIp: searchRegex },
                         { loginIp: searchRegex },
                         { loginDevice: searchRegex },
                         { 'banks.accountNumber': searchRegex },
+                        { 'banks.accountNumber': exactEncrypted },
                         { 'banks.bankName': searchRegex },
                         { 'banks.accountName': searchRegex },
                         { 'bankInfo.accountNumber': searchRegex },
+                        { 'bankInfo.accountNumber': exactEncrypted },
                         { 'wallets.address': searchRegex },
+                        { 'wallets.address': exactEncrypted },
                     ]
                 }
             });
@@ -80,7 +90,35 @@ const getUsers = async (req, res) => {
                 txs: 0
             }
         }, { $sort: { createdAt: -1 } });
-        const users = await User_1.default.aggregate(pipeline);
+        const rawUsers = await User_1.default.aggregate(pipeline);
+        const users = rawUsers.map(u => {
+            if (u.phone)
+                u.phone = EncryptionHelper_1.EncryptionHelper.decryptDeterministic(u.phone);
+            if (u.email)
+                u.email = EncryptionHelper_1.EncryptionHelper.decrypt(u.email);
+            if (u.cccdNumber)
+                u.cccdNumber = EncryptionHelper_1.EncryptionHelper.decrypt(u.cccdNumber);
+            if (u.address)
+                u.address = EncryptionHelper_1.EncryptionHelper.decrypt(u.address);
+            if (u.banks) {
+                u.banks = u.banks.map((b) => {
+                    if (b.accountNumber)
+                        b.accountNumber = EncryptionHelper_1.EncryptionHelper.decrypt(b.accountNumber);
+                    return b;
+                });
+            }
+            if (u.wallets) {
+                u.wallets = u.wallets.map((w) => {
+                    if (w.address)
+                        w.address = EncryptionHelper_1.EncryptionHelper.decrypt(w.address);
+                    return w;
+                });
+            }
+            if (u.bankInfo?.accountNumber) {
+                u.bankInfo.accountNumber = EncryptionHelper_1.EncryptionHelper.decrypt(u.bankInfo.accountNumber);
+            }
+            return u;
+        });
         res.json(users);
     }
     catch (error) {

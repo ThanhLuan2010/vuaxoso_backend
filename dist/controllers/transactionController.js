@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getMyBalanceHistory = exports.rejectTransaction = exports.approveTransaction = exports.getAllTransactions = exports.getHistory = exports.withdraw = exports.depositBinance = exports.deposit = void 0;
 const Transaction_1 = __importDefault(require("../models/Transaction"));
 const User_1 = __importDefault(require("../models/User"));
+const UserLog_1 = __importDefault(require("../models/UserLog"));
 const Notification_1 = __importDefault(require("../models/Notification"));
 const Setting_1 = __importDefault(require("../models/Setting"));
 const BalanceHistory_1 = __importDefault(require("../models/BalanceHistory"));
@@ -30,6 +31,7 @@ const deposit = async (req, res) => {
             destinationInfo,
             status: 'pending',
         });
+        await UserLog_1.default.create({ user: req.user.id, action: 'DEPOSIT_CREATED', details: `Tạo lệnh nạp ${Number(amount).toLocaleString('vi-VN')}đ` });
         res.status(201).json(transaction);
     }
     catch (error) {
@@ -95,6 +97,7 @@ const depositBinance = async (req, res) => {
             category: 'important',
             user: user._id,
         });
+        await UserLog_1.default.create({ user: req.user.id, action: 'DEPOSIT_CREATED', details: `Tạo lệnh nạp ${amountVnd.toLocaleString('vi-VN')}đ` });
         res.status(201).json(transaction);
     }
     catch (error) {
@@ -152,7 +155,7 @@ const withdraw = async (req, res) => {
         }
         const isMatch = await bcrypt_1.default.compare(withdrawPassword, user.withdrawPasswordHash);
         if (!isMatch) {
-            return res.status(401).json({ message: 'Mật khẩu rút tiền không đúng' });
+            return res.status(400).json({ message: 'Mật khẩu rút tiền không đúng' });
         }
         const balanceBefore = user.balance;
         user.balance -= amount;
@@ -167,7 +170,17 @@ const withdraw = async (req, res) => {
             balanceBefore,
             balanceAfter
         });
-        return res.status(201).json(transaction);
+        await BalanceHistory_1.default.create({
+            user: user._id,
+            type: 'withdraw',
+            amount: amount,
+            balanceBefore,
+            balanceAfter,
+            description: 'Yêu cầu rút tiền',
+            reference: transaction._id.toString()
+        });
+        await UserLog_1.default.create({ user: req.user.id, action: 'WITHDRAW_CREATED', details: `Tạo lệnh rút ${amount.toLocaleString('vi-VN')}đ` });
+        res.status(201).json(transaction);
     }
     catch (error) {
         res.status(500).json({ message: error.message });
@@ -189,7 +202,26 @@ exports.getHistory = getHistory;
 // @route   GET /api/wallet/admin/transactions
 const getAllTransactions = async (req, res) => {
     try {
-        const transactions = await Transaction_1.default.find().populate('user', 'name phone').sort({ createdAt: -1 });
+        const { search } = req.query;
+        let filter = {};
+        if (search) {
+            const User = require('../models/User').default;
+            const users = await User.find({
+                $or: [
+                    { name: { $regex: search, $options: 'i' } },
+                    { phone: { $regex: search, $options: 'i' } }
+                ]
+            }).select('_id');
+            const userIds = users.map((u) => u._id);
+            filter = {
+                $or: [
+                    { txId: { $regex: search, $options: 'i' } },
+                    { note: { $regex: search, $options: 'i' } },
+                    { user: { $in: userIds } }
+                ]
+            };
+        }
+        const transactions = await Transaction_1.default.find(filter).populate('user', 'name phone').sort({ createdAt: -1 });
         res.json(transactions);
     }
     catch (error) {
@@ -226,6 +258,15 @@ const approveTransaction = async (req, res) => {
             user.balance += amount;
             transaction.balanceAfter = user.balance;
             await user.save();
+            await BalanceHistory_1.default.create({
+                user: user._id,
+                type: 'deposit',
+                amount: amount,
+                balanceBefore: transaction.balanceBefore,
+                balanceAfter: transaction.balanceAfter,
+                description: 'Nạp tiền (Admin duyệt)',
+                reference: transaction._id.toString()
+            });
             await Notification_1.default.create({
                 title: 'Nạp tiền tài khoản dự thưởng',
                 body: `Bạn đã nạp thành công ${amount.toLocaleString('vi-VN')} đ vào tài khoản!`,

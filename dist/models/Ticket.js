@@ -39,10 +39,13 @@ const TicketSchema = new mongoose_1.Schema({
     price: { type: Number, default: 10000 },
     ticketType: { type: String, enum: ['normal', 'special'], default: 'normal' },
     multiplier: { type: Number },
+    originalMultiplier: { type: Number },
     provinceId: { type: String, required: true },
     drawDate: { type: String, required: true },
     symbols: [{ type: String }],
-    isSold: { type: Boolean, default: false }
+    imageUrl: { type: String },
+    isSold: { type: Boolean, default: false },
+    isLocked: { type: Boolean, default: false }
 }, {
     timestamps: true
 });

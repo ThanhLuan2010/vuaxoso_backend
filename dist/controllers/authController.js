@@ -3,12 +3,13 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.changePassword = exports.verifyEmailOtp = exports.sendEmailOtp = exports.updateProfile = exports.getProfile = exports.loginUser = exports.registerUser = void 0;
+exports.changeExpiredPassword = exports.changePassword = exports.verifyEmailOtp = exports.sendEmailOtp = exports.updateProfile = exports.getProfile = exports.loginUser = exports.registerUser = void 0;
 const bcrypt_1 = __importDefault(require("bcrypt"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const User_1 = __importDefault(require("../models/User"));
 const UserLog_1 = __importDefault(require("../models/UserLog"));
 const sendEmail_1 = require("../utils/sendEmail");
+const EncryptionHelper_1 = require("../utils/EncryptionHelper");
 const generateToken = (id) => {
     return jsonwebtoken_1.default.sign({ id }, process.env.JWT_SECRET || 'supersecretjwtkey_vuaxoso_2026', {
         expiresIn: '30d',
@@ -20,7 +21,11 @@ const registerUser = async (req, res) => {
         const ipHeader = req.headers['x-forwarded-for'];
         const ipString = Array.isArray(ipHeader) ? ipHeader[0] : ipHeader;
         const ip = ipString ? ipString.split(',')[0].trim() : (req.socket.remoteAddress || '');
-        const userExists = await User_1.default.findOne({ phone });
+        const encryptedPhone = EncryptionHelper_1.EncryptionHelper.encryptDeterministic(phone);
+        let userExists = await User_1.default.findOne({ phone: encryptedPhone });
+        if (!userExists) {
+            userExists = await User_1.default.findOne({ phone }); // fallback for unmigrated data
+        }
         if (userExists) {
             return res.status(400).json({ message: 'Số điện thoại đã tồn tại' });
         }
@@ -65,10 +70,43 @@ const loginUser = async (req, res) => {
         const ipString = Array.isArray(ipHeader) ? ipHeader[0] : ipHeader;
         const ip = ipString ? ipString.split(',')[0].trim() : (req.socket.remoteAddress || '');
         const device = req.headers['user-agent'] || 'Unknown';
-        const user = await User_1.default.findOne({ phone });
+        const encryptedPhone = EncryptionHelper_1.EncryptionHelper.encryptDeterministic(phone);
+        let user = await User_1.default.findOne({ phone: encryptedPhone });
+        if (!user) {
+            // Fallback cho sđt cũ chưa mã hoá trong DB
+            const rawUser = await User_1.default.collection.findOne({ phone: phone });
+            if (rawUser) {
+                user = await User_1.default.findById(rawUser._id);
+                if (user) {
+                    user.phone = phone; // tự động mã hoá khi lưu lại
+                    await user.save();
+                }
+            }
+        }
         if (user && (await bcrypt_1.default.compare(password, user.passwordHash))) {
             if (user.status === 'locked') {
                 return res.status(401).json({ message: 'Tài khoản của bạn đã bị khoá. Vui lòng liên hệ CSKH.' });
+            }
+            // Check password expiration
+            const now = new Date();
+            let isExpired = false;
+            const lastChangedAt = user.lastPasswordChangedAt || user.createdAt || new Date('2020-01-01');
+            if (user.role === 'user') {
+                const daysDiff = (now.getTime() - lastChangedAt.getTime()) / (1000 * 3600 * 24);
+                if (daysDiff >= 60)
+                    isExpired = true;
+            }
+            else if (user.role === 'staff') {
+                const daysDiff = (now.getTime() - lastChangedAt.getTime()) / (1000 * 3600 * 24);
+                if (daysDiff >= 30)
+                    isExpired = true;
+            }
+            if (isExpired) {
+                return res.status(403).json({
+                    code: 'PASSWORD_EXPIRED',
+                    message: 'Mật khẩu của bạn đã hết hạn. Vui lòng đổi mật khẩu mới để tiếp tục.',
+                    userId: user._id
+                });
             }
             // Update login info
             user.loginIp = ip;
@@ -291,3 +329,30 @@ const changePassword = async (req, res) => {
     }
 };
 exports.changePassword = changePassword;
+const changeExpiredPassword = async (req, res) => {
+    try {
+        const { phone, oldPassword, newPassword } = req.body;
+        if (!phone || !oldPassword || !newPassword) {
+            return res.status(400).json({ message: 'Vui lòng cung cấp đủ thông tin' });
+        }
+        const encryptedPhone = EncryptionHelper_1.EncryptionHelper.encryptDeterministic(phone);
+        let user = await User_1.default.findOne({ phone: encryptedPhone });
+        if (!user) {
+            user = await User_1.default.findOne({ phone });
+        }
+        if (!user)
+            return res.status(404).json({ message: 'Không tìm thấy người dùng' });
+        const isMatch = await bcrypt_1.default.compare(oldPassword, user.passwordHash);
+        if (!isMatch)
+            return res.status(400).json({ message: 'Mật khẩu hiện tại không đúng' });
+        const salt = await bcrypt_1.default.genSalt(10);
+        user.passwordHash = await bcrypt_1.default.hash(newPassword, salt);
+        user.lastPasswordChangedAt = new Date();
+        await user.save();
+        res.json({ message: 'Đổi mật khẩu thành công. Vui lòng đăng nhập lại.' });
+    }
+    catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+exports.changeExpiredPassword = changeExpiredPassword;

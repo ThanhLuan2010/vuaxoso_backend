@@ -8,7 +8,19 @@ const AdminLog_1 = __importDefault(require("../models/AdminLog"));
 const Game_1 = __importDefault(require("../models/Game"));
 const getGames = async (req, res) => {
     try {
-        const games = await Game_1.default.find({ isActive: true });
+        const { search, admin } = req.query;
+        const query = {};
+        if (admin !== 'true') {
+            query.isActive = true;
+        }
+        if (search) {
+            const normalizedSearch = search.replace(/loto/gi, 'lot+o').replace(/lotto/gi, 'lot+o');
+            query.$or = [
+                { name: { $regex: normalizedSearch, $options: 'i' } },
+                { code: { $regex: normalizedSearch, $options: 'i' } }
+            ];
+        }
+        const games = await Game_1.default.find(query);
         res.json(games);
     }
     catch (error) {

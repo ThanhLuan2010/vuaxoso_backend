@@ -3,16 +3,219 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.startCronJobs = void 0;
+exports.startCronJobs = exports.ensureGameConfigs = exports.ensureUpcomingDraws = void 0;
 const node_cron_1 = __importDefault(require("node-cron"));
 const Game_1 = __importDefault(require("../models/Game"));
 const Draw_1 = __importDefault(require("../models/Draw"));
 const cron_parser_1 = require("cron-parser");
 const prizeService_1 = require("./prizeService");
+const Order_1 = __importDefault(require("../models/Order"));
+const Transaction_1 = __importDefault(require("../models/Transaction"));
+const fs_1 = __importDefault(require("fs"));
+const path_1 = __importDefault(require("path"));
+function getVNCutoffDate(date, vnHour = 17, vnMinute = 20) {
+    const vnStr = date.toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
+    const [year, month, day] = vnStr.split('-').map(Number);
+    return new Date(Date.UTC(year, month - 1, day, vnHour - 7, vnMinute, 0, 0));
+}
+function getVNDayOfWeek(date) {
+    const dayStr = date.toLocaleDateString('en-US', { timeZone: 'Asia/Ho_Chi_Minh', weekday: 'short' });
+    const dayMap = { 'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6 };
+    return dayMap[dayStr] ?? date.getDay();
+}
+const ensureUpcomingDraws = async () => {
+    try {
+        const now = new Date();
+        // 1. Vietlott / Điện Toán: Đảm bảo luôn có sẵn 10 kỳ quay
+        const scheduledGames = await Game_1.default.find({
+            code: { $nin: ['keno', 'bao_keno', 'clln_keno', 'MB', 'MT', 'MN'] }
+        });
+        for (const game of scheduledGames) {
+            const todayCutoff = getVNCutoffDate(now, 17, 20);
+            await Draw_1.default.updateMany({ game: game._id, status: 'open', closeTime: { $lte: now } }, { $set: { status: 'closed' } });
+            const openDraws = await Draw_1.default.find({
+                game: game._id,
+                status: 'open',
+                closeTime: { $gt: now }
+            }).sort({ closeTime: 1 });
+            if (openDraws.length < 10) {
+                if (game.code === 'lotto_535') {
+                    let lastDrawNum = 1300;
+                    const allDraws = await Draw_1.default.find({ game: game._id }).sort({ closeTime: -1 });
+                    if (allDraws.length > 0) {
+                        const match = allDraws[0].drawCode.match(/#?(\d+)/);
+                        if (match)
+                            lastDrawNum = parseInt(match[1]);
+                    }
+                    let checkDay = new Date(now);
+                    const needed = 10 - openDraws.length;
+                    let created = 0;
+                    while (created < needed) {
+                        const cutoffs = [
+                            getVNCutoffDate(checkDay, 12, 0),
+                            getVNCutoffDate(checkDay, 20, 0)
+                        ];
+                        for (const cutoff of cutoffs) {
+                            if (cutoff > now) {
+                                const exists = await Draw_1.default.findOne({ game: game._id, closeTime: cutoff });
+                                if (!exists && created < needed) {
+                                    lastDrawNum += 1;
+                                    const drawCode = `#${String(lastDrawNum).padStart(4, '0')}`;
+                                    await Draw_1.default.create({
+                                        game: game._id,
+                                        drawCode,
+                                        openTime: new Date(cutoff.getTime() - 8 * 3600 * 1000),
+                                        closeTime: cutoff,
+                                        status: 'open'
+                                    });
+                                    created++;
+                                }
+                            }
+                        }
+                        checkDay.setDate(checkDay.getDate() + 1);
+                    }
+                    continue;
+                }
+                let drawDays = [0, 1, 2, 3, 4, 5, 6];
+                if (game.code === 'power_655' || game.code === 'max_3d_pro' || game.code === 'max_4d') {
+                    drawDays = [2, 4, 6];
+                }
+                else if (game.code === 'mega_645') {
+                    drawDays = [3, 5, 0];
+                }
+                else if (game.code === 'max_3d') {
+                    drawDays = [1, 3, 5];
+                }
+                else if (game.code === 'dientoan_636' || game.code === 'bao_636') {
+                    drawDays = [3, 6];
+                }
+                let lastDrawNum = 1000;
+                if (game.code === 'mega_645')
+                    lastDrawNum = 1250;
+                else if (game.code === 'power_655')
+                    lastDrawNum = 1323;
+                if (openDraws.length > 0) {
+                    const match = openDraws[openDraws.length - 1].drawCode.match(/#?(\d+)/);
+                    if (match)
+                        lastDrawNum = parseInt(match[1]);
+                }
+                else {
+                    const lastCompleted = await Draw_1.default.findOne({ game: game._id }).sort({ closeTime: -1 });
+                    if (lastCompleted) {
+                        const match = lastCompleted.drawCode.match(/#?(\d+)/);
+                        if (match)
+                            lastDrawNum = parseInt(match[1]);
+                    }
+                }
+                let checkDate = new Date(now);
+                if (openDraws.length > 0) {
+                    const lastOpenCloseTime = new Date(openDraws[openDraws.length - 1].closeTime);
+                    checkDate = new Date(lastOpenCloseTime.getTime() + 24 * 3600 * 1000);
+                }
+                const needed = 10 - openDraws.length;
+                let created = 0;
+                while (created < needed) {
+                    const dayOfWeek = getVNDayOfWeek(checkDate);
+                    if (drawDays.includes(dayOfWeek)) {
+                        const cutoff = getVNCutoffDate(checkDate, 17, 20);
+                        if (cutoff > now) {
+                            lastDrawNum += 1;
+                            const drawCode = `#${lastDrawNum}`;
+                            await Draw_1.default.create({
+                                game: game._id,
+                                drawCode,
+                                openTime: new Date(cutoff.getTime() - 2 * 24 * 3600 * 1000),
+                                closeTime: cutoff,
+                                status: 'open'
+                            });
+                            created++;
+                        }
+                    }
+                    checkDate.setDate(checkDate.getDate() + 1);
+                }
+            }
+        }
+        // 2. Keno: Đảm bảo luôn có sẵn 10 kỳ quay 8 phút
+        const kenoGames = await Game_1.default.find({ code: { $in: ['keno', 'bao_keno', 'clln_keno'] } });
+        for (const kg of kenoGames) {
+            const openDraws = await Draw_1.default.find({
+                game: kg._id,
+                status: 'open',
+                closeTime: { $gt: now }
+            }).sort({ closeTime: 1 });
+            if (openDraws.length < 10) {
+                let lastCloseTime = now;
+                let lastDrawNum = 1244;
+                if (openDraws.length > 0) {
+                    const last = openDraws[openDraws.length - 1];
+                    lastCloseTime = new Date(last.closeTime);
+                    const match = last.drawCode.match(/#?(\d+)/);
+                    if (match)
+                        lastDrawNum = parseInt(match[1]);
+                }
+                const durationMinutes = kg.drawDurationMinutes || 8;
+                const needed = 10 - openDraws.length;
+                for (let i = 0; i < needed; i++) {
+                    const openTime = new Date(lastCloseTime.getTime());
+                    const closeTime = new Date(openTime.getTime() + durationMinutes * 60 * 1000);
+                    lastDrawNum += 1;
+                    const drawCode = `#${lastDrawNum}`;
+                    await Draw_1.default.create({
+                        game: kg._id,
+                        drawCode,
+                        openTime,
+                        closeTime,
+                        status: 'open'
+                    });
+                    lastCloseTime = closeTime;
+                }
+            }
+        }
+    }
+    catch (err) {
+        console.error('CronService: Lỗi ensureUpcomingDraws:', err);
+    }
+};
+exports.ensureUpcomingDraws = ensureUpcomingDraws;
+const GAME_CONFIGS = [
+    { code: 'keno', cronExpression: '*/8 * * * *', drawDurationMinutes: 8 },
+    { code: 'bao_keno', cronExpression: '*/8 * * * *', drawDurationMinutes: 8 },
+    { code: 'clln_keno', cronExpression: '*/8 * * * *', drawDurationMinutes: 8 },
+    { code: 'power_655', cronExpression: '0 18 * * 2,4,6', drawDurationMinutes: 0 },
+    { code: 'mega_645', cronExpression: '0 18 * * 3,5,0', drawDurationMinutes: 0 },
+    { code: 'max_3d', cronExpression: '0 18 * * 1,3,5', drawDurationMinutes: 0 },
+    { code: 'max_3d_pro', cronExpression: '0 18 * * 2,4,6', drawDurationMinutes: 0 },
+    { code: 'max_4d', cronExpression: '0 18 * * 2,4,6', drawDurationMinutes: 0 },
+    { code: 'dientoan_636', cronExpression: '0 18 * * 3,6', drawDurationMinutes: 0 },
+    { code: 'bao_636', cronExpression: '0 18 * * 3,6', drawDurationMinutes: 0 },
+    { code: 'loto_235', cronExpression: '15 18 * * *', drawDurationMinutes: 0 },
+    { code: 'loto_cap', cronExpression: '0 18 * * *', drawDurationMinutes: 0 },
+    { code: 'truot_loto', cronExpression: '0 18 * * *', drawDurationMinutes: 0 },
+    { code: 'than_tai_4', cronExpression: '0 18 * * *', drawDurationMinutes: 0 },
+    { code: 'bingo18', cronExpression: '0 18 * * *', drawDurationMinutes: 0 },
+    { code: 'MB', cronExpression: '15 18 * * *', drawDurationMinutes: 0 },
+    { code: 'MT', cronExpression: '15 17 * * *', drawDurationMinutes: 0 },
+    { code: 'MN', cronExpression: '15 16 * * *', drawDurationMinutes: 0 }
+];
+const ensureGameConfigs = async () => {
+    try {
+        for (const cfg of GAME_CONFIGS) {
+            await Game_1.default.updateOne({ code: cfg.code }, { $set: { cronExpression: cfg.cronExpression, drawDurationMinutes: cfg.drawDurationMinutes } });
+        }
+    }
+    catch (err) {
+        console.error('CronService: Lỗi đồng bộ cấu hình game:', err);
+    }
+};
+exports.ensureGameConfigs = ensureGameConfigs;
 const startCronJobs = () => {
     console.log('CronService: Bắt đầu tiến trình tự động hóa kỳ quay (chạy mỗi phút).');
+    // Chạy ngay khi start server để tự động đồng bộ cấu hình và tạo sẵn 10 kỳ quay
+    (0, exports.ensureGameConfigs)();
+    (0, exports.ensureUpcomingDraws)();
     node_cron_1.default.schedule('* * * * *', async () => {
         try {
+            await (0, exports.ensureUpcomingDraws)();
             const now = new Date();
             // 1. Đóng các kỳ quay đã hết giờ
             const drawsToClose = await Draw_1.default.find({
@@ -185,6 +388,63 @@ const startCronJobs = () => {
         }
         catch (error) {
             console.error('CronService: Lỗi xử lý cron', error);
+        }
+    });
+    // Cleanup Cron (chạy mỗi ngày vào lúc 2:00 AM)
+    node_cron_1.default.schedule('0 2 * * *', async () => {
+        try {
+            console.log('CronService: Bắt đầu tiến trình dọn dẹp dữ liệu (Data Retention).');
+            const now = new Date();
+            // 1. Delete Orders older than 2 months (60 days)
+            const twoMonthsAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+            // Optional: Xuất dữ liệu ra file trước khi xoá. 
+            // Do yêu cầu "Xuất và xoá", ta ghi thẳng ra file backup
+            const oldOrders = await Order_1.default.find({ createdAt: { $lt: twoMonthsAgo } });
+            if (oldOrders.length > 0) {
+                const backupDir = path_1.default.join(process.cwd(), 'uploads', 'backups');
+                if (!fs_1.default.existsSync(backupDir))
+                    fs_1.default.mkdirSync(backupDir, { recursive: true });
+                const backupFile = path_1.default.join(backupDir, `orders_backup_${Date.now()}.json`);
+                fs_1.default.writeFileSync(backupFile, JSON.stringify(oldOrders));
+                console.log(`CronService: Đã xuất ${oldOrders.length} đơn cược cũ ra file backup.`);
+                const orderDelRes = await Order_1.default.deleteMany({ createdAt: { $lt: twoMonthsAgo } });
+                console.log(`CronService: Đã xoá ${orderDelRes.deletedCount} đơn cược cũ hơn 2 tháng.`);
+            }
+            // 2. Delete Transactions older than 1 year (365 days)
+            const oneYearAgo = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+            const txDelRes = await Transaction_1.default.deleteMany({ createdAt: { $lt: oneYearAgo } });
+            console.log(`CronService: Đã xoá ${txDelRes.deletedCount} giao dịch cũ hơn 1 năm.`);
+            // 3. Remove receipt images for deposits older than 1 month (30 days)
+            const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+            const oldReceipts = await Transaction_1.default.find({
+                createdAt: { $lt: oneMonthAgo },
+                type: 'deposit',
+                receiptImage: { $ne: null }
+            });
+            let receiptCount = 0;
+            for (const tx of oldReceipts) {
+                if (tx.receiptImage) {
+                    try {
+                        let imgPath = tx.receiptImage;
+                        if (imgPath.startsWith('/'))
+                            imgPath = imgPath.substring(1);
+                        const filePath = path_1.default.join(process.cwd(), imgPath);
+                        if (fs_1.default.existsSync(filePath)) {
+                            fs_1.default.unlinkSync(filePath);
+                        }
+                        tx.receiptImage = undefined;
+                        await tx.save();
+                        receiptCount++;
+                    }
+                    catch (err) {
+                        console.error(`Lỗi xoá ảnh hoá đơn ${tx._id}:`, err);
+                    }
+                }
+            }
+            console.log(`CronService: Đã xoá ${receiptCount} file ảnh sao kê nạp tiền cũ hơn 1 tháng.`);
+        }
+        catch (err) {
+            console.error('CronService: Lỗi tiến trình dọn dẹp', err);
         }
     });
 };

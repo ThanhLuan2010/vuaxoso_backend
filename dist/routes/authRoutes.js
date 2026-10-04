@@ -14,4 +14,5 @@ router.put('/profile', authMiddleware_1.protect, authController_1.updateProfile)
 router.post('/send-email-otp', authMiddleware_1.protect, authController_1.sendEmailOtp);
 router.post('/verify-email-otp', authMiddleware_1.protect, authController_1.verifyEmailOtp);
 router.post('/change-password', authMiddleware_1.protect, authController_1.changePassword);
+router.post('/change-expired-password', authController_1.changeExpiredPassword);
 exports.default = router;

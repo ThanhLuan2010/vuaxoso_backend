@@ -39,7 +39,8 @@ app.use((0, cors_1.default)({
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
-app.use(express_1.default.json());
+app.use(express_1.default.json({ limit: '10mb' }));
+app.use(express_1.default.urlencoded({ limit: '10mb', extended: true }));
 // Routes
 app.use('/api/auth', authRoutes_1.default);
 app.use('/api/wallet', transactionRoutes_1.default);

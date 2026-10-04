@@ -46,9 +46,11 @@ const orderSchema = new mongoose_1.Schema({
     items: [
         {
             id: { type: String },
+            playType: { type: String },
             numbers: [{ type: String, required: true }],
             specialNumbers: [{ type: String }],
-            cost: { type: Number, required: true }
+            cost: { type: Number, required: true },
+            baseCost: { type: Number }
         }
     ],
     totalCost: { type: Number, required: true },
@@ -62,5 +64,7 @@ const orderSchema = new mongoose_1.Schema({
     balanceAfter: { type: Number },
     ticketImageUrl: { type: String },
     winningNumbers: [{ type: String }],
+    ipAddress: { type: String },
+    loginDevice: { type: String },
 }, { timestamps: true });
 exports.default = mongoose_1.default.model('Order', orderSchema);

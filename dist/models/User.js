@@ -34,27 +34,51 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
+const EncryptionHelper_1 = require("../utils/EncryptionHelper");
 const userSchema = new mongoose_1.Schema({
-    phone: { type: String, required: true, unique: true },
+    phone: {
+        type: String,
+        required: true,
+        unique: true,
+        get: (v) => EncryptionHelper_1.EncryptionHelper.decryptDeterministic(v),
+        set: (v) => EncryptionHelper_1.EncryptionHelper.encryptDeterministic(v)
+    },
     name: { type: String, required: true },
     passwordHash: { type: String, required: true },
     balance: { type: Number, default: 0 },
     prizeBalance: { type: Number, default: 0 },
-    role: { type: String, enum: ['user', 'admin'], default: 'user' },
-    email: { type: String },
+    role: { type: String, enum: ['user', 'admin', 'staff'], default: 'user' },
+    email: {
+        type: String,
+        get: (v) => EncryptionHelper_1.EncryptionHelper.decrypt(v),
+        set: (v) => EncryptionHelper_1.EncryptionHelper.encrypt(v)
+    },
     emailVerified: { type: Boolean, default: false },
     emailOtp: { type: String },
     emailOtpExpires: { type: Date },
-    cccdNumber: { type: String },
+    cccdNumber: {
+        type: String,
+        get: (v) => EncryptionHelper_1.EncryptionHelper.decrypt(v),
+        set: (v) => EncryptionHelper_1.EncryptionHelper.encrypt(v)
+    },
     cccdImage: { type: String },
-    address: { type: String },
+    address: {
+        type: String,
+        get: (v) => EncryptionHelper_1.EncryptionHelper.decrypt(v),
+        set: (v) => EncryptionHelper_1.EncryptionHelper.encrypt(v)
+    },
     isInfoUpdated: { type: Boolean, default: false },
     withdrawPasswordHash: { type: String },
     note: { type: String },
     banks: [
         {
             bankName: { type: String, required: true },
-            accountNumber: { type: String, required: true },
+            accountNumber: {
+                type: String,
+                required: true,
+                get: (v) => EncryptionHelper_1.EncryptionHelper.decrypt(v),
+                set: (v) => EncryptionHelper_1.EncryptionHelper.encrypt(v)
+            },
             accountName: { type: String, required: true },
             qrCode: { type: String },
         }
@@ -62,7 +86,12 @@ const userSchema = new mongoose_1.Schema({
     wallets: [
         {
             network: { type: String, enum: ['BEP20', 'TRC20', 'Binance Pay'], required: true },
-            address: { type: String, required: true },
+            address: {
+                type: String,
+                required: true,
+                get: (v) => EncryptionHelper_1.EncryptionHelper.decrypt(v),
+                set: (v) => EncryptionHelper_1.EncryptionHelper.encrypt(v)
+            },
             qrCode: { type: String },
         }
     ],
@@ -77,5 +106,9 @@ const userSchema = new mongoose_1.Schema({
     status: { type: String, enum: ['active', 'locked', 'review'], default: 'active' },
     lastLoginAt: { type: Date },
     lastPasswordChangedAt: { type: Date, default: Date.now },
-}, { timestamps: true });
+}, {
+    timestamps: true,
+    toJSON: { getters: true },
+    toObject: { getters: true }
+});
 exports.default = mongoose_1.default.model('User', userSchema);

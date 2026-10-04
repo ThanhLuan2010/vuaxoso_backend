@@ -24,12 +24,14 @@ const getAllTickets = async (req, res) => {
     try {
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 20;
-        const { provinceId, drawDate } = req.query;
+        const { provinceId, drawDate, search } = req.query;
         const query = {};
         if (provinceId)
             query.provinceId = provinceId;
         if (drawDate)
             query.drawDate = drawDate;
+        if (search)
+            query.number = { $regex: search, $options: 'i' };
         const skip = (page - 1) * limit;
         const [tickets, total] = await Promise.all([
             Ticket_1.default.find(query).sort({ drawDate: -1, createdAt: -1 }).skip(skip).limit(limit),
@@ -44,9 +46,9 @@ const getAllTickets = async (req, res) => {
 exports.getAllTickets = getAllTickets;
 const createTicket = async (req, res) => {
     try {
-        const { number, price, ticketType, multiplier, provinceId, drawDate } = req.body;
+        const { number, price, ticketType, multiplier, provinceId, drawDate, imageUrl } = req.body;
         const ticket = await Ticket_1.default.create({
-            number, price, ticketType, multiplier, provinceId, drawDate
+            number, price, ticketType, multiplier, originalMultiplier: multiplier, provinceId, drawDate, imageUrl
         });
         await AdminLog_1.default.create({ adminId: req.user?._id, adminName: req.user?.name || 'Admin', action: 'Tạo Vé', details: `Tạo vé: ${ticket.number}` });
         res.status(201).json(ticket);
@@ -99,21 +101,27 @@ const bulkGenerateTickets = async (req, res) => {
         for (let i = 0; i < drawDate.length; i++)
             seed += drawDate.charCodeAt(i);
         for (let i = 0; i < 7; i++) {
+            const isMB = provinceId === 'MB';
+            const numberStr = isMB ? String((seed * (i + 13) * 997) % 100000).padStart(5, '0') : 'x' + String((seed * (i + 13) * 997) % 100000).padStart(5, '0');
             ticketsData.push({
-                number: provinceId === 'MB' ? String((seed * (i + 13) * 997) % 100000).padStart(5, '0') : 'x' + String((seed * (i + 13) * 997) % 100000).padStart(5, '0'),
+                number: numberStr,
                 price: 10000,
-                ticketType: 'normal',
+                ticketType: (isMB ? 'normal' : 'special'), // Non-MB: 'x' is special
                 multiplier: normalMultipliers[i % normalMultipliers.length],
+                originalMultiplier: normalMultipliers[i % normalMultipliers.length],
                 provinceId,
                 drawDate
             });
         }
         for (let i = 0; i < 3; i++) {
+            const isMB = provinceId === 'MB';
+            const numberStr = isMB ? String((seed * (i + 7) * 1337) % 100000).padStart(5, '0') : String((seed * (i + 7) * 1337) % 1000000).padStart(6, '0');
             ticketsData.push({
-                number: provinceId === 'MB' ? String((seed * (i + 7) * 1337) % 100000).padStart(5, '0') : String((seed * (i + 7) * 1337) % 1000000).padStart(6, '0'),
+                number: numberStr,
                 price: 10000,
-                ticketType: 'special',
+                ticketType: (isMB ? 'special' : 'normal'), // Non-MB: 6 digits is normal
                 multiplier: specialMultipliers[i % specialMultipliers.length],
+                originalMultiplier: specialMultipliers[i % specialMultipliers.length],
                 provinceId,
                 drawDate
             });
