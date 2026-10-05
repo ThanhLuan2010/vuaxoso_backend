@@ -96,7 +96,14 @@ const getActiveDraws = async (req, res) => {
         // Auto-close any expired non-Keno open draws
         await Draw_1.default.updateMany({ status: 'open', closeTime: { $lte: now } }, { $set: { status: 'closed' } });
         for (const game of games) {
-            if (game.code === 'keno' || game.code === 'bao_keno' || game.code === 'clln_keno') {
+            if (game.code === 'keno' || game.code === 'bao_keno' || game.code === 'clln_keno' || game.code === 'bingo18') {
+                if (game.code === 'bingo18') {
+                    await Draw_1.default.deleteMany({
+                        game: game._id,
+                        status: 'open',
+                        drawCode: { $regex: /^#10/ }
+                    });
+                }
                 const expiredDraws = await Draw_1.default.find({
                     game: game._id,
                     status: 'open',
@@ -106,8 +113,8 @@ const getActiveDraws = async (req, res) => {
                     if (game.autoRandomResult) {
                         const winningNumbers = [];
                         const nums = new Set();
-                        while (nums.size < 20) {
-                            const rnd = Math.floor(Math.random() * 80) + 1;
+                        while (nums.size < (game.code === 'bingo18' ? 3 : 20)) {
+                            const rnd = Math.floor(Math.random() * (game.code === 'bingo18' ? 6 : 80)) + 1;
                             nums.add(rnd.toString().padStart(2, '0'));
                         }
                         d.winningNumbers = Array.from(nums);
@@ -124,7 +131,7 @@ const getActiveDraws = async (req, res) => {
                         catch (err) { }
                     }
                 }
-                const durationMinutes = game.drawDurationMinutes || 8;
+                const durationMinutes = game.code === 'bingo18' ? 6 : (game.drawDurationMinutes || 8);
                 const openDraws = await Draw_1.default.find({
                     game: game._id,
                     status: 'open',
@@ -132,7 +139,7 @@ const getActiveDraws = async (req, res) => {
                 }).sort({ closeTime: 1 });
                 if (openDraws.length < 10) {
                     let lastCloseTime = now;
-                    let lastDrawNum = 1244;
+                    let lastDrawNum = 1;
                     if (openDraws.length > 0) {
                         const last = openDraws[openDraws.length - 1];
                         lastCloseTime = new Date(last.closeTime);
@@ -154,7 +161,7 @@ const getActiveDraws = async (req, res) => {
                         const openTime = new Date(lastCloseTime.getTime());
                         const closeTime = new Date(openTime.getTime() + durationMinutes * 60 * 1000);
                         lastDrawNum += 1;
-                        const drawCode = `#${lastDrawNum}`;
+                        const drawCode = `#${String(lastDrawNum).padStart(5, '0')}`;
                         await Draw_1.default.create({
                             game: game._id,
                             drawCode,
@@ -173,7 +180,7 @@ const getActiveDraws = async (req, res) => {
                 game.code === 'max_4d' ||
                 game.code === 'dientoan_636' ||
                 game.code === 'bao_636' ||
-                game.type === 'dientoan' ||
+                (game.type === 'dientoan' && game.code !== 'bingo18') ||
                 game.type === 'vietlott') {
                 const openDraws = await Draw_1.default.find({
                     game: game._id,
@@ -182,7 +189,7 @@ const getActiveDraws = async (req, res) => {
                 }).sort({ closeTime: 1 });
                 if (openDraws.length < 10) {
                     let drawDays = [0, 1, 2, 3, 4, 5, 6];
-                    if (game.code === 'power_655' || game.code === 'max_3d_pro' || game.code === 'max_4d') {
+                    if (game.code === 'power_655' || game.code === 'max_3d_pro') {
                         drawDays = [2, 4, 6];
                     }
                     else if (game.code === 'mega_645') {

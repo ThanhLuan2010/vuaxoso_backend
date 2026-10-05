@@ -77,7 +77,7 @@ const ensureUpcomingDraws = async () => {
                     continue;
                 }
                 let drawDays = [0, 1, 2, 3, 4, 5, 6];
-                if (game.code === 'power_655' || game.code === 'max_3d_pro' || game.code === 'max_4d') {
+                if (game.code === 'power_655' || game.code === 'max_3d_pro') {
                     drawDays = [2, 4, 6];
                 }
                 else if (game.code === 'mega_645') {
@@ -185,14 +185,14 @@ const GAME_CONFIGS = [
     { code: 'mega_645', cronExpression: '0 18 * * 3,5,0', drawDurationMinutes: 0 },
     { code: 'max_3d', cronExpression: '0 18 * * 1,3,5', drawDurationMinutes: 0 },
     { code: 'max_3d_pro', cronExpression: '0 18 * * 2,4,6', drawDurationMinutes: 0 },
-    { code: 'max_4d', cronExpression: '0 18 * * 2,4,6', drawDurationMinutes: 0 },
+    { code: 'max_4d', cronExpression: '0 18 * * *', drawDurationMinutes: 0 },
     { code: 'dientoan_636', cronExpression: '0 18 * * 3,6', drawDurationMinutes: 0 },
     { code: 'bao_636', cronExpression: '0 18 * * 3,6', drawDurationMinutes: 0 },
     { code: 'loto_235', cronExpression: '15 18 * * *', drawDurationMinutes: 0 },
     { code: 'loto_cap', cronExpression: '0 18 * * *', drawDurationMinutes: 0 },
     { code: 'truot_loto', cronExpression: '0 18 * * *', drawDurationMinutes: 0 },
-    { code: 'than_tai_4', cronExpression: '0 18 * * *', drawDurationMinutes: 0 },
-    { code: 'bingo18', cronExpression: '0 18 * * *', drawDurationMinutes: 0 },
+    { code: 'than_tai_4', cronExpression: '20 17 * * *', drawDurationMinutes: 0 },
+    { code: 'bingo18', cronExpression: '*/6 * * * *', drawDurationMinutes: 6 },
     { code: 'MB', cronExpression: '15 18 * * *', drawDurationMinutes: 0 },
     { code: 'MT', cronExpression: '15 17 * * *', drawDurationMinutes: 0 },
     { code: 'MN', cronExpression: '15 16 * * *', drawDurationMinutes: 0 }

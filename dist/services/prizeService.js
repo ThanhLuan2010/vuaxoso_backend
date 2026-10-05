@@ -873,23 +873,23 @@ const processDrawResults = async (drawId) => {
                                     const digit = Number(bet);
                                     const count = wInts.filter(n => n === digit).length;
                                     if (count === 1)
-                                        boardPrize += 100000;
+                                        boardPrize += 20000;
                                     if (count === 2)
-                                        boardPrize += 500000;
+                                        boardPrize += 30000;
                                     if (count === 3)
-                                        boardPrize += 1200000;
+                                        boardPrize += 40000;
                                 }
                                 else if (bet.length === 2 && bet[0] === bet[1]) {
                                     const digit = Number(bet[0]);
                                     const count = wInts.filter(n => n === digit).length;
                                     if (count >= 2)
-                                        boardPrize += 500000;
+                                        boardPrize += 30000;
                                 }
                                 else if (bet.length === 3 && bet[0] === bet[1] && bet[1] === bet[2]) {
                                     const digit = Number(bet[0]);
                                     const count = wInts.filter(n => n === digit).length;
                                     if (count === 3)
-                                        boardPrize += 1200000;
+                                        boardPrize += 40000;
                                 }
                             }
                             else if (order.playType === 'Cộng tổng') {
@@ -902,13 +902,13 @@ const processDrawResults = async (drawId) => {
                                     else if (wSum === 5 || wSum === 16)
                                         boardPrize += 200000;
                                     else if (wSum === 6 || wSum === 15)
-                                        boardPrize += 100000;
+                                        boardPrize += 120000;
                                     else if (wSum === 7 || wSum === 14)
-                                        boardPrize += 50000;
+                                        boardPrize += 80000;
                                     else if (wSum === 8 || wSum === 13)
-                                        boardPrize += 50000;
+                                        boardPrize += 60000;
                                     else if (wSum === 9 || wSum === 12)
-                                        boardPrize += 50000;
+                                        boardPrize += 60000;
                                     else if (wSum === 10 || wSum === 11)
                                         boardPrize += 50000;
                                 }
@@ -919,7 +919,7 @@ const processDrawResults = async (drawId) => {
                                 else if (bet === 'Xỉu' && wSum >= 3 && wSum <= 9)
                                     boardPrize += 20000;
                                 else if (bet === 'Hoà' && (wSum === 10 || wSum === 11))
-                                    boardPrize += 200000;
+                                    boardPrize += 30000;
                             }
                         });
                         if (boardPrize > 0) {
