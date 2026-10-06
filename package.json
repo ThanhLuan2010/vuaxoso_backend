@@ -7,6 +7,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "setup:fast-games": "ts-node src/scripts/setup-fast-games.ts",
+    "reset:bingo18": "ts-node src/scripts/resetBingo18Draws.ts",
     "seed:power": "ts-node src/seedPower655.ts"
   },
   "keywords": [],

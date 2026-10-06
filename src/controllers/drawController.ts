@@ -113,10 +113,12 @@ export const getActiveDraws = async (req: any, res: Response) => {
     for (const game of games) {
       if (game.code === 'keno' || game.code === 'bao_keno' || game.code === 'clln_keno' || game.code === 'bingo18') {
         if (game.code === 'bingo18') {
+          // Xóa tất cả các kỳ quay mở cũ bị gán nhầm lịch hàng ngày (closeTime > 3 tiếng tới)
+          const maxAllowedCloseTime = new Date(now.getTime() + 3 * 3600 * 1000);
           await Draw.deleteMany({
             game: game._id,
             status: 'open',
-            drawCode: { $regex: /^#10/ }
+            closeTime: { $gt: maxAllowedCloseTime }
           });
         }
         const expiredDraws = await Draw.find({
