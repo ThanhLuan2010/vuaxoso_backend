@@ -23,6 +23,7 @@ const GAME_CONFIGS = [
     { code: 'truot_loto', cronExpression: '0 18 * * *', drawDurationMinutes: 0 },
     { code: 'than_tai_4', cronExpression: '0 18 * * *', drawDurationMinutes: 0 },
     { code: 'bingo18', cronExpression: '*/6 * * * *', drawDurationMinutes: 6 },
+    { code: 'bao_loto_2', cronExpression: '15 18 * * *', drawDurationMinutes: 0 },
     { code: 'lotto_535', cronExpression: '0 13,21 * * *', drawDurationMinutes: 0 },
     { code: 'lotto_570', cronExpression: '0 13,21 * * *', drawDurationMinutes: 0 },
     { code: 'MB', cronExpression: '15 18 * * *', drawDurationMinutes: 0 },
