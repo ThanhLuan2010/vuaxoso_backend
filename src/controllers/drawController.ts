@@ -267,6 +267,57 @@ export const getActiveDraws = async (req: any, res: Response) => {
             checkDate.setDate(checkDate.getDate() + 1);
           }
         }
+      } else if (game.code === 'MB' || game.code === 'MT' || game.code === 'MN' || game.type === 'kienthiet') {
+        const openDraws = await Draw.find({
+          game: game._id,
+          status: 'open',
+          closeTime: { $gt: now }
+        }).sort({ closeTime: 1 });
+
+        if (openDraws.length < 10) {
+          const cutoffHour = game.code === 'MN' ? 15 : (game.code === 'MT' ? 16 : 17);
+          const cutoffMin = game.code === 'MN' ? 40 : (game.code === 'MT' ? 40 : 30);
+          let lastDrawNum = game.code === 'MN' ? 1100 : (game.code === 'MT' ? 1200 : 1350);
+
+          if (openDraws.length > 0) {
+            const match = openDraws[openDraws.length - 1].drawCode.match(/#?(\d+)/);
+            if (match) lastDrawNum = parseInt(match[1]);
+          } else {
+            const lastCompleted = await Draw.findOne({ game: game._id }).sort({ closeTime: -1 });
+            if (lastCompleted) {
+              const match = lastCompleted.drawCode.match(/#?(\d+)/);
+              if (match) lastDrawNum = parseInt(match[1]);
+            }
+          }
+
+          let checkDate = new Date(now);
+          if (openDraws.length > 0) {
+            const lastOpenCloseTime = new Date(openDraws[openDraws.length - 1].closeTime);
+            checkDate = new Date(lastOpenCloseTime.getTime() + 24 * 3600 * 1000);
+          }
+
+          const needed = 10 - openDraws.length;
+          let created = 0;
+          while (created < needed) {
+            const cutoff = getVNCutoffDate(checkDate, cutoffHour, cutoffMin);
+            if (cutoff > now) {
+              const exists = await Draw.findOne({ game: game._id, closeTime: cutoff });
+              if (!exists) {
+                lastDrawNum += 1;
+                const drawCode = `#${String(lastDrawNum).padStart(4, '0')}`;
+                await Draw.create({
+                  game: game._id,
+                  drawCode,
+                  openTime: new Date(cutoff.getTime() - 24 * 3600 * 1000),
+                  closeTime: cutoff,
+                  status: 'open'
+                });
+                created++;
+              }
+            }
+            checkDate.setDate(checkDate.getDate() + 1);
+          }
+        }
       }
     }
 

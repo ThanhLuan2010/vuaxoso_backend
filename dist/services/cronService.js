@@ -185,6 +185,65 @@ const ensureUpcomingDraws = async () => {
                 }
             }
         }
+        // 3. Xổ số Kiến Thiết (Miền Nam, Miền Trung, Miền Bắc): Luôn đảm bảo có sẵn 10 kỳ quay mở
+        const kienThietConfigs = [
+            { code: 'MN', cutoffHour: 15, cutoffMin: 40, startDrawNum: 1100 },
+            { code: 'MT', cutoffHour: 16, cutoffMin: 40, startDrawNum: 1200 },
+            { code: 'MB', cutoffHour: 17, cutoffMin: 30, startDrawNum: 1350 }
+        ];
+        for (const kt of kienThietConfigs) {
+            const ktGame = await Game_1.default.findOne({ code: kt.code });
+            if (!ktGame)
+                continue;
+            await Draw_1.default.updateMany({ game: ktGame._id, status: 'open', closeTime: { $lte: now } }, { $set: { status: 'closed' } });
+            const openDraws = await Draw_1.default.find({
+                game: ktGame._id,
+                status: 'open',
+                closeTime: { $gt: now }
+            }).sort({ closeTime: 1 });
+            if (openDraws.length < 10) {
+                let lastDrawNum = kt.startDrawNum;
+                if (openDraws.length > 0) {
+                    const match = openDraws[openDraws.length - 1].drawCode.match(/#?(\d+)/);
+                    if (match)
+                        lastDrawNum = parseInt(match[1]);
+                }
+                else {
+                    const lastCompleted = await Draw_1.default.findOne({ game: ktGame._id }).sort({ closeTime: -1 });
+                    if (lastCompleted) {
+                        const match = lastCompleted.drawCode.match(/#?(\d+)/);
+                        if (match)
+                            lastDrawNum = parseInt(match[1]);
+                    }
+                }
+                let checkDay = new Date(now);
+                if (openDraws.length > 0) {
+                    const lastClose = new Date(openDraws[openDraws.length - 1].closeTime);
+                    checkDay = new Date(lastClose.getTime() + 24 * 3600 * 1000);
+                }
+                const needed = 10 - openDraws.length;
+                let created = 0;
+                while (created < needed) {
+                    const cutoff = getVNCutoffDate(checkDay, kt.cutoffHour, kt.cutoffMin);
+                    if (cutoff > now) {
+                        const exists = await Draw_1.default.findOne({ game: ktGame._id, closeTime: cutoff });
+                        if (!exists) {
+                            lastDrawNum += 1;
+                            const drawCode = `#${String(lastDrawNum).padStart(4, '0')}`;
+                            await Draw_1.default.create({
+                                game: ktGame._id,
+                                drawCode,
+                                openTime: new Date(cutoff.getTime() - 24 * 3600 * 1000),
+                                closeTime: cutoff,
+                                status: 'open'
+                            });
+                            created++;
+                        }
+                    }
+                    checkDay.setDate(checkDay.getDate() + 1);
+                }
+            }
+        }
     }
     catch (err) {
         console.error('CronService: Lỗi ensureUpcomingDraws:', err);
