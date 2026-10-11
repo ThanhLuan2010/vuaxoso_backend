@@ -95,6 +95,9 @@ export const ensureUpcomingDraws = async () => {
         let lastDrawNum = 1000;
         if (game.code === 'mega_645') lastDrawNum = 1250;
         else if (game.code === 'power_655') lastDrawNum = 1323;
+        else if (game.code === 'max_4d') lastDrawNum = 750;
+        else if (game.code === 'max_3d') lastDrawNum = 850;
+        else if (game.code === 'max_3d_pro') lastDrawNum = 1539;
 
         if (openDraws.length > 0) {
           const match = openDraws[openDraws.length - 1].drawCode.match(/#?(\d+)/);
@@ -122,11 +125,11 @@ export const ensureUpcomingDraws = async () => {
 
             if (cutoff > now) {
               lastDrawNum += 1;
-              const drawCode = `#${lastDrawNum}`;
+              const drawCode = `#${String(lastDrawNum).padStart(4, "0")}`;
               await Draw.create({
                 game: game._id,
                 drawCode,
-                openTime: new Date(cutoff.getTime() - 2 * 24 * 3600 * 1000),
+                openTime: new Date(cutoff.getTime() - 24 * 3600 * 1000),
                 closeTime: cutoff,
                 status: 'open'
               });
@@ -237,14 +240,30 @@ export const startCronJobs = () => {
       await ensureUpcomingDraws();
       const now = new Date();
       
-      // 1. Đóng các kỳ quay đã hết giờ
+      // 1. Đóng các kỳ quay đã hết giờ & xổ số các kỳ quay đến giờ quay
       const drawsToClose = await Draw.find({ 
-        status: 'open', 
+        status: { $in: ['open', 'closed'] }, 
         closeTime: { $lte: now } 
       }).populate('game');
 
       for (const draw of drawsToClose) {
         const game = draw.game as any;
+        if (!game) continue;
+
+        const vnHourStr = now.toLocaleTimeString('en-US', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false, hour: '2-digit' });
+        const vnHour = parseInt(vnHourStr);
+        const isScheduledGame = !game.code.includes('keno') && game.code !== 'bingo18';
+
+        // Đối với các game Vietlott / Điện toán xổ lúc 18h00 (như Max 4D, Max 3D...):
+        // Chốt vé lúc 17h20 (chuyển sang 'closed'), chờ đến 18h00 mới xổ số
+        if (isScheduledGame && vnHour < 18) {
+          if (draw.status !== 'closed') {
+            draw.status = 'closed';
+            await draw.save();
+            console.log(`CronService: Đã chốt nhận vé kỳ quay ${draw.drawCode} của game ${game.name} (Chờ xổ số lúc 18h00)`);
+          }
+          continue;
+        }
         
         if (game.autoRandomResult) {
           if (game.riggedResult) {
@@ -276,8 +295,9 @@ export const startCronJobs = () => {
             } else if (game.code === 'max_3d' || game.code === 'max_3d_pro' || game.code === 'max_4d') {
               const winningNumbers: string[] = [];
               const len = game.code === 'max_4d' ? 4 : 3;
-              // Max 3D / 4D typically has multiple prizes. Let's mock a few prizes.
-              for (let i = 0; i < 4; i++) {
+              // Max 4D có 6 giải (1 Nhất, 2 Nhì, 3 Ba); Max 3D có 4 giải
+              const count = game.code === 'max_4d' ? 6 : 4;
+              for (let i = 0; i < count; i++) {
                 let numStr = '';
                 for (let d = 0; d < len; d++) {
                   numStr += Math.floor(Math.random() * 10).toString();

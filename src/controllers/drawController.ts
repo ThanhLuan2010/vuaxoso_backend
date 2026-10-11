@@ -223,6 +223,9 @@ export const getActiveDraws = async (req: any, res: Response) => {
           let lastDrawNum = 1000;
           if (game.code === 'mega_645') lastDrawNum = 1250;
           else if (game.code === 'power_655') lastDrawNum = 1323;
+          else if (game.code === 'max_4d') lastDrawNum = 750;
+          else if (game.code === 'max_3d') lastDrawNum = 850;
+          else if (game.code === 'max_3d_pro') lastDrawNum = 1539;
 
           if (openDraws.length > 0) {
             const match = openDraws[openDraws.length - 1].drawCode.match(/#?(\d+)/);
@@ -250,7 +253,7 @@ export const getActiveDraws = async (req: any, res: Response) => {
 
               if (cutoff > now) {
                 lastDrawNum += 1;
-                const drawCode = `#${lastDrawNum}`;
+                const drawCode = `#${String(lastDrawNum).padStart(4, "0")}`;
                 await Draw.create({
                   game: game._id,
                   drawCode,
