@@ -221,27 +221,90 @@ export const getHistory = async (req: any, res: Response) => {
 // @route   GET /api/wallet/admin/transactions
 export const getAllTransactions = async (req: any, res: Response) => {
   try {
-    const { search } = req.query;
-    let filter: any = {};
+    const { search, startDate, endDate, date, depositStatus, withdrawStatus, type, status } = req.query;
+    const andConditions: any[] = [];
+
+    // Search filter
     if (search) {
-      const User = require('../models/User').default;
+      let phoneConditions: any[] = [{ phone: { $regex: search, $options: "i" } }];
+      try {
+        const { EncryptionHelper } = require("../utils/EncryptionHelper");
+        const exactEncryptedPhone = EncryptionHelper.encryptDeterministic(search);
+        phoneConditions.push({ phone: exactEncryptedPhone });
+      } catch (err) {}
+
       const users = await User.find({
         $or: [
-          { name: { $regex: search, $options: 'i' } },
-          { phone: { $regex: search, $options: 'i' } }
+          { name: { $regex: search, $options: "i" } },
+          ...phoneConditions
         ]
-      }).select('_id');
+      }).select("_id");
       const userIds = users.map((u: any) => u._id);
 
-      filter = {
+      andConditions.push({
         $or: [
-          { txId: { $regex: search, $options: 'i' } },
-          { note: { $regex: search, $options: 'i' } },
+          { txId: { $regex: search, $options: "i" } },
+          { note: { $regex: search, $options: "i" } },
           { user: { $in: userIds } }
         ]
-      };
+      });
     }
-    const transactions = await Transaction.find(filter).populate('user', 'name phone').sort({ createdAt: -1 });
+
+    // Date range filter
+    const effectiveStart = startDate || (date && !endDate ? date : undefined);
+    const effectiveEnd = endDate || (date && !startDate ? date : undefined);
+
+    if (effectiveStart || effectiveEnd) {
+      const dateFilter: any = {};
+      if (effectiveStart) {
+        let start = new Date(effectiveStart as string);
+        if ((effectiveStart as string).length <= 10) {
+          start = new Date(`${effectiveStart}T00:00:00`);
+        }
+        dateFilter.$gte = start;
+      }
+      if (effectiveEnd) {
+        let end = new Date(effectiveEnd as string);
+        if ((effectiveEnd as string).length <= 10) {
+          end = new Date(`${effectiveEnd}T23:59:59.999`);
+        }
+        dateFilter.$lte = end;
+      }
+      if (Object.keys(dateFilter).length > 0) {
+        andConditions.push({ createdAt: dateFilter });
+      }
+    }
+
+    // Deposit / Withdraw status filter
+    if (depositStatus || withdrawStatus) {
+      const typeConditions: any[] = [];
+      if (depositStatus && depositStatus !== "all") {
+        typeConditions.push({ type: "deposit", status: depositStatus });
+      } else if (depositStatus === "all") {
+        typeConditions.push({ type: "deposit" });
+      }
+
+      if (withdrawStatus && withdrawStatus !== "all") {
+        typeConditions.push({ type: "withdraw", status: withdrawStatus });
+      } else if (withdrawStatus === "all") {
+        typeConditions.push({ type: "withdraw" });
+      }
+
+      if (typeConditions.length > 0) {
+        andConditions.push({ $or: typeConditions });
+      }
+    } else {
+      // General type and status fallback
+      if (type && type !== "all") {
+        andConditions.push({ type });
+      }
+      if (status && status !== "all") {
+        andConditions.push({ status });
+      }
+    }
+
+    const filter = andConditions.length > 0 ? { $and: andConditions } : {};
+    const transactions = await Transaction.find(filter).populate("user", "name phone").sort({ createdAt: -1 });
     res.json(transactions);
   } catch (error: any) {
     res.status(500).json({ message: error.message });

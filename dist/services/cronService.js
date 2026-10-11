@@ -28,7 +28,7 @@ const ensureUpcomingDraws = async () => {
         const now = new Date();
         // 1. Vietlott / Điện Toán: Đảm bảo luôn có sẵn 10 kỳ quay
         const scheduledGames = await Game_1.default.find({
-            code: { $nin: ['keno', 'bao_keno', 'clln_keno', 'MB', 'MT', 'MN'] }
+            code: { $nin: ['keno', 'bao_keno', 'clln_keno', 'bingo18', 'MB', 'MT', 'MN'] }
         });
         for (const game of scheduledGames) {
             const todayCutoff = getVNCutoffDate(now, 17, 20);
@@ -135,9 +135,17 @@ const ensureUpcomingDraws = async () => {
                 }
             }
         }
-        // 2. Keno: Đảm bảo luôn có sẵn 10 kỳ quay 8 phút
-        const kenoGames = await Game_1.default.find({ code: { $in: ['keno', 'bao_keno', 'clln_keno'] } });
-        for (const kg of kenoGames) {
+        // 2. Keno & Bingo18: Đảm bảo luôn có sẵn 10 kỳ quay (Keno: 8p, Bingo18: 6p)
+        const fastGames = await Game_1.default.find({ code: { $in: ['keno', 'bao_keno', 'clln_keno', 'bingo18'] } });
+        for (const kg of fastGames) {
+            if (kg.code === 'bingo18') {
+                const maxAllowedCloseTime = new Date(now.getTime() + 3 * 3600 * 1000);
+                await Draw_1.default.deleteMany({
+                    game: kg._id,
+                    status: 'open',
+                    closeTime: { $gt: maxAllowedCloseTime }
+                });
+            }
             const openDraws = await Draw_1.default.find({
                 game: kg._id,
                 status: 'open',
@@ -145,7 +153,7 @@ const ensureUpcomingDraws = async () => {
             }).sort({ closeTime: 1 });
             if (openDraws.length < 10) {
                 let lastCloseTime = now;
-                let lastDrawNum = 1244;
+                let lastDrawNum = kg.code === 'bingo18' ? 1 : 1244;
                 if (openDraws.length > 0) {
                     const last = openDraws[openDraws.length - 1];
                     lastCloseTime = new Date(last.closeTime);
@@ -153,13 +161,13 @@ const ensureUpcomingDraws = async () => {
                     if (match)
                         lastDrawNum = parseInt(match[1]);
                 }
-                const durationMinutes = kg.drawDurationMinutes || 8;
+                const durationMinutes = kg.code === 'bingo18' ? 6 : (kg.drawDurationMinutes || 8);
                 const needed = 10 - openDraws.length;
                 for (let i = 0; i < needed; i++) {
                     const openTime = new Date(lastCloseTime.getTime());
                     const closeTime = new Date(openTime.getTime() + durationMinutes * 60 * 1000);
                     lastDrawNum += 1;
-                    const drawCode = `#${lastDrawNum}`;
+                    const drawCode = kg.code === 'bingo18' ? `#${String(lastDrawNum).padStart(5, '0')}` : `#${lastDrawNum}`;
                     await Draw_1.default.create({
                         game: kg._id,
                         drawCode,
@@ -340,10 +348,11 @@ const startCronJobs = () => {
                     (0, prizeService_1.processDrawResults)(draw._id.toString());
                 }
             }
-            // 2. Mở kỳ quay mới cho các Game có cấu hình cron
+            // 2. Mở kỳ quay mới cho các Game có cấu hình cron (trừ game quay nhanh đã xử lý liên tục 10 kỳ)
             const activeGames = await Game_1.default.find({
                 isActive: true,
-                cronExpression: { $exists: true, $ne: '' }
+                cronExpression: { $exists: true, $ne: '' },
+                code: { $nin: ['keno', 'bao_keno', 'clln_keno', 'bingo18'] }
             });
             for (const game of activeGames) {
                 try {
