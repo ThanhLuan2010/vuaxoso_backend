@@ -644,7 +644,7 @@ export const processDrawResults = async (drawId: string) => {
              if (boardPrize > 0) {
                isWinner = true;
                // cost per ticket is 5000 in frontend, so we derive multiplier
-               const multiplier = Math.floor(board.cost / (subTickets.length > 0 ? subTickets.length : 1) / 5000);
+               const multiplier = Math.floor(board.cost / (subTickets.length > 0 ? subTickets.length : 1) / 10000);
                prizeAmount += boardPrize * (multiplier > 0 ? multiplier : 1);
              }
            });
