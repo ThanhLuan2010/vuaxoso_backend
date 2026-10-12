@@ -5,7 +5,8 @@ export interface IDraw extends Document {
   game: mongoose.Types.ObjectId | IGame;
   drawCode: string; // e.g. #00742
   openTime: Date;
-  closeTime: Date; // countdown to this
+  closeTime: Date; // countdown to this (chốt vé)
+  drawTime?: Date; // thời điểm mở thưởng / xổ số
   status: 'open' | 'closed' | 'completed'; // open=can buy, closed=waiting results, completed=results entered
   winningNumbers: string[]; // ["56", "65"]
   jackpotAmount?: number;
@@ -20,6 +21,7 @@ const drawSchema = new Schema<IDraw>(
     drawCode: { type: String, required: true },
     openTime: { type: Date, required: true },
     closeTime: { type: Date, required: true },
+    drawTime: { type: Date },
     status: { type: String, enum: ['open', 'closed', 'completed'], default: 'open' },
     winningNumbers: [{ type: String }],
     jackpotAmount: { type: Number },

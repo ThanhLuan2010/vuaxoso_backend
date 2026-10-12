@@ -29,7 +29,7 @@ const GAME_CONFIGS = [
     { code: 'max_3d_pro', name: 'MAX 3D PRO', type: 'vietlott', cronExpression: '0 18 * * 2,4,6', drawDurationMinutes: 0, days: [2, 4, 6], baseNum: 1539, cutoffHour: 17, cutoffMin: 20 },
     { code: 'max_4d', name: 'MAX 4D', type: 'vietlott', cronExpression: '0 18 * * *', drawDurationMinutes: 0, days: [0, 1, 2, 3, 4, 5, 6], baseNum: 750, cutoffHour: 17, cutoffMin: 20 },
     { code: 'lotto_535', name: 'LOTTO 5/35', type: 'vietlott', cronExpression: '0 13,21 * * *', drawDurationMinutes: 0, baseNum: 1313 },
-    { code: 'lotto_570', name: 'LOTTO 5/70', type: 'vietlott', cronExpression: '0 13,21 * * *', drawDurationMinutes: 0, baseNum: 1313 },
+    { code: 'lotto_570', name: 'LOTTO 5/70', type: 'vietlott', cronExpression: '20 17 * * *', drawDurationMinutes: 0, days: [0, 1, 2, 3, 4, 5, 6], baseNum: 1313, cutoffHour: 17, cutoffMin: 0 },
     { code: 'loto_235', name: 'LÔ TÔ 2, 3, 5 Số', type: 'dientoan', cronExpression: '0 18 * * *', drawDurationMinutes: 0 },
     { code: 'loto_cap', name: 'LÔ TÔ 2, 3, 4 Cặp', type: 'dientoan', cronExpression: '0 18 * * *', drawDurationMinutes: 0 },
     { code: 'truot_loto', name: 'TRƯỢT LÔ TÔ', type: 'dientoan', cronExpression: '0 18 * * *', drawDurationMinutes: 0 },
@@ -81,7 +81,7 @@ const resetAndFixAllDraws = async () => {
                 continue;
             const cutoffs = [];
             let checkDay = new Date(now);
-            if (game.code === 'lotto_535' || game.code === 'lotto_570') {
+            if (game.code === 'lotto_535') {
                 // 2 cutoffs per day: 12:00 and 20:00 ICT (for 13h and 21h draws)
                 while (cutoffs.length < 10) {
                     const c12 = getVNCutoffDate(checkDay, 12, 0);
@@ -121,11 +121,13 @@ const resetAndFixAllDraws = async () => {
                 const closeTime = cutoffs[i];
                 const openTime = i === 0 ? new Date(now.getTime() - 60000) : new Date(cutoffs[i - 1].getTime() + 1000);
                 const drawCode = `#${String(baseNum + i).padStart(4, '0')}`;
+                const drawTime = cfg.code === 'lotto_570' ? new Date(closeTime.getTime() + 20 * 60 * 1000) : undefined;
                 await Draw_1.default.create({
                     game: game._id,
                     drawCode,
                     openTime,
                     closeTime,
+                    drawTime,
                     status: 'open'
                 });
                 console.log(`Tạo kỳ quay ${game.name} ${drawCode}: Chốt vé lúc ${closeTime.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}`);

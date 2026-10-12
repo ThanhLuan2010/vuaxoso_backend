@@ -22,7 +22,7 @@ const GAME_CONFIGS: Array<{ code: string; cronExpression: string; drawDurationMi
   { code: 'bingo18', cronExpression: '*/6 * * * *', drawDurationMinutes: 6 },
   { code: 'bao_loto_2', cronExpression: '15 18 * * *', drawDurationMinutes: 0 },
   { code: 'lotto_535', cronExpression: '0 13,21 * * *', drawDurationMinutes: 0 },
-  { code: 'lotto_570', cronExpression: '0 13,21 * * *', drawDurationMinutes: 0 },
+  { code: 'lotto_570', cronExpression: '20 17 * * *', drawDurationMinutes: 0 },
   { code: 'MB', cronExpression: '15 18 * * *', drawDurationMinutes: 0 },
   { code: 'MT', cronExpression: '15 17 * * *', drawDurationMinutes: 0 },
   { code: 'MN', cronExpression: '15 16 * * *', drawDurationMinutes: 0 }

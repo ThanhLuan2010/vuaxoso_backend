@@ -17,7 +17,7 @@ const MOCK_GAMES = [
     { code: 'max_3d_pro', name: 'MAX 3D Pro', type: 'vietlott', brandColor: '#E0115F', bgColor: '#FCE7F0', cronExpression: '0 18 * * 2,4,6', drawDurationMinutes: 60, autoRandomResult: true },
     { code: 'max_4d', name: 'MAX 4D', type: 'vietlott', brandColor: '#0055A5', bgColor: '#E6F0FA', badge: 'Hôm nay xổ', cronExpression: '0 18 * * *', drawDurationMinutes: 60, autoRandomResult: true },
     { code: 'lotto_535', name: 'LOTTO 5/35', type: 'vietlott', brandColor: '#8B008B', bgColor: '#F5E6F5', cronExpression: '0 13,21 * * *', drawDurationMinutes: 0 },
-    { code: 'lotto_570', name: 'LOTTO 5/70', type: 'vietlott', brandColor: '#4B0082', bgColor: '#E6E6FA', cronExpression: '0 13,21 * * *', drawDurationMinutes: 0 },
+    { code: 'lotto_570', name: 'LOTTO 5/70', type: 'vietlott', brandColor: '#4B0082', bgColor: '#E6E6FA', cronExpression: '20 17 * * *', drawDurationMinutes: 0 },
     { code: 'loto_235', name: 'LÔ TÔ 2,3,5', type: 'dientoan', brandColor: '#FF9A00', bgColor: '#FFF8F0', cronExpression: '15 18 * * *', drawDurationMinutes: 60 },
     { code: 'loto_cap', name: 'LÔ TÔ 2, 3, 4 Cặp', type: 'dientoan', brandColor: '#FF9A00', bgColor: '#FFF8F0', cronExpression: '0 18 * * *', drawDurationMinutes: 60 },
     { code: 'dientoan_636', name: 'ĐIỆN TOÁN 6x36', type: 'dientoan', brandColor: '#004F9F', bgColor: '#E6EEF7', badge: 'T4 & T7', cronExpression: '0 18 * * 3,6', drawDurationMinutes: 60 },

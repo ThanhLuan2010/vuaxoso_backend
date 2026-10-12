@@ -39,6 +39,7 @@ const drawSchema = new mongoose_1.Schema({
     drawCode: { type: String, required: true },
     openTime: { type: Date, required: true },
     closeTime: { type: Date, required: true },
+    drawTime: { type: Date },
     status: { type: String, enum: ['open', 'closed', 'completed'], default: 'open' },
     winningNumbers: [{ type: String }],
     jackpotAmount: { type: Number },

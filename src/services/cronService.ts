@@ -121,16 +121,19 @@ export const ensureUpcomingDraws = async () => {
         while (created < needed) {
           const dayOfWeek = getVNDayOfWeek(checkDate);
           if (drawDays.includes(dayOfWeek)) {
-            const cutoff = getVNCutoffDate(checkDate, 17, 20);
+            const isLotto570 = game.code === 'lotto_570';
+            const closeCutoff = isLotto570 ? getVNCutoffDate(checkDate, 17, 0) : getVNCutoffDate(checkDate, 17, 20);
+            const drawCutoff = getVNCutoffDate(checkDate, 17, 20);
 
-            if (cutoff > now) {
+            if (closeCutoff > now) {
               lastDrawNum += 1;
               const drawCode = `#${String(lastDrawNum).padStart(4, "0")}`;
               await Draw.create({
                 game: game._id,
                 drawCode,
-                openTime: new Date(cutoff.getTime() - 24 * 3600 * 1000),
-                closeTime: cutoff,
+                openTime: new Date(closeCutoff.getTime() - 24 * 3600 * 1000),
+                closeTime: closeCutoff,
+                drawTime: drawCutoff,
                 status: 'open'
               });
               created++;
@@ -316,13 +319,23 @@ export const startCronJobs = () => {
         const game = draw.game as any;
         if (!game) continue;
 
+        // Nếu draw có drawTime cụ thể và hiện tại chưa đến giờ mở thưởng (ví dụ chốt vé 17:00, mở thưởng 17:20):
+        if (draw.drawTime && now < draw.drawTime) {
+          if (draw.status !== 'closed') {
+            draw.status = 'closed';
+            await draw.save();
+            console.log(`CronService: Đã chốt nhận vé kỳ quay ${draw.drawCode} của game ${game.name} (Chờ xổ số lúc ${draw.drawTime.toLocaleTimeString('vi-VN')})`);
+          }
+          continue;
+        }
+
         const vnHourStr = now.toLocaleTimeString('en-US', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false, hour: '2-digit' });
         const vnHour = parseInt(vnHourStr);
         const isScheduledGame = !game.code.includes('keno') && game.code !== 'bingo18';
 
         // Đối với các game Vietlott / Điện toán xổ lúc 18h00 (như Max 4D, Max 3D...):
         // Chốt vé lúc 17h20 (chuyển sang 'closed'), chờ đến 18h00 mới xổ số
-        if (isScheduledGame && vnHour < 18) {
+        if (isScheduledGame && vnHour < 18 && game.code !== 'lotto_570') {
           if (draw.status !== 'closed') {
             draw.status = 'closed';
             await draw.save();
