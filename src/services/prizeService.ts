@@ -42,7 +42,15 @@ export const processDrawResults = async (drawId: string) => {
     };
 
     if (game.type === 'kienthiet') {
-      orderQuery.gameType = { $regex: /^kienthiet_/ };
+      orderQuery.gameType = { 
+        $in: [
+          game.code, 
+          `kienthiet_${game.code.toLowerCase()}`, 
+          'MB', 'MT', 'MN', 
+          'xoso_3mien', 
+          /^kienthiet_/i
+        ] 
+      };
     } else {
       orderQuery.gameType = game.code;
     }
@@ -472,30 +480,96 @@ export const processDrawResults = async (drawId: string) => {
         const w = draw.winningNumbers;
         if (w && w.length >= 9) {
           allBoards.forEach((board) => {
-            for (const ticketStr of board.numbers) {
-              const isWildcard = ticketStr.toLowerCase().startsWith('x');
-              const ticketNum = isWildcard ? ticketStr.slice(1) : ticketStr;
-              let ticketPrize = 0;
+            const currentPlayType = (board.playType || order.playType || '').trim();
+            const pTypeLower = currentPlayType.toLowerCase();
 
-              if (w[8].endsWith(ticketNum.slice(-2))) ticketPrize += 100000;
-              if (w[7].endsWith(ticketNum.slice(-3))) ticketPrize += 200000;
-              if (w[6].endsWith(ticketNum.slice(-4))) ticketPrize += 400000;
-              if (w[5].endsWith(ticketNum.slice(-4))) ticketPrize += 1000000;
-              if (w[4].endsWith(ticketNum.slice(-5))) ticketPrize += 3000000;
-              if (w[3].endsWith(ticketNum.slice(-5))) ticketPrize += 10000000;
-              if (w[2].endsWith(ticketNum.slice(-5))) ticketPrize += 15000000;
-              if (w[1].endsWith(ticketNum.slice(-5))) ticketPrize += 30000000;
-              
-              if (!isWildcard && ticketNum === w[0]) {
-                 ticketPrize += 2000000000;
-              } else if (w[0].endsWith(ticketNum.slice(-5))) {
-                 ticketPrize += 50000000;
+            // 1. Xiên ĐB (Tỉ lệ 1 ăn 4.8)
+            if (pTypeLower === 'xiên đb' || pTypeLower === 'xien db') {
+              const specialLast2 = (w[0] || '').slice(-2);
+              const betPerNum = Math.floor(board.cost / (board.numbers.length || 1));
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                if (specialLast2.includes(numStr)) {
+                  boardPrize += Math.round(betPerNum * 4.8);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
               }
-              
-              if (ticketPrize > 0) {
-                 isWinner = true;
-                 const multiplier = Math.floor(board.cost / 10000);
-                 prizeAmount += ticketPrize * (multiplier > 0 ? multiplier : 1);
+            }
+            // 2. Xiên giải 1 (Tỉ lệ 1 ăn 4.8)
+            else if (pTypeLower === 'xiên giải 1' || pTypeLower === 'xien giai 1') {
+              const g1Last2 = (w[1] || '').slice(-2);
+              const betPerNum = Math.floor(board.cost / (board.numbers.length || 1));
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                if (g1Last2.includes(numStr)) {
+                  boardPrize += Math.round(betPerNum * 4.8);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 3. Đề ĐB (Tỉ lệ 1 ăn 99.9)
+            else if (pTypeLower === 'đề đb' || pTypeLower === 'de db') {
+              const specialLast2 = (w[0] || '').slice(-2);
+              const betPerNum = Math.floor(board.cost / (board.numbers.length || 1));
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                if (numStr === specialLast2) {
+                  boardPrize += Math.round(betPerNum * 99.9);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 4. Đề giải 1 (Tỉ lệ 1 ăn 99.9)
+            else if (pTypeLower === 'đề giải 1' || pTypeLower === 'de giai 1') {
+              const g1Last2 = (w[1] || '').slice(-2);
+              const betPerNum = Math.floor(board.cost / (board.numbers.length || 1));
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                if (numStr === g1Last2) {
+                  boardPrize += Math.round(betPerNum * 99.9);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 5. Vé số kiến thiết truyền thống (vé giấy 6 số)
+            else {
+              for (const ticketStr of board.numbers) {
+                const isWildcard = ticketStr.toLowerCase().startsWith('x');
+                const ticketNum = isWildcard ? ticketStr.slice(1) : ticketStr;
+                let ticketPrize = 0;
+
+                if (w[8].endsWith(ticketNum.slice(-2))) ticketPrize += 100000;
+                if (w[7].endsWith(ticketNum.slice(-3))) ticketPrize += 200000;
+                if (w[6].endsWith(ticketNum.slice(-4))) ticketPrize += 400000;
+                if (w[5].endsWith(ticketNum.slice(-4))) ticketPrize += 1000000;
+                if (w[4].endsWith(ticketNum.slice(-5))) ticketPrize += 3000000;
+                if (w[3].endsWith(ticketNum.slice(-5))) ticketPrize += 10000000;
+                if (w[2].endsWith(ticketNum.slice(-5))) ticketPrize += 15000000;
+                if (w[1].endsWith(ticketNum.slice(-5))) ticketPrize += 30000000;
+                
+                if (!isWildcard && ticketNum === w[0]) {
+                   ticketPrize += 2000000000;
+                } else if (w[0].endsWith(ticketNum.slice(-5))) {
+                   ticketPrize += 50000000;
+                }
+                
+                if (ticketPrize > 0) {
+                   isWinner = true;
+                   const multiplier = Math.floor(board.cost / 10000);
+                   prizeAmount += ticketPrize * (multiplier > 0 ? multiplier : 1);
+                }
               }
             }
           });
