@@ -13,6 +13,7 @@ export interface IGame extends Document {
   drawDurationMinutes?: number; // e.g. 10
   autoRandomResult?: boolean;
   riggedResult?: string;
+  payoutRates?: Record<string, number>;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -30,7 +31,8 @@ const gameSchema = new Schema<IGame>(
     cronExpression: { type: String },
     drawDurationMinutes: { type: Number, default: 10 },
     autoRandomResult: { type: Boolean, default: false },
-    riggedResult: { type: String }
+    riggedResult: { type: String },
+    payoutRates: { type: Schema.Types.Mixed, default: {} }
   },
   { timestamps: true }
 );

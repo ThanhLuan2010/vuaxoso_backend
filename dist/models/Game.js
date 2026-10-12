@@ -46,6 +46,7 @@ const gameSchema = new mongoose_1.Schema({
     cronExpression: { type: String },
     drawDurationMinutes: { type: Number, default: 10 },
     autoRandomResult: { type: Boolean, default: false },
-    riggedResult: { type: String }
+    riggedResult: { type: String },
+    payoutRates: { type: mongoose_1.Schema.Types.Mixed, default: {} }
 }, { timestamps: true });
 exports.default = mongoose_1.default.model('Game', gameSchema);

@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updateGame = exports.createGame = exports.getGames = void 0;
+exports.updateGameRates = exports.updateGame = exports.createGame = exports.getGames = void 0;
 const AdminLog_1 = __importDefault(require("../models/AdminLog"));
 const Game_1 = __importDefault(require("../models/Game"));
 const getGames = async (req, res) => {
@@ -54,6 +54,9 @@ const updateGame = async (req, res) => {
             return res.status(404).json({ message: 'Không tìm thấy game' });
         }
         Object.assign(game, req.body);
+        if (req.body.payoutRates) {
+            game.markModified('payoutRates');
+        }
         await game.save();
         res.json(game);
     }
@@ -62,3 +65,20 @@ const updateGame = async (req, res) => {
     }
 };
 exports.updateGame = updateGame;
+const updateGameRates = async (req, res) => {
+    try {
+        const { rates } = req.body;
+        const game = await Game_1.default.findById(req.params.id);
+        if (!game) {
+            return res.status(404).json({ message: 'Không tìm thấy game' });
+        }
+        game.payoutRates = rates;
+        game.markModified('payoutRates');
+        await game.save();
+        res.json(game);
+    }
+    catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+exports.updateGameRates = updateGameRates;

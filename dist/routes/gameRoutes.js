@@ -11,4 +11,5 @@ router.get('/', gameController_1.getGames);
 // Admin routes
 router.post('/', authMiddleware_1.protect, authMiddleware_1.admin, gameController_1.createGame);
 router.put('/:id', authMiddleware_1.protect, authMiddleware_1.admin, gameController_1.updateGame);
+router.put('/:id/rates', authMiddleware_1.protect, authMiddleware_1.admin, gameController_1.updateGameRates);
 exports.default = router;

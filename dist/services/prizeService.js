@@ -578,14 +578,15 @@ const processDrawResults = async (drawId) => {
                     allBoards.forEach((board) => {
                         const currentPlayType = (board.playType || order.playType || '').trim();
                         const pTypeLower = currentPlayType.toLowerCase();
-                        // 1. Xiên ĐB (Tỉ lệ 1 ăn 4.8)
+                        // 1. Xiên ĐB (Đọc tỉ lệ động từ game.payoutRates hoặc fallback 4.8)
                         if (pTypeLower === 'xiên đb' || pTypeLower === 'xien db') {
+                            const rate = (game.payoutRates && (game.payoutRates['Xiên ĐB'] || game.payoutRates['xien_db'])) ?? 4.8;
                             const specialLast2 = (w[0] || '').slice(-2);
                             const betPerNum = Math.floor(board.cost / (board.numbers.length || 1));
                             let boardPrize = 0;
                             board.numbers.forEach((numStr) => {
                                 if (specialLast2.includes(numStr)) {
-                                    boardPrize += Math.round(betPerNum * 4.8);
+                                    boardPrize += Math.round(betPerNum * rate);
                                 }
                             });
                             if (boardPrize > 0) {
@@ -593,14 +594,15 @@ const processDrawResults = async (drawId) => {
                                 prizeAmount += boardPrize;
                             }
                         }
-                        // 2. Xiên giải 1 (Tỉ lệ 1 ăn 4.8)
+                        // 2. Xiên giải 1 (Đọc tỉ lệ động từ game.payoutRates hoặc fallback 4.8)
                         else if (pTypeLower === 'xiên giải 1' || pTypeLower === 'xien giai 1') {
+                            const rate = (game.payoutRates && (game.payoutRates['Xiên giải 1'] || game.payoutRates['xien_g1'])) ?? 4.8;
                             const g1Last2 = (w[1] || '').slice(-2);
                             const betPerNum = Math.floor(board.cost / (board.numbers.length || 1));
                             let boardPrize = 0;
                             board.numbers.forEach((numStr) => {
                                 if (g1Last2.includes(numStr)) {
-                                    boardPrize += Math.round(betPerNum * 4.8);
+                                    boardPrize += Math.round(betPerNum * rate);
                                 }
                             });
                             if (boardPrize > 0) {

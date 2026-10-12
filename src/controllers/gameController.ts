@@ -51,6 +51,25 @@ export const updateGame = async (req: any, res: Response) => {
     }
 
     Object.assign(game, req.body);
+    if (req.body.payoutRates) {
+      game.markModified('payoutRates');
+    }
+    await game.save();
+    res.json(game);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const updateGameRates = async (req: any, res: Response) => {
+  try {
+    const { rates } = req.body;
+    const game = await Game.findById(req.params.id);
+    if (!game) {
+      return res.status(404).json({ message: 'Không tìm thấy game' });
+    }
+    game.payoutRates = rates;
+    game.markModified('payoutRates');
     await game.save();
     res.json(game);
   } catch (error: any) {
