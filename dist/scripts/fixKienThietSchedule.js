@@ -48,21 +48,15 @@ async function run() {
             }
         }
         // Cập nhật các đơn đặt vé có drawDate mang giờ cũ
-        const updatedOrders = await Order_1.default.updateMany({ drawDate: { $regex: reg.oldTime } }, [
-            {
-                $set: {
-                    drawDate: {
-                        $replaceOne: {
-                            input: '$drawDate',
-                            find: reg.oldTime,
-                            replacement: `${reg.drawHour}:${reg.drawMin}:00`
-                        }
-                    }
-                }
+        const ordersToFix = await Order_1.default.find({ drawDate: { $regex: reg.oldTime } });
+        for (const ord of ordersToFix) {
+            if (ord.drawDate) {
+                ord.drawDate = ord.drawDate.replace(reg.oldTime, `${reg.drawHour}:${reg.drawMin}:00`);
+                await ord.save();
             }
-        ]);
-        if (updatedOrders.modifiedCount > 0) {
-            console.log(`Đã cập nhật ${updatedOrders.modifiedCount} đơn hàng cũ của ${reg.name} về giờ xổ mới ${reg.drawHour}h${reg.drawMin}:00`);
+        }
+        if (ordersToFix.length > 0) {
+            console.log(`Đã cập nhật ${ordersToFix.length} đơn hàng cũ của ${reg.name} về giờ xổ mới ${reg.drawHour}h${reg.drawMin}:00`);
         }
     }
     console.log('\n🎉 Hoàn tất đồng bộ lịch xổ số và chốt vé 3 Miền (MN: 16h10-16h15, MT: 17h10-17h15, MB: 18h10-18h15)!');

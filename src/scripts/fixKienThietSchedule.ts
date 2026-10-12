@@ -53,24 +53,15 @@ async function run() {
     }
 
     // Cập nhật các đơn đặt vé có drawDate mang giờ cũ
-    const updatedOrders = await Order.updateMany(
-      { drawDate: { $regex: reg.oldTime } },
-      [
-        {
-          $set: {
-            drawDate: {
-              $replaceOne: {
-                input: '$drawDate',
-                find: reg.oldTime,
-                replacement: `${reg.drawHour}:${reg.drawMin}:00`
-              }
-            }
-          }
-        }
-      ]
-    );
-    if (updatedOrders.modifiedCount > 0) {
-      console.log(`Đã cập nhật ${updatedOrders.modifiedCount} đơn hàng cũ của ${reg.name} về giờ xổ mới ${reg.drawHour}h${reg.drawMin}:00`);
+    const ordersToFix = await Order.find({ drawDate: { $regex: reg.oldTime } });
+    for (const ord of ordersToFix) {
+      if (ord.drawDate) {
+        ord.drawDate = ord.drawDate.replace(reg.oldTime, `${reg.drawHour}:${reg.drawMin}:00`);
+        await ord.save();
+      }
+    }
+    if (ordersToFix.length > 0) {
+      console.log(`Đã cập nhật ${ordersToFix.length} đơn hàng cũ của ${reg.name} về giờ xổ mới ${reg.drawHour}h${reg.drawMin}:00`);
     }
   }
 
