@@ -16,5 +16,7 @@ router.get('/stats', statsController_1.getDrawStats);
 // Admin
 router.get('/admin', authMiddleware_1.protect, authMiddleware_1.admin, drawController_1.getAllDraws);
 router.post('/admin', authMiddleware_1.protect, authMiddleware_1.admin, drawController_1.createDraw);
+router.put('/admin/:id', authMiddleware_1.protect, authMiddleware_1.admin, drawController_1.updateDraw);
+router.delete('/admin/:id', authMiddleware_1.protect, authMiddleware_1.admin, drawController_1.deleteDraw);
 router.put('/admin/:id/results', authMiddleware_1.protect, authMiddleware_1.admin, drawController_1.enterResults);
 exports.default = router;

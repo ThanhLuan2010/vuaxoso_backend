@@ -496,3 +496,54 @@ export const getAllDraws = async (req: any, res: Response) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+// Admin/Master: Cập nhật thông tin kỳ quay
+export const updateDraw = async (req: any, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { drawCode, openTime, closeTime, drawTime, status, winningNumbers, jackpotAmount, provinceId } = req.body;
+
+    const draw = await Draw.findById(id);
+    if (!draw) {
+      return res.status(404).json({ message: 'Không tìm thấy kỳ quay' });
+    }
+
+    if (drawCode !== undefined) draw.drawCode = drawCode;
+    if (openTime !== undefined) draw.openTime = new Date(openTime);
+    if (closeTime !== undefined) draw.closeTime = new Date(closeTime);
+    if (drawTime !== undefined) draw.drawTime = drawTime ? new Date(drawTime) : undefined;
+    if (status !== undefined) draw.status = status;
+    if (winningNumbers !== undefined) {
+      if (Array.isArray(winningNumbers)) {
+        draw.winningNumbers = winningNumbers;
+      } else if (typeof winningNumbers === 'string') {
+        draw.winningNumbers = winningNumbers.split(',').map((s: string) => s.trim()).filter(Boolean);
+      }
+    }
+    if (jackpotAmount !== undefined) draw.jackpotAmount = jackpotAmount;
+    if (provinceId !== undefined) draw.provinceId = provinceId;
+
+    await draw.save();
+    const updated = await Draw.findById(id).populate('game');
+    res.json({ message: 'Cập nhật kỳ quay thành công', draw: updated });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Admin/Master: Xóa kỳ quay
+export const deleteDraw = async (req: any, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const draw = await Draw.findById(id);
+    if (!draw) {
+      return res.status(404).json({ message: 'Không tìm thấy kỳ quay' });
+    }
+
+    await Draw.findByIdAndDelete(id);
+    res.json({ message: 'Xóa kỳ quay thành công' });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};

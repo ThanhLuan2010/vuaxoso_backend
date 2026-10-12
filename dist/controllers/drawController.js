@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getAllDraws = exports.enterResults = exports.createDraw = exports.getDrawResults = exports.getActiveDraws = exports.getKienThietSchedule = void 0;
+exports.deleteDraw = exports.updateDraw = exports.getAllDraws = exports.enterResults = exports.createDraw = exports.getDrawResults = exports.getActiveDraws = exports.getKienThietSchedule = void 0;
 const AdminLog_1 = __importDefault(require("../models/AdminLog"));
 const Draw_1 = __importDefault(require("../models/Draw"));
 const Province_1 = __importDefault(require("../models/Province"));
@@ -474,3 +474,59 @@ const getAllDraws = async (req, res) => {
     }
 };
 exports.getAllDraws = getAllDraws;
+// Admin/Master: Cập nhật thông tin kỳ quay
+const updateDraw = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { drawCode, openTime, closeTime, drawTime, status, winningNumbers, jackpotAmount, provinceId } = req.body;
+        const draw = await Draw_1.default.findById(id);
+        if (!draw) {
+            return res.status(404).json({ message: 'Không tìm thấy kỳ quay' });
+        }
+        if (drawCode !== undefined)
+            draw.drawCode = drawCode;
+        if (openTime !== undefined)
+            draw.openTime = new Date(openTime);
+        if (closeTime !== undefined)
+            draw.closeTime = new Date(closeTime);
+        if (drawTime !== undefined)
+            draw.drawTime = drawTime ? new Date(drawTime) : undefined;
+        if (status !== undefined)
+            draw.status = status;
+        if (winningNumbers !== undefined) {
+            if (Array.isArray(winningNumbers)) {
+                draw.winningNumbers = winningNumbers;
+            }
+            else if (typeof winningNumbers === 'string') {
+                draw.winningNumbers = winningNumbers.split(',').map((s) => s.trim()).filter(Boolean);
+            }
+        }
+        if (jackpotAmount !== undefined)
+            draw.jackpotAmount = jackpotAmount;
+        if (provinceId !== undefined)
+            draw.provinceId = provinceId;
+        await draw.save();
+        const updated = await Draw_1.default.findById(id).populate('game');
+        res.json({ message: 'Cập nhật kỳ quay thành công', draw: updated });
+    }
+    catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+exports.updateDraw = updateDraw;
+// Admin/Master: Xóa kỳ quay
+const deleteDraw = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const draw = await Draw_1.default.findById(id);
+        if (!draw) {
+            return res.status(404).json({ message: 'Không tìm thấy kỳ quay' });
+        }
+        await Draw_1.default.findByIdAndDelete(id);
+        res.json({ message: 'Xóa kỳ quay thành công' });
+    }
+    catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+exports.deleteDraw = deleteDraw;
