@@ -262,8 +262,10 @@ const getActiveDraws = async (req, res) => {
                     closeTime: { $gt: now }
                 }).sort({ closeTime: 1 });
                 if (openDraws.length < 10) {
-                    const cutoffHour = game.code === 'MN' ? 15 : (game.code === 'MT' ? 16 : 17);
-                    const cutoffMin = game.code === 'MN' ? 40 : (game.code === 'MT' ? 40 : 30);
+                    const cutoffHour = game.code === 'MN' ? 16 : (game.code === 'MT' ? 17 : 18);
+                    const cutoffMin = 10;
+                    const drawHour = game.code === 'MN' ? 16 : (game.code === 'MT' ? 17 : 18);
+                    const drawMin = 15;
                     let lastDrawNum = game.code === 'MN' ? 1100 : (game.code === 'MT' ? 1200 : 1350);
                     if (openDraws.length > 0) {
                         const match = openDraws[openDraws.length - 1].drawCode.match(/#?(\d+)/);
@@ -287,6 +289,7 @@ const getActiveDraws = async (req, res) => {
                     let created = 0;
                     while (created < needed) {
                         const cutoff = getVNCutoffDate(checkDate, cutoffHour, cutoffMin);
+                        const drawCutoff = getVNCutoffDate(checkDate, drawHour, drawMin);
                         if (cutoff > now) {
                             const exists = await Draw_1.default.findOne({ game: game._id, closeTime: cutoff });
                             if (!exists) {
@@ -297,6 +300,7 @@ const getActiveDraws = async (req, res) => {
                                     drawCode,
                                     openTime: new Date(cutoff.getTime() - 24 * 3600 * 1000),
                                     closeTime: cutoff,
+                                    drawTime: drawCutoff,
                                     status: 'open'
                                 });
                                 created++;

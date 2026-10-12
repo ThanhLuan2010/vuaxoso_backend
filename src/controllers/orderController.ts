@@ -45,9 +45,9 @@ export const createOrder = async (req: any, res: Response) => {
         const province = await Province.findOne({ provinceId });
         if (province) {
           let cutoffMinutes = 9999;
-          if (province.region === 'MB') cutoffMinutes = 17 * 60 + 30; // 17:30
-          else if (province.region === 'MT') cutoffMinutes = 16 * 60 + 40; // 16:40
-          else if (province.region === 'MN') cutoffMinutes = 15 * 60 + 40; // 15:40
+          if (province.region === 'MB') cutoffMinutes = 18 * 60 + 10; // 18:10 (xổ 18:15)
+          else if (province.region === 'MT') cutoffMinutes = 17 * 60 + 10; // 17:10 (xổ 17:15)
+          else if (province.region === 'MN') cutoffMinutes = 16 * 60 + 10; // 16:10 (xổ 16:15)
 
           if (currentMinutes >= cutoffMinutes) {
             return res.status(400).json({ message: 'Đã quá thời gian chốt vé tự động của ngày hôm nay. Vui lòng mua vé cho kỳ quay sau.' });
@@ -366,8 +366,9 @@ export const getAllOrders = async (req: any, res: Response) => {
         const draw = await Draw.findById(order.drawId).lean();
         if (draw) {
           order.drawId = draw.drawCode;
-          if (!order.drawDate && draw.closeTime) {
-            order.drawDate = new Date(draw.closeTime).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+          if (!order.drawDate && (draw.drawTime || draw.closeTime)) {
+            const timeToDisplay = draw.drawTime || draw.closeTime;
+            order.drawDate = new Date(timeToDisplay).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
           }
         }
       }

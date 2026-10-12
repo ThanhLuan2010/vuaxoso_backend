@@ -108,7 +108,7 @@ const resetAndFixAllDraws = async () => {
             else {
                 // Daily games (e.g. Lô tô 2-3-5 số, Thần tài 4, Xổ số 3 miền)
                 const hour = game.code === 'MN' ? 16 : game.code === 'MT' ? 17 : 18;
-                const min = game.code.length === 2 ? 15 : 0;
+                const min = game.code.length === 2 ? 10 : 0;
                 while (cutoffs.length < 10) {
                     const cutoff = getVNCutoffDate(checkDay, hour, min);
                     if (cutoff > now)
@@ -121,7 +121,7 @@ const resetAndFixAllDraws = async () => {
                 const closeTime = cutoffs[i];
                 const openTime = i === 0 ? new Date(now.getTime() - 60000) : new Date(cutoffs[i - 1].getTime() + 1000);
                 const drawCode = `#${String(baseNum + i).padStart(4, '0')}`;
-                const drawTime = cfg.code === 'lotto_570' ? new Date(closeTime.getTime() + 20 * 60 * 1000) : undefined;
+                const drawTime = cfg.code === 'lotto_570' ? new Date(closeTime.getTime() + 20 * 60 * 1000) : (['MN', 'MT', 'MB'].includes(cfg.code) ? new Date(closeTime.getTime() + 5 * 60 * 1000) : undefined);
                 await Draw_1.default.create({
                     game: game._id,
                     drawCode,

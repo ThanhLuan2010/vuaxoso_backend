@@ -19,8 +19,8 @@ const REGIONS = [
     {
         code: 'MN',
         name: 'Xổ số Miền Nam',
-        cutoffHour: 15,
-        cutoffMin: 40,
+        cutoffHour: 16,
+        cutoffMin: 10,
         drawTimeStr: '16:15',
         cronExpression: '15 16 * * *',
         startDrawNum: 1100
@@ -28,8 +28,8 @@ const REGIONS = [
     {
         code: 'MT',
         name: 'Xổ số Miền Trung',
-        cutoffHour: 16,
-        cutoffMin: 40,
+        cutoffHour: 17,
+        cutoffMin: 10,
         drawTimeStr: '17:15',
         cronExpression: '15 17 * * *',
         startDrawNum: 1200
@@ -37,8 +37,8 @@ const REGIONS = [
     {
         code: 'MB',
         name: 'Xổ số Miền Bắc',
-        cutoffHour: 17,
-        cutoffMin: 30,
+        cutoffHour: 18,
+        cutoffMin: 10,
         drawTimeStr: '18:15',
         cronExpression: '15 18 * * *',
         startDrawNum: 1350
@@ -101,11 +101,13 @@ const resetKienThietDraws = async () => {
                 const openTime = new Date(closeTime.getTime() - 24 * 3600 * 1000);
                 const drawNum = reg.startDrawNum + i;
                 const drawCode = `#${String(drawNum).padStart(4, '0')}`;
+                const drawTime = new Date(closeTime.getTime() + 5 * 60 * 1000);
                 await Draw_1.default.create({
                     game: game._id,
                     drawCode,
                     openTime,
                     closeTime,
+                    drawTime,
                     status: 'open'
                 });
                 const closeDateStr = closeTime.toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });

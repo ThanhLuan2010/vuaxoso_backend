@@ -190,9 +190,9 @@ const ensureUpcomingDraws = async () => {
         }
         // 3. Xổ số Kiến Thiết (Miền Nam, Miền Trung, Miền Bắc): Luôn đảm bảo có sẵn 10 kỳ quay mở
         const kienThietConfigs = [
-            { code: 'MN', cutoffHour: 15, cutoffMin: 40, startDrawNum: 1100 },
-            { code: 'MT', cutoffHour: 16, cutoffMin: 40, startDrawNum: 1200 },
-            { code: 'MB', cutoffHour: 17, cutoffMin: 30, startDrawNum: 1350 }
+            { code: 'MN', cutoffHour: 16, cutoffMin: 10, drawHour: 16, drawMin: 15, startDrawNum: 1100 },
+            { code: 'MT', cutoffHour: 17, cutoffMin: 10, drawHour: 17, drawMin: 15, startDrawNum: 1200 },
+            { code: 'MB', cutoffHour: 18, cutoffMin: 10, drawHour: 18, drawMin: 15, startDrawNum: 1350 }
         ];
         for (const kt of kienThietConfigs) {
             const ktGame = await Game_1.default.findOne({ code: kt.code });
@@ -228,6 +228,7 @@ const ensureUpcomingDraws = async () => {
                 let created = 0;
                 while (created < needed) {
                     const cutoff = getVNCutoffDate(checkDay, kt.cutoffHour, kt.cutoffMin);
+                    const drawCutoff = getVNCutoffDate(checkDay, kt.drawHour, kt.drawMin);
                     if (cutoff > now) {
                         const exists = await Draw_1.default.findOne({ game: ktGame._id, closeTime: cutoff });
                         if (!exists) {
@@ -238,6 +239,7 @@ const ensureUpcomingDraws = async () => {
                                 drawCode,
                                 openTime: new Date(cutoff.getTime() - 24 * 3600 * 1000),
                                 closeTime: cutoff,
+                                drawTime: drawCutoff,
                                 status: 'open'
                             });
                             created++;
