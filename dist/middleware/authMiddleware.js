@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.admin = exports.protect = void 0;
+exports.requireTabPermission = exports.masterAdminOnly = exports.admin = exports.protect = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const User_1 = __importDefault(require("../models/User"));
 const protect = async (req, res, next) => {
@@ -32,6 +32,12 @@ const protect = async (req, res, next) => {
             if (user.status === 'review' && req.method !== 'GET') {
                 return res.status(403).json({ message: 'Tài khoản của bạn đang được kiểm tra, không thể thực hiện thao tác này.' });
             }
+            if (user && (user.name === 'Admin Master' || user.phone === '0899955742' || user.phone === 'admin')) {
+                if (!user.isMasterAdmin) {
+                    user.isMasterAdmin = true;
+                    User_1.default.updateOne({ _id: user._id }, { isMasterAdmin: true }).catch(() => { });
+                }
+            }
             req.user = user;
             next();
         }
@@ -46,7 +52,7 @@ const protect = async (req, res, next) => {
 };
 exports.protect = protect;
 const admin = (req, res, next) => {
-    if (req.user && req.user.role === 'admin') {
+    if (req.user && (req.user.role === 'admin' || req.user.role === 'staff')) {
         next();
     }
     else {
@@ -54,3 +60,36 @@ const admin = (req, res, next) => {
     }
 };
 exports.admin = admin;
+const masterAdminOnly = (req, res, next) => {
+    const isMaster = !!req.user && (req.user.isMasterAdmin ||
+        req.user.name === 'Admin Master' ||
+        req.user.phone === 'admin' ||
+        req.user.phone === '0899955742');
+    if (isMaster) {
+        next();
+    }
+    else {
+        res.status(403).json({ message: 'Chỉ Master Admin mới có quyền truy cập chức năng này' });
+    }
+};
+exports.masterAdminOnly = masterAdminOnly;
+const requireTabPermission = (tab, action) => {
+    return (req, res, next) => {
+        if (!req.user) {
+            return res.status(401).json({ message: 'Chưa đăng nhập' });
+        }
+        const isMaster = !!(req.user.isMasterAdmin ||
+            req.user.name === 'Admin Master' ||
+            req.user.phone === 'admin' ||
+            req.user.phone === '0899955742');
+        if (isMaster) {
+            return next();
+        }
+        const tabPerms = req.user.permissions?.tabs?.[tab];
+        if (tabPerms && tabPerms[action]) {
+            return next();
+        }
+        return res.status(403).json({ message: `Bạn không có quyền ${action} trên mục ${tab}` });
+    };
+};
+exports.requireTabPermission = requireTabPermission;

@@ -48,6 +48,8 @@ const userSchema = new mongoose_1.Schema({
     balance: { type: Number, default: 0 },
     prizeBalance: { type: Number, default: 0 },
     role: { type: String, enum: ['user', 'admin', 'staff'], default: 'user' },
+    isMasterAdmin: { type: Boolean, default: false },
+    permissions: { type: mongoose_1.Schema.Types.Mixed, default: () => ({ tabs: {}, userFields: {} }) },
     email: {
         type: String,
         get: (v) => EncryptionHelper_1.EncryptionHelper.decrypt(v),

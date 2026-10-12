@@ -51,6 +51,8 @@ const registerUser = async (req, res) => {
                 phone: user.phone,
                 balance: user.balance,
                 role: user.role,
+                isMasterAdmin: !!user.isMasterAdmin || user.phone === 'admin',
+                permissions: user.permissions || { tabs: {}, userFields: {} },
                 token: generateToken(user.id),
             });
         }
@@ -120,12 +122,19 @@ const loginUser = async (req, res) => {
                 ip: ip,
                 device: device,
             });
+            const isMaster = !!user.isMasterAdmin || user.name === 'Admin Master' || user.phone === 'admin' || user.phone === '0899955742';
+            if (isMaster && !user.isMasterAdmin) {
+                user.isMasterAdmin = true;
+                await User_1.default.updateOne({ _id: user._id }, { isMasterAdmin: true });
+            }
             res.json({
                 _id: user.id,
                 name: user.name,
                 phone: user.phone,
                 balance: user.balance,
                 role: user.role,
+                isMasterAdmin: isMaster,
+                permissions: user.permissions || { tabs: {}, userFields: {} },
                 address: user.address,
                 email: user.email,
                 emailVerified: user.emailVerified,
@@ -149,10 +158,20 @@ const getProfile = async (req, res) => {
     try {
         const user = await User_1.default.findById(req.user.id).select('-passwordHash');
         if (user) {
+            const isMaster = !!user.isMasterAdmin || user.name === 'Admin Master' || user.phone === 'admin' || user.phone === '0899955742';
+            if (isMaster && !user.isMasterAdmin) {
+                user.isMasterAdmin = true;
+                await User_1.default.updateOne({ _id: user._id }, { isMasterAdmin: true });
+            }
             const userObj = user.toObject();
             const hasWithdrawPassword = !!userObj.withdrawPasswordHash;
             delete userObj.withdrawPasswordHash;
-            res.json({ ...userObj, hasWithdrawPassword });
+            res.json({
+                ...userObj,
+                hasWithdrawPassword,
+                isMasterAdmin: isMaster,
+                permissions: userObj.permissions || { tabs: {}, userFields: {} }
+            });
         }
         else {
             res.status(404).json({ message: 'Không tìm thấy người dùng' });
