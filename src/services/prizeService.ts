@@ -515,6 +515,198 @@ export const processDrawResults = async (drawId: string) => {
                 prizeAmount += boardPrize;
               }
             }
+            // 2.1. Xiên 3 càng ĐB (Tỉ lệ 1 ăn 3.2)
+            else if (pTypeLower === 'xiên 3 càng đb' || pTypeLower === 'xien 3 cang db') {
+              const rate = (game.payoutRates && (game.payoutRates['Xiên 3 càng ĐB'] || game.payoutRates['xien_3cang_db'])) ?? 3.2;
+              const specialLast3 = (w[0] || '').slice(-3);
+              const betPerNum = Math.floor(board.cost / (board.numbers.length || 1));
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                if (specialLast3.includes(numStr)) {
+                  boardPrize += Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 2.2. Xiên 3 càng giải 1 (Tỉ lệ 1 ăn 3.2)
+            else if (pTypeLower === 'xiên 3 càng giải 1' || pTypeLower === 'xien 3 cang giai 1') {
+              const rate = (game.payoutRates && (game.payoutRates['Xiên 3 càng giải 1'] || game.payoutRates['xien_3cang_g1'])) ?? 3.2;
+              const g1Last3 = (w[1] || '').slice(-3);
+              const betPerNum = Math.floor(board.cost / (board.numbers.length || 1));
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                if (g1Last3.includes(numStr)) {
+                  boardPrize += Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 2.3. Xiên 4 càng ĐB (Tỉ lệ 1 ăn 2.4)
+            else if (pTypeLower === 'xiên 4 càng đb' || pTypeLower === 'xien 4 cang db') {
+              const rate = (game.payoutRates && (game.payoutRates['Xiên 4 càng ĐB'] || game.payoutRates['xien_4cang_db'])) ?? 2.4;
+              const specialLast4 = (w[0] || '').slice(-4);
+              const betPerNum = Math.floor(board.cost / (board.numbers.length || 1));
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                if (specialLast4.includes(numStr)) {
+                  boardPrize += Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 2.4. Xiên 4 càng giải 1 (Tỉ lệ 1 ăn 2.4)
+            else if (pTypeLower === 'xiên 4 càng giải 1' || pTypeLower === 'xien 4 cang giai 1') {
+              const rate = (game.payoutRates && (game.payoutRates['Xiên 4 càng giải 1'] || game.payoutRates['xien_4cang_g1'])) ?? 2.4;
+              const g1Last4 = (w[1] || '').slice(-4);
+              const betPerNum = Math.floor(board.cost / (board.numbers.length || 1));
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                if (g1Last4.includes(numStr)) {
+                  boardPrize += Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 2.5. 4 Càng ĐB (Tỉ lệ 1 ăn 9000)
+            else if (pTypeLower === '4 càng đb' || pTypeLower === '4 cang db' || pTypeLower === '4 càng' || pTypeLower === '4 cang') {
+              const rate = (game.payoutRates && (game.payoutRates['4 Càng ĐB'] || game.payoutRates['4_cang_db'])) ?? 9000;
+              const specialLast4 = (w[0] || '').slice(-4);
+              const betPerNum = Math.floor(board.cost / (board.numbers.length || 1));
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                if (numStr === specialLast4) {
+                  boardPrize += Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 2.6. 4 Càng đầu ĐB (Tỉ lệ 1 ăn 9000)
+            else if (pTypeLower === '4 càng đầu đb' || pTypeLower === '4 cang dau db') {
+              const rate = (game.payoutRates && (game.payoutRates['4 Càng đầu ĐB'] || game.payoutRates['4_cang_dau_db'])) ?? 9000;
+              const specialFirst4 = (w[0] || '').slice(0, 4);
+              const betPerNum = Math.floor(board.cost / (board.numbers.length || 1));
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                if (numStr === specialFirst4) {
+                  boardPrize += Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 2.7. 4 Càng giải 1 (Tỉ lệ 1 ăn 9000)
+            else if (pTypeLower === '4 càng giải 1' || pTypeLower === '4 cang giai 1') {
+              const rate = (game.payoutRates && (game.payoutRates['4 Càng giải 1'] || game.payoutRates['4_cang_g1'])) ?? 9000;
+              const g1Last4 = (w[1] || '').slice(-4);
+              const betPerNum = Math.floor(board.cost / (board.numbers.length || 1));
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                if (numStr === g1Last4) {
+                  boardPrize += Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 2.8. 4 Càng đầu giải 1 (Tỉ lệ 1 ăn 9000)
+            else if (pTypeLower === '4 càng đầu giải 1' || pTypeLower === '4 cang dau giai 1') {
+              const rate = (game.payoutRates && (game.payoutRates['4 Càng đầu giải 1'] || game.payoutRates['4_cang_dau_g1'])) ?? 9000;
+              const g1First4 = (w[1] || '').slice(0, 4);
+              const betPerNum = Math.floor(board.cost / (board.numbers.length || 1));
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                if (numStr === g1First4) {
+                  boardPrize += Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 2.9. 3 Càng ĐB (Tỉ lệ 1 ăn 980)
+            else if (pTypeLower === '3 càng đb' || pTypeLower === '3 cang db' || pTypeLower === '3 càng' || pTypeLower === '3 cang') {
+              const rate = (game.payoutRates && (game.payoutRates['3 Càng ĐB'] || game.payoutRates['3_cang_db'])) ?? 980;
+              const specialLast3 = (w[0] || '').slice(-3);
+              const betPerNum = Math.floor(board.cost / (board.numbers.length || 1));
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                if (numStr === specialLast3) {
+                  boardPrize += Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 2.10. 3 Càng đầu ĐB (Tỉ lệ 1 ăn 980)
+            else if (pTypeLower === '3 càng đầu đb' || pTypeLower === '3 cang dau db') {
+              const rate = (game.payoutRates && (game.payoutRates['3 Càng đầu ĐB'] || game.payoutRates['3_cang_dau_db'])) ?? 980;
+              const specialFirst3 = (w[0] || '').slice(0, 3);
+              const betPerNum = Math.floor(board.cost / (board.numbers.length || 1));
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                if (numStr === specialFirst3) {
+                  boardPrize += Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 2.11. 3 Càng giải 1 (Tỉ lệ 1 ăn 980)
+            else if (pTypeLower === '3 càng giải 1' || pTypeLower === '3 cang giai 1') {
+              const rate = (game.payoutRates && (game.payoutRates['3 Càng giải 1'] || game.payoutRates['3_cang_g1'])) ?? 980;
+              const g1Last3 = (w[1] || '').slice(-3);
+              const betPerNum = Math.floor(board.cost / (board.numbers.length || 1));
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                if (numStr === g1Last3) {
+                  boardPrize += Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 2.12. 3 Càng đầu giải 1 (Tỉ lệ 1 ăn 980)
+            else if (pTypeLower === '3 càng đầu giải 1' || pTypeLower === '3 cang dau giai 1') {
+              const rate = (game.payoutRates && (game.payoutRates['3 Càng đầu giải 1'] || game.payoutRates['3_cang_dau_g1'])) ?? 980;
+              const g1First3 = (w[1] || '').slice(0, 3);
+              const betPerNum = Math.floor(board.cost / (board.numbers.length || 1));
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                if (numStr === g1First3) {
+                  boardPrize += Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
             // 3. Đề ĐB (Tỉ lệ 1 ăn 99.9)
             else if (pTypeLower === 'đề đb' || pTypeLower === 'de db') {
               const specialLast2 = (w[0] || '').slice(-2);

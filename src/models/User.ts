@@ -8,6 +8,11 @@ export interface IUser extends Document {
   balance: number;
   prizeBalance: number;
   role: 'user' | 'admin' | 'staff';
+  isMasterAdmin?: boolean;
+  permissions?: {
+    tabs?: Record<string, { view?: boolean; create?: boolean; update?: boolean; delete?: boolean }>;
+    userFields?: Record<string, boolean>;
+  };
   email?: string;
   emailVerified?: boolean;
   emailOtp?: string;
@@ -57,6 +62,8 @@ const userSchema = new Schema<IUser>(
     balance: { type: Number, default: 0 },
     prizeBalance: { type: Number, default: 0 },
     role: { type: String, enum: ['user', 'admin', 'staff'], default: 'user' },
+    isMasterAdmin: { type: Boolean, default: false },
+    permissions: { type: Schema.Types.Mixed, default: () => ({ tabs: {}, userFields: {} }) },
     email: { 
       type: String,
       get: (v: string) => EncryptionHelper.decrypt(v) as string,

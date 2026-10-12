@@ -8,8 +8,14 @@ import Transaction from '../models/Transaction';
 import AdminLog from '../models/AdminLog';
 import BalanceHistory from '../models/BalanceHistory';
 
-export const getUsers = async (req: Request, res: Response) => {
+export const getUsers = async (req: AuthRequest, res: Response) => {
   try {
+    const adminUser = req.user;
+    const isMaster = !!adminUser?.isMasterAdmin || adminUser?.phone === "admin";
+    const userTabPerms = adminUser?.permissions?.tabs?.users;
+    if (!isMaster && (!userTabPerms || !userTabPerms.view)) {
+      return res.status(403).json({ message: "Bạn không có quyền xem danh sách người dùng" });
+    }
     const { search } = req.query;
     const pipeline: any[] = [];
 
@@ -119,7 +125,38 @@ export const getUsers = async (req: Request, res: Response) => {
       }
       return u;
     });
-    res.json(users);
+
+    const fieldPerms = adminUser?.permissions?.userFields || {};
+    const sanitizedUsers = users.map(u => {
+      if (isMaster) return u;
+      if (!fieldPerms.phone) u.phone = "******";
+      if (!fieldPerms.name) u.name = "******";
+      if (!fieldPerms.balance) {
+        u.balance = 0;
+        u.prizeBalance = 0;
+      }
+      if (!fieldPerms.email) u.email = "******";
+      if (!fieldPerms.cccdNumber) u.cccdNumber = "******";
+      if (!fieldPerms.cccdImage) u.cccdImage = "";
+      if (!fieldPerms.address) u.address = "******";
+      if (!fieldPerms.banks) {
+        u.banks = [];
+        u.bankInfo = undefined;
+      }
+      if (!fieldPerms.wallets) u.wallets = [];
+      if (!fieldPerms.note) u.note = "";
+      if (!fieldPerms.totalDepositWithdraw) {
+        u.totalDeposit = 0;
+        u.totalWithdraw = 0;
+      }
+      if (!fieldPerms.ipInfo) {
+        u.registerIp = "-";
+        u.loginIp = "-";
+      }
+      return u;
+    });
+
+    res.json(sanitizedUsers);
   } catch (error) {
     res.status(500).json({ message: 'Error fetching users' });
   }
@@ -136,7 +173,23 @@ export const updateUser = async (req: AuthRequest, res: Response) => {
     }
 
     const adminUser = req.user;
-    if (!adminUser) return res.status(401).json({ message: 'Unauthorized' });
+    if (!adminUser) return res.status(401).json({ message: "Unauthorized" });
+
+    const isMaster = !!adminUser?.isMasterAdmin || adminUser?.phone === "admin";
+    const userTabPerms = adminUser?.permissions?.tabs?.users;
+    if (!isMaster && (!userTabPerms || !userTabPerms.update)) {
+      return res.status(403).json({ message: "Bạn không có quyền chỉnh sửa người dùng" });
+    }
+
+    const fieldPerms = adminUser?.permissions?.userFields || {};
+    const finalName = (!isMaster && (!fieldPerms.name || name === '******')) ? oldUser.name : (name !== undefined ? name : oldUser.name);
+    const finalBalance = (!isMaster && !fieldPerms.balance) ? oldUser.balance : (balance !== undefined ? Number(balance) : oldUser.balance);
+    const finalEmail = (!isMaster && (!fieldPerms.email || email === '******')) ? oldUser.email : (email !== undefined ? email : oldUser.email);
+    const finalCccdNumber = (!isMaster && (!fieldPerms.cccdNumber || cccdNumber === '******')) ? oldUser.cccdNumber : (cccdNumber !== undefined ? cccdNumber : oldUser.cccdNumber);
+    const finalCccdImage = (!isMaster && !fieldPerms.cccdImage) ? oldUser.cccdImage : (cccdImage !== undefined ? cccdImage : oldUser.cccdImage);
+    const finalBanks = (!isMaster && !fieldPerms.banks) ? oldUser.banks : (banks !== undefined ? banks : oldUser.banks);
+    const finalBankInfo = (!isMaster && !fieldPerms.banks) ? oldUser.bankInfo : (bankInfo !== undefined ? bankInfo : oldUser.bankInfo);
+    const finalWallets = (!isMaster && !fieldPerms.wallets) ? oldUser.wallets : (wallets !== undefined ? wallets : oldUser.wallets);
 
     let details = [];
     if (oldUser.balance !== Number(balance)) {
@@ -190,7 +243,22 @@ export const updateUser = async (req: AuthRequest, res: Response) => {
     // Or we can save it as an empty string to clear the box.
     const user = await User.findByIdAndUpdate(
       id,
-      { name, phone, balance, role, email, emailVerified, cccdImage, cccdNumber, isInfoUpdated, bankInfo, banks, wallets, status, note: '' },
+      {
+        name: finalName,
+        phone: oldUser.phone,
+        balance: finalBalance,
+        role: role !== undefined ? role : oldUser.role,
+        email: finalEmail,
+        emailVerified: emailVerified !== undefined ? emailVerified : oldUser.emailVerified,
+        cccdImage: finalCccdImage,
+        cccdNumber: finalCccdNumber,
+        isInfoUpdated: isInfoUpdated !== undefined ? isInfoUpdated : oldUser.isInfoUpdated,
+        bankInfo: finalBankInfo,
+        banks: finalBanks,
+        wallets: finalWallets,
+        status: status !== undefined ? status : oldUser.status,
+        note: ''
+      },
       { new: true }
     );
     
@@ -216,8 +284,14 @@ export const getUserHistory = async (req: Request, res: Response) => {
   }
 };
 
-export const deleteUser = async (req: Request, res: Response) => {
+export const deleteUser = async (req: AuthRequest, res: Response) => {
   try {
+    const adminUser = req.user;
+    const isMaster = !!adminUser?.isMasterAdmin || adminUser?.phone === "admin";
+    const userTabPerms = adminUser?.permissions?.tabs?.users;
+    if (!isMaster && (!userTabPerms || !userTabPerms.delete)) {
+      return res.status(403).json({ message: "Bạn không có quyền xoá người dùng" });
+    }
     const { id } = req.params;
     await User.findByIdAndDelete(id);
     res.json({ message: 'User deleted successfully' });
@@ -233,7 +307,13 @@ export const resetPassword = async (req: AuthRequest, res: Response) => {
     if (!newPassword) return res.status(400).json({ message: 'Vui lòng cung cấp mật khẩu mới' });
 
     const adminUser = req.user;
-    if (!adminUser) return res.status(401).json({ message: 'Unauthorized' });
+    if (!adminUser) return res.status(401).json({ message: "Unauthorized" });
+
+    const isMaster = !!adminUser?.isMasterAdmin || adminUser?.phone === "admin";
+    const userTabPerms = adminUser?.permissions?.tabs?.users;
+    if (!isMaster && (!userTabPerms || !userTabPerms.update)) {
+      return res.status(403).json({ message: "Bạn không có quyền chỉnh sửa người dùng" });
+    }
 
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(newPassword, salt);
@@ -262,7 +342,13 @@ export const resetWithdrawPassword = async (req: AuthRequest, res: Response) => 
     if (!newPassword) return res.status(400).json({ message: 'Vui lòng cung cấp mật khẩu rút tiền mới' });
 
     const adminUser = req.user;
-    if (!adminUser) return res.status(401).json({ message: 'Unauthorized' });
+    if (!adminUser) return res.status(401).json({ message: "Unauthorized" });
+
+    const isMaster = !!adminUser?.isMasterAdmin || adminUser?.phone === "admin";
+    const userTabPerms = adminUser?.permissions?.tabs?.users;
+    if (!isMaster && (!userTabPerms || !userTabPerms.update)) {
+      return res.status(403).json({ message: "Bạn không có quyền chỉnh sửa người dùng" });
+    }
 
     const salt = await bcrypt.genSalt(10);
     const withdrawPasswordHash = await bcrypt.hash(newPassword, salt);

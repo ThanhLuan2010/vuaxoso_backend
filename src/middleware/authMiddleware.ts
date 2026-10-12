@@ -54,9 +54,33 @@ export const protect = async (req: AuthRequest, res: Response, next: NextFunctio
 };
 
 export const admin = (req: AuthRequest, res: Response, next: NextFunction) => {
-  if (req.user && req.user.role === 'admin') {
+  if (req.user && (req.user.role === 'admin' || req.user.role === 'staff')) {
     next();
   } else {
     res.status(403).json({ message: 'Không có quyền Admin' });
   }
+};
+
+export const masterAdminOnly = (req: AuthRequest, res: Response, next: NextFunction) => {
+  if (req.user && (req.user.isMasterAdmin || req.user.phone === 'admin')) {
+    next();
+  } else {
+    res.status(403).json({ message: 'Chỉ Master Admin mới có quyền truy cập chức năng này' });
+  }
+};
+
+export const requireTabPermission = (tab: string, action: 'view' | 'create' | 'update' | 'delete') => {
+  return (req: AuthRequest, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      return res.status(401).json({ message: 'Chưa đăng nhập' });
+    }
+    if (req.user.isMasterAdmin || req.user.phone === 'admin') {
+      return next();
+    }
+    const tabPerms = req.user.permissions?.tabs?.[tab];
+    if (tabPerms && tabPerms[action]) {
+      return next();
+    }
+    return res.status(403).json({ message: `Bạn không có quyền ${action} trên mục ${tab}` });
+  };
 };

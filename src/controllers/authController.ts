@@ -53,6 +53,8 @@ export const registerUser = async (req: Request, res: Response) => {
         phone: user.phone,
         balance: user.balance,
         role: user.role,
+        isMasterAdmin: !!user.isMasterAdmin || user.phone === 'admin',
+        permissions: user.permissions || { tabs: {}, userFields: {} },
         token: generateToken(user.id),
       });
     } else {
