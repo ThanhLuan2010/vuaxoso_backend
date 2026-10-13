@@ -4,6 +4,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.adminToggleNotificationVisibility = exports.adminDeleteNotification = exports.adminCreateNotification = exports.adminGetNotifications = exports.getMyNotifications = void 0;
+const User_1 = __importDefault(require("../models/User"));
+const EncryptionHelper_1 = require("../utils/EncryptionHelper");
 const Notification_1 = __importDefault(require("../models/Notification"));
 const AdminLog_1 = __importDefault(require("../models/AdminLog"));
 const getMyNotifications = async (req, res) => {
@@ -27,7 +29,37 @@ const getMyNotifications = async (req, res) => {
 exports.getMyNotifications = getMyNotifications;
 const adminGetNotifications = async (req, res) => {
     try {
-        const notifications = await Notification_1.default.find().populate("user", "name phone").populate("sender", "name").sort({ createdAt: -1 });
+        const { search } = req.query;
+        let query = {};
+        if (search && search.trim()) {
+            const searchStr = search.trim();
+            const searchRegex = new RegExp(searchStr, "i");
+            const exactEncryptedPhone = EncryptionHelper_1.EncryptionHelper.encryptDeterministic(searchStr);
+            const matchedUsers = await User_1.default.find({
+                $or: [
+                    { name: searchRegex },
+                    { phone: searchRegex },
+                    { phone: exactEncryptedPhone }
+                ]
+            }).select("_id");
+            const matchedUserIds = matchedUsers.map(u => u._id);
+            query.$or = [
+                { title: searchRegex },
+                { body: searchRegex },
+                { type: searchRegex },
+                { user: { $in: matchedUserIds } }
+            ];
+        }
+        const notifications = await Notification_1.default.find(query)
+            .populate("user", "name phone")
+            .populate("sender", "name")
+            .sort({ createdAt: -1 })
+            .lean();
+        for (const notif of notifications) {
+            if (notif.user && typeof notif.user.phone === "string") {
+                notif.user.phone = EncryptionHelper_1.EncryptionHelper.decryptDeterministic(notif.user.phone);
+            }
+        }
         res.json(notifications);
     }
     catch (error) {

@@ -1,3 +1,5 @@
+import User from '../models/User';
+import { EncryptionHelper } from '../utils/EncryptionHelper';
 import { Response } from 'express';
 import Notification from '../models/Notification';
 import AdminLog from '../models/AdminLog';
@@ -23,7 +25,43 @@ export const getMyNotifications = async (req: any, res: Response) => {
 
 export const adminGetNotifications = async (req: any, res: Response) => {
   try {
-    const notifications = await Notification.find().populate("user", "name phone").populate("sender", "name").sort({ createdAt: -1 });
+    const { search } = req.query;
+    let query: any = {};
+
+    if (search && (search as string).trim()) {
+      const searchStr = (search as string).trim();
+      const searchRegex = new RegExp(searchStr, "i");
+      const exactEncryptedPhone = EncryptionHelper.encryptDeterministic(searchStr);
+
+      const matchedUsers = await User.find({
+        $or: [
+          { name: searchRegex },
+          { phone: searchRegex },
+          { phone: exactEncryptedPhone }
+        ]
+      }).select("_id");
+      const matchedUserIds = matchedUsers.map(u => u._id);
+
+      query.$or = [
+        { title: searchRegex },
+        { body: searchRegex },
+        { type: searchRegex },
+        { user: { $in: matchedUserIds } }
+      ];
+    }
+
+    const notifications = await Notification.find(query)
+      .populate("user", "name phone")
+      .populate("sender", "name")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    for (const notif of notifications) {
+      if (notif.user && typeof (notif.user as any).phone === "string") {
+        (notif.user as any).phone = EncryptionHelper.decryptDeterministic((notif.user as any).phone);
+      }
+    }
+
     res.json(notifications);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
