@@ -55,46 +55,63 @@ const getUsers = async (req, res) => {
         if (status && typeof status === "string" && status !== "all") {
             extraMatch.status = status;
         }
-        if (startDate || endDate || (memberType && memberType !== "all")) {
+        const vnNow = new Date();
+        const vnTodayStr = vnNow.toLocaleDateString("en-CA", { timeZone: "Asia/Ho_Chi_Minh" });
+        const [tY, tM, tD] = vnTodayStr.split("-").map(Number);
+        const todayStart = new Date(Date.UTC(tY, tM - 1, tD, 0 - 7, 0, 0, 0));
+        const todayEnd = new Date(Date.UTC(tY, tM - 1, tD, 23 - 7, 59, 59, 999));
+        if (memberType === "new") {
+            // Mới đăng ký là lọc trong ngày hiện tại
+            extraMatch.createdAt = { $gte: todayStart, $lte: todayEnd };
+        }
+        else if (memberType === "old") {
+            // Tài khoản cũ là từ ngày hôm trước hôm nay trở về trước (< todayStart)
             const start = startDate ? new Date(startDate) : null;
             const end = endDate ? new Date(endDate) : null;
-            if (start)
-                start.setHours(0, 0, 0, 0);
-            if (end)
-                end.setHours(23, 59, 59, 999);
-            if (memberType === "new") {
-                if (start && end) {
-                    extraMatch.createdAt = { $gte: start, $lte: end };
-                }
-                else if (start) {
-                    extraMatch.createdAt = { $gte: start };
-                }
-                else if (end) {
-                    extraMatch.createdAt = { $lte: end };
-                }
-                else {
-                    const d30 = new Date();
-                    d30.setDate(d30.getDate() - 30);
-                    extraMatch.createdAt = { $gte: d30 };
-                }
+            if (start) {
+                const sStr = start.toLocaleDateString("en-CA", { timeZone: "Asia/Ho_Chi_Minh" });
+                const [sY, sM, sD] = sStr.split("-").map(Number);
+                start.setTime(Date.UTC(sY, sM - 1, sD, 0 - 7, 0, 0, 0));
             }
-            else if (memberType === "old") {
-                if (start) {
-                    extraMatch.createdAt = { $lt: start };
-                }
-                else if (end) {
-                    extraMatch.createdAt = { $lt: end };
-                }
-                else {
-                    const d30 = new Date();
-                    d30.setDate(d30.getDate() - 30);
-                    extraMatch.createdAt = { $lt: d30 };
-                }
+            if (end) {
+                const eStr = end.toLocaleDateString("en-CA", { timeZone: "Asia/Ho_Chi_Minh" });
+                const [eY, eM, eD] = eStr.split("-").map(Number);
+                end.setTime(Date.UTC(eY, eM - 1, eD, 23 - 7, 59, 59, 999));
             }
-            else if (memberType === "all") {
-                if (end) {
-                    extraMatch.createdAt = { $lte: end };
-                }
+            if (start && end) {
+                extraMatch.createdAt = { $gte: start, $lte: end < todayStart ? end : new Date(todayStart.getTime() - 1) };
+            }
+            else if (start) {
+                extraMatch.createdAt = { $gte: start, $lt: todayStart };
+            }
+            else if (end) {
+                extraMatch.createdAt = { $lte: end < todayStart ? end : new Date(todayStart.getTime() - 1) };
+            }
+            else {
+                extraMatch.createdAt = { $lt: todayStart };
+            }
+        }
+        else if (startDate || endDate) {
+            const start = startDate ? new Date(startDate) : null;
+            const end = endDate ? new Date(endDate) : null;
+            if (start) {
+                const sStr = start.toLocaleDateString("en-CA", { timeZone: "Asia/Ho_Chi_Minh" });
+                const [sY, sM, sD] = sStr.split("-").map(Number);
+                start.setTime(Date.UTC(sY, sM - 1, sD, 0 - 7, 0, 0, 0));
+            }
+            if (end) {
+                const eStr = end.toLocaleDateString("en-CA", { timeZone: "Asia/Ho_Chi_Minh" });
+                const [eY, eM, eD] = eStr.split("-").map(Number);
+                end.setTime(Date.UTC(eY, eM - 1, eD, 23 - 7, 59, 59, 999));
+            }
+            if (start && end) {
+                extraMatch.createdAt = { $gte: start, $lte: end };
+            }
+            else if (start) {
+                extraMatch.createdAt = { $gte: start };
+            }
+            else if (end) {
+                extraMatch.createdAt = { $lte: end };
             }
         }
         if (Object.keys(extraMatch).length > 0) {
