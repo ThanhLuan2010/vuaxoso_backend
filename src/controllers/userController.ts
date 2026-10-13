@@ -16,7 +16,7 @@ export const getUsers = async (req: AuthRequest, res: Response) => {
     if (!isMaster && (!userTabPerms || !userTabPerms.view)) {
       return res.status(403).json({ message: "Bạn không có quyền xem danh sách người dùng" });
     }
-    const { search } = req.query;
+    const { search, startDate, endDate, status, memberType } = req.query;
     const pipeline: any[] = [];
 
     if (search && typeof search === 'string') {
@@ -50,6 +50,50 @@ export const getUsers = async (req: AuthRequest, res: Response) => {
           ]
         }
       });
+    }
+
+        const extraMatch: any = {};
+    if (status && typeof status === "string" && status !== "all") {
+      extraMatch.status = status;
+    }
+
+    if (startDate || endDate || (memberType && memberType !== "all")) {
+      const start = startDate ? new Date(startDate as string) : null;
+      const end = endDate ? new Date(endDate as string) : null;
+      if (start) start.setHours(0, 0, 0, 0);
+      if (end) end.setHours(23, 59, 59, 999);
+
+      if (memberType === "new") {
+        if (start && end) {
+          extraMatch.createdAt = { $gte: start, $lte: end };
+        } else if (start) {
+          extraMatch.createdAt = { $gte: start };
+        } else if (end) {
+          extraMatch.createdAt = { $lte: end };
+        } else {
+          const d30 = new Date();
+          d30.setDate(d30.getDate() - 30);
+          extraMatch.createdAt = { $gte: d30 };
+        }
+      } else if (memberType === "old") {
+        if (start) {
+          extraMatch.createdAt = { $lt: start };
+        } else if (end) {
+          extraMatch.createdAt = { $lt: end };
+        } else {
+          const d30 = new Date();
+          d30.setDate(d30.getDate() - 30);
+          extraMatch.createdAt = { $lt: d30 };
+        }
+      } else if (memberType === "all") {
+        if (end) {
+          extraMatch.createdAt = { $lte: end };
+        }
+      }
+    }
+
+    if (Object.keys(extraMatch).length > 0) {
+      pipeline.push({ $match: extraMatch });
     }
 
     pipeline.push(
