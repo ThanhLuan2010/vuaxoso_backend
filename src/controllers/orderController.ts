@@ -324,13 +324,24 @@ export const getOrderById = async (req: any, res: Response) => {
 export const getAllOrders = async (req: any, res: Response) => {
   try {
     let query: any = {};
-    if (req.query.date) {
-      const dateStr = req.query.date as string;
-      const startOfDay = new Date(dateStr);
-      startOfDay.setHours(0, 0, 0, 0);
-      const endOfDay = new Date(dateStr);
-      endOfDay.setHours(23, 59, 59, 999);
-      query.createdAt = { $gte: startOfDay, $lte: endOfDay };
+    const { date, startDate, endDate, search } = req.query;
+
+    const effectiveStart = startDate || (date && !endDate ? date : undefined);
+    const effectiveEnd = endDate || (date && !startDate ? date : undefined);
+
+    if (effectiveStart || effectiveEnd) {
+      const dateFilter: any = {};
+      if (effectiveStart) {
+        const sStr = effectiveStart as string;
+        const start = sStr.length <= 10 ? new Date(`${sStr}T00:00:00+07:00`) : new Date(sStr);
+        dateFilter.$gte = start;
+      }
+      if (effectiveEnd) {
+        const eStr = effectiveEnd as string;
+        const end = eStr.length <= 10 ? new Date(`${eStr}T23:59:59.999+07:00`) : new Date(eStr);
+        dateFilter.$lte = end;
+      }
+      query.createdAt = dateFilter;
     }
 
     if (req.query.search) {
@@ -383,13 +394,24 @@ export const getAllOrders = async (req: any, res: Response) => {
 export const getOrderSummary = async (req: any, res: Response) => {
   try {
     let query: any = {};
-    if (req.query.date) {
-      const dateStr = req.query.date as string;
-      const startOfDay = new Date(dateStr);
-      startOfDay.setHours(0, 0, 0, 0);
-      const endOfDay = new Date(dateStr);
-      endOfDay.setHours(23, 59, 59, 999);
-      query.createdAt = { $gte: startOfDay, $lte: endOfDay };
+    const { date, startDate, endDate } = req.query;
+
+    const effectiveStart = startDate || (date && !endDate ? date : undefined);
+    const effectiveEnd = endDate || (date && !startDate ? date : undefined);
+
+    if (effectiveStart || effectiveEnd) {
+      const dateFilter: any = {};
+      if (effectiveStart) {
+        const sStr = effectiveStart as string;
+        const start = sStr.length <= 10 ? new Date(`${sStr}T00:00:00+07:00`) : new Date(sStr);
+        dateFilter.$gte = start;
+      }
+      if (effectiveEnd) {
+        const eStr = effectiveEnd as string;
+        const end = eStr.length <= 10 ? new Date(`${eStr}T23:59:59.999+07:00`) : new Date(eStr);
+        dateFilter.$lte = end;
+      }
+      query.createdAt = dateFilter;
     }
 
     // Only count completed/valid orders for revenue? Usually pending is also counted if paid.
