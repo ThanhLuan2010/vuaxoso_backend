@@ -3,7 +3,7 @@ import mongoose, { Document, Schema } from 'mongoose';
 export interface IGame extends Document {
   code: string; // e.g. keno, mega_645, max_3d
   name: string;
-  type: 'vietlott' | 'dientoan' | 'kienthiet';
+  type: 'vietlott' | 'dientoan' | 'kienthiet' | 'lode';
   brandColor?: string;
   bgColor?: string;
   badge?: string; // e.g. "10p-1 kỳ"
@@ -22,7 +22,7 @@ const gameSchema = new Schema<IGame>(
   {
     code: { type: String, required: true, unique: true },
     name: { type: String, required: true },
-    type: { type: String, enum: ['vietlott', 'dientoan', 'kienthiet'], required: true },
+    type: { type: String, enum: ['vietlott', 'dientoan', 'kienthiet', 'lode'], required: true },
     brandColor: { type: String },
     bgColor: { type: String },
     badge: { type: String },

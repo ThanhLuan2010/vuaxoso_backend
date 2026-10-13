@@ -26,7 +26,8 @@ const MOCK_GAMES: any[] = [
 
   { code: 'MB', name: 'Xổ số Miền Bắc', type: 'kienthiet', brandColor: '#E51F27', cronExpression: '15 18 * * *', drawDurationMinutes: 60 },
   { code: 'MT', name: 'Xổ số Miền Trung', type: 'kienthiet', brandColor: '#5C2D91', cronExpression: '15 17 * * *', drawDurationMinutes: 60 },
-  { code: 'MN', name: 'Xổ số Miền Nam', type: 'kienthiet', brandColor: '#FF6F00', cronExpression: '15 16 * * *', drawDurationMinutes: 60 }
+  { code: 'MN', name: 'Xổ số Miền Nam', type: 'kienthiet', brandColor: '#FF6F00', cronExpression: '15 16 * * *', drawDurationMinutes: 60 },
+  { code: 'xoso_3mien', name: 'LÔ ĐỀ 3 MIỀN', type: 'lode', brandColor: '#E51F27', bgColor: '#FCE8EA', badge: 'Đủ 3 Miền', cronExpression: '', drawDurationMinutes: 0, isActive: true }
 ];
 
 const seedGames = async () => {

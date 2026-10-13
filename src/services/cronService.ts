@@ -294,6 +294,22 @@ export const ensureGameConfigs = async () => {
         { $set: { cronExpression: cfg.cronExpression, drawDurationMinutes: cfg.drawDurationMinutes } }
       );
     }
+
+    const lodeGame = await Game.findOne({ code: 'xoso_3mien' });
+    if (!lodeGame) {
+      await Game.create({
+        code: 'xoso_3mien',
+        name: 'LÔ ĐỀ 3 MIỀN',
+        type: 'lode',
+        brandColor: '#E51F27',
+        bgColor: '#FCE8EA',
+        badge: 'Đủ 3 Miền',
+        cronExpression: '',
+        drawDurationMinutes: 0,
+        isActive: true
+      });
+      console.log('CronService: Đã tự động tạo game LÔ ĐỀ 3 MIỀN (xoso_3mien)');
+    }
   } catch (err) {
     console.error('CronService: Lỗi đồng bộ cấu hình game:', err);
   }

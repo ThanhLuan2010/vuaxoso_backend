@@ -37,7 +37,7 @@ const mongoose_1 = __importStar(require("mongoose"));
 const gameSchema = new mongoose_1.Schema({
     code: { type: String, required: true, unique: true },
     name: { type: String, required: true },
-    type: { type: String, enum: ['vietlott', 'dientoan', 'kienthiet'], required: true },
+    type: { type: String, enum: ['vietlott', 'dientoan', 'kienthiet', 'lode'], required: true },
     brandColor: { type: String },
     bgColor: { type: String },
     badge: { type: String },
