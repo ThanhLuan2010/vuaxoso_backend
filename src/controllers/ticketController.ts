@@ -1,3 +1,4 @@
+import Province from '../models/Province';
 import AdminLog from '../models/AdminLog';
 import { Response } from 'express';
 import Ticket from '../models/Ticket';
@@ -81,48 +82,89 @@ export const bulkGenerateTickets = async (req: any, res: Response) => {
   try {
     const { provinceId, drawDate } = req.body;
     if (!provinceId || !drawDate) {
-      return res.status(400).json({ message: 'Missing provinceId or drawDate' });
+      return res.status(400).json({ message: "Vui lòng chọn Tỉnh/Đài và Ngày xổ" });
     }
+
+    const normalCount = req.body.normalCount !== undefined ? parseInt(req.body.normalCount) : 500;
+    const specialCount = req.body.specialCount !== undefined ? parseInt(req.body.specialCount) : 500;
+    const customNormalMultiplier = req.body.normalMultiplier ? parseInt(req.body.normalMultiplier) : undefined;
+    const customSpecialMultiplier = req.body.specialMultiplier ? parseInt(req.body.specialMultiplier) : undefined;
+
+    // Check province region
+    const province = await Province.findOne({ provinceId });
+    const isMB = province?.region === "MB" || provinceId === "MB";
+
+    // Query existing numbers to avoid duplicate numbers for this province and date
+    const existingTickets = await Ticket.find({ provinceId, drawDate }).select("number").lean();
+    const existingNumbers = new Set(existingTickets.map(t => t.number));
 
     const ticketsData: any[] = [];
-    const normalMultipliers = [160, 160, 160, 160, 160, 160, 160];
-    const specialMultipliers = [4, 6, 7, 8, 11, 15];
+    const usedBatchNumbers = new Set<string>();
 
-    let seed = 0;
-    for (let i = 0; i < provinceId.length; i++) seed += provinceId.charCodeAt(i);
-    // Add date to seed to make it unique per date
-    for (let i = 0; i < drawDate.length; i++) seed += drawDate.charCodeAt(i);
-
-    for (let i = 0; i < 7; i++) {
-      const isMB = provinceId === 'MB';
-      const numberStr = isMB ? String((seed * (i + 13) * 997) % 100000).padStart(5, '0') : 'x' + String((seed * (i + 13) * 997) % 100000).padStart(5, '0');
-      ticketsData.push({
-        number: numberStr,
-        price: 10000,
-        ticketType: (isMB ? 'normal' : 'special'), // Non-MB: 'x' is special
-        multiplier: normalMultipliers[i % normalMultipliers.length],
-        originalMultiplier: normalMultipliers[i % normalMultipliers.length],
-        provinceId,
-        drawDate
-      });
+    // 1. Generate Special tickets (starts with x)
+    let attempts = 0;
+    while (ticketsData.length < specialCount && attempts < specialCount * 30) {
+      attempts++;
+      const rand5 = String(Math.floor(Math.random() * 100000)).padStart(5, "0");
+      const numStr = `x${rand5}`;
+      if (!existingNumbers.has(numStr) && !usedBatchNumbers.has(numStr)) {
+        usedBatchNumbers.add(numStr);
+        const m = customSpecialMultiplier !== undefined ? customSpecialMultiplier : 1;
+        ticketsData.push({
+          number: numStr,
+          price: 10000,
+          ticketType: "special",
+          multiplier: m,
+          originalMultiplier: m,
+          provinceId,
+          drawDate,
+          isSold: false,
+          isLocked: false
+        });
+      }
     }
 
-    for (let i = 0; i < 3; i++) {
-      const isMB = provinceId === 'MB';
-      const numberStr = isMB ? String((seed * (i + 7) * 1337) % 100000).padStart(5, '0') : String((seed * (i + 7) * 1337) % 1000000).padStart(6, '0');
-      ticketsData.push({
-        number: numberStr,
-        price: 10000,
-        ticketType: (isMB ? 'special' : 'normal'), // Non-MB: 6 digits is normal
-        multiplier: specialMultipliers[i % specialMultipliers.length],
-        originalMultiplier: specialMultipliers[i % specialMultipliers.length],
-        provinceId,
-        drawDate
-      });
+    // 2. Generate Normal tickets
+    attempts = 0;
+    while (ticketsData.length < (specialCount + normalCount) && attempts < (normalCount + specialCount) * 30) {
+      attempts++;
+      const numStr = isMB 
+        ? String(Math.floor(Math.random() * 100000)).padStart(5, "0")
+        : String(Math.floor(Math.random() * 1000000)).padStart(6, "0");
+      if (!existingNumbers.has(numStr) && !usedBatchNumbers.has(numStr)) {
+        usedBatchNumbers.add(numStr);
+        const m = customNormalMultiplier !== undefined ? customNormalMultiplier : (isMB ? 10 : 14);
+        ticketsData.push({
+          number: numStr,
+          price: 10000,
+          ticketType: "normal",
+          multiplier: m,
+          originalMultiplier: m,
+          provinceId,
+          drawDate,
+          isSold: false,
+          isLocked: false
+        });
+      }
     }
 
-    const tickets = await Ticket.insertMany(ticketsData);
-    res.status(201).json({ message: `Generated ${tickets.length} tickets`, tickets });
+    if (ticketsData.length === 0) {
+      return res.status(400).json({ message: "Không thể tạo thêm vé (đã trùng hết các số khả dụng)" });
+    }
+
+    const inserted = await Ticket.insertMany(ticketsData, { ordered: false });
+
+    await AdminLog.create({
+      adminId: req.user?._id,
+      adminName: req.user?.name || "Admin",
+      action: "Tạo vé hàng loạt",
+      details: `Tạo ${inserted.length} vé (${specialCount} vé ĐB, ${normalCount} vé thường) cho đài ${provinceId} ngày ${drawDate}`
+    });
+
+    res.status(201).json({
+      message: `Đã tạo thành công ${inserted.length} vé (${specialCount} vé Đặc Biệt, ${normalCount} vé Thường)!`,
+      count: inserted.length
+    });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
