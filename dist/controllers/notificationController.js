@@ -3,7 +3,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.adminToggleNotificationVisibility = exports.adminDeleteNotification = exports.adminCreateNotification = exports.adminGetNotifications = exports.getMyNotifications = void 0;
+exports.registerFCMToken = exports.adminToggleNotificationVisibility = exports.adminDeleteNotification = exports.adminCreateNotification = exports.adminGetNotifications = exports.getMyNotifications = void 0;
+const fcmService_1 = require("../services/fcmService");
 const User_1 = __importDefault(require("../models/User"));
 const EncryptionHelper_1 = require("../utils/EncryptionHelper");
 const Notification_1 = __importDefault(require("../models/Notification"));
@@ -89,6 +90,39 @@ const adminCreateNotification = async (req, res) => {
                 action: 'Nhắn tin',
                 details: `Gửi tin nhắn: "${title}" - ${body}`
             });
+            // Gửi push notification riêng cho User này
+            try {
+                const targetUser = await User_1.default.findById(user).select('fcmTokens');
+                if (targetUser && targetUser.fcmTokens && targetUser.fcmTokens.length > 0) {
+                    await (0, fcmService_1.sendPushToTokens)(targetUser.fcmTokens, title, body, {
+                        notificationId: notification._id.toString(),
+                        type: 'direct'
+                    });
+                }
+            }
+            catch (fcmErr) {
+                console.error('[FCM] Error sending push to user:', fcmErr);
+            }
+        }
+        else {
+            // Gửi push notification tới TOÀN BỘ User (Topic 'all' và Multicast)
+            try {
+                await (0, fcmService_1.sendPushToTopic)('all', title, body, {
+                    notificationId: notification._id.toString(),
+                    type: 'promo'
+                });
+                const usersWithTokens = await User_1.default.find({ fcmTokens: { $exists: true, $ne: [] } }).select('fcmTokens');
+                const allTokens = Array.from(new Set(usersWithTokens.flatMap(u => u.fcmTokens || [])));
+                if (allTokens.length > 0) {
+                    await (0, fcmService_1.sendPushToTokens)(allTokens, title, body, {
+                        notificationId: notification._id.toString(),
+                        type: 'promo'
+                    });
+                }
+            }
+            catch (fcmErr) {
+                console.error('[FCM] Error broadcasting push:', fcmErr);
+            }
         }
         res.status(201).json(notification);
     }
@@ -130,3 +164,22 @@ const adminToggleNotificationVisibility = async (req, res) => {
     }
 };
 exports.adminToggleNotificationVisibility = adminToggleNotificationVisibility;
+const registerFCMToken = async (req, res) => {
+    try {
+        const { token } = req.body;
+        if (!token) {
+            return res.status(400).json({ message: 'Token là bắt buộc' });
+        }
+        if (req.user?._id) {
+            await User_1.default.findByIdAndUpdate(req.user._id, {
+                $addToSet: { fcmTokens: token }
+            });
+            console.log(`[FCM] Registered token for user ${req.user._id}`);
+        }
+        res.json({ success: true, message: 'Đăng ký token thành công' });
+    }
+    catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+exports.registerFCMToken = registerFCMToken;

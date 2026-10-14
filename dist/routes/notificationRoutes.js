@@ -8,6 +8,7 @@ const notificationController_1 = require("../controllers/notificationController"
 const authMiddleware_1 = require("../middleware/authMiddleware");
 const router = express_1.default.Router();
 router.get('/my-notifications', authMiddleware_1.protect, notificationController_1.getMyNotifications);
+router.post('/register-token', authMiddleware_1.protect, notificationController_1.registerFCMToken);
 // Admin routes
 router.get('/admin', authMiddleware_1.protect, authMiddleware_1.admin, notificationController_1.adminGetNotifications);
 router.post('/admin', authMiddleware_1.protect, authMiddleware_1.admin, notificationController_1.adminCreateNotification);

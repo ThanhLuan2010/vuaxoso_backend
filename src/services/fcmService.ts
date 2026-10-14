@@ -5,16 +5,20 @@ import fs from 'fs';
 let isFirebaseInitialized = false;
 
 try {
-  const serviceAccountPath = path.resolve(__dirname, '../config/app-xosolive-firebase-adminsdk-fbsvc-024c98593a.json');
+  const configDir = path.resolve(__dirname, '../config');
+  let serviceAccountPath = path.join(configDir, 'app-xosolive-firebase-adminsdk-fbsvc-0ece81412e.json');
+  if (!fs.existsSync(serviceAccountPath)) {
+    serviceAccountPath = path.join(configDir, 'app-xosolive-firebase-adminsdk-fbsvc-024c98593a.json');
+  }
   if (fs.existsSync(serviceAccountPath)) {
     const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount)
     });
     isFirebaseInitialized = true;
-    console.log('[FCM] Firebase Admin SDK initialized successfully');
+    console.log('[FCM] Firebase Admin SDK initialized successfully with:', path.basename(serviceAccountPath));
   } else {
-    console.warn('[FCM] Warning: app-xosolive-firebase-adminsdk-fbsvc-024c98593a.json not found at', serviceAccountPath);
+    console.warn('[FCM] Warning: Firebase service account JSON not found in', configDir);
   }
 } catch (error) {
   console.error('[FCM] Error initializing Firebase Admin SDK:', error);

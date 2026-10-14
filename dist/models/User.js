@@ -105,6 +105,7 @@ const userSchema = new mongoose_1.Schema({
     registerIp: { type: String },
     loginIp: { type: String },
     loginDevice: { type: String },
+    fcmTokens: { type: [String], default: [] },
     status: { type: String, enum: ['active', 'locked', 'review'], default: 'active' },
     lastLoginAt: { type: Date },
     lastPasswordChangedAt: { type: Date, default: Date.now },
