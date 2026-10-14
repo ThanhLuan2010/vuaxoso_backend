@@ -41,6 +41,7 @@ export interface IUser extends Document {
   registerIp?: string;
   loginIp?: string;
   loginDevice?: string;
+  fcmTokens?: string[];
   status: 'active' | 'locked' | 'review';
   lastLoginAt?: Date;
   lastPasswordChangedAt?: Date;
@@ -119,6 +120,7 @@ const userSchema = new Schema<IUser>(
     registerIp: { type: String },
     loginIp: { type: String },
     loginDevice: { type: String },
+    fcmTokens: { type: [String], default: [] },
     status: { type: String, enum: ['active', 'locked', 'review'], default: 'active' },
     lastLoginAt: { type: Date },
     lastPasswordChangedAt: { type: Date, default: Date.now },

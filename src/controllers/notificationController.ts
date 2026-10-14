@@ -1,3 +1,4 @@
+import { sendPushToTopic, sendPushToTokens } from "../services/fcmService";
 import User from '../models/User';
 import { EncryptionHelper } from '../utils/EncryptionHelper';
 import { Response } from 'express';
@@ -92,6 +93,38 @@ export const adminGetNotifications = async (req: any, res: Response) => {
           action: 'Nhắn tin',
           details: `Gửi tin nhắn: "${title}" - ${body}`
         });
+
+        // Gửi push notification riêng cho User này
+        try {
+          const targetUser = await User.findById(user).select('fcmTokens');
+          if (targetUser && targetUser.fcmTokens && targetUser.fcmTokens.length > 0) {
+            await sendPushToTokens(targetUser.fcmTokens, title, body, {
+              notificationId: notification._id.toString(),
+              type: 'direct'
+            });
+          }
+        } catch (fcmErr) {
+          console.error('[FCM] Error sending push to user:', fcmErr);
+        }
+      } else {
+        // Gửi push notification tới TOÀN BỘ User (Topic 'all' và Multicast)
+        try {
+          await sendPushToTopic('all', title, body, {
+            notificationId: notification._id.toString(),
+            type: 'promo'
+          });
+
+          const usersWithTokens = await User.find({ fcmTokens: { $exists: true, $ne: [] } }).select('fcmTokens');
+          const allTokens = Array.from(new Set(usersWithTokens.flatMap(u => u.fcmTokens || [])));
+          if (allTokens.length > 0) {
+            await sendPushToTokens(allTokens, title, body, {
+              notificationId: notification._id.toString(),
+              type: 'promo'
+            });
+          }
+        } catch (fcmErr) {
+          console.error('[FCM] Error broadcasting push:', fcmErr);
+        }
       }
 
     res.status(201).json(notification);
@@ -126,6 +159,26 @@ export const adminToggleNotificationVisibility = async (req: any, res: Response)
     await notification.save();
     await AdminLog.create({ adminId: req.user?._id, adminName: req.user?.name || 'Admin', action: 'Ẩn/Hiện thông báo', details: `Đã ${notification.isHidden ? 'ẩn' : 'hiện'} thông báo: ${notification.title}` });
     res.json(notification);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const registerFCMToken = async (req: any, res: Response) => {
+  try {
+    const { token } = req.body;
+    if (!token) {
+      return res.status(400).json({ message: 'Token là bắt buộc' });
+    }
+
+    if (req.user?._id) {
+      await User.findByIdAndUpdate(req.user._id, {
+        $addToSet: { fcmTokens: token }
+      });
+      console.log(`[FCM] Registered token for user ${req.user._id}`);
+    }
+
+    res.json({ success: true, message: 'Đăng ký token thành công' });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }

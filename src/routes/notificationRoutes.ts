@@ -1,10 +1,11 @@
 import express from 'express';
-import { getMyNotifications, adminGetNotifications, adminCreateNotification, adminDeleteNotification, adminToggleNotificationVisibility } from '../controllers/notificationController';
+import { getMyNotifications, adminGetNotifications, adminCreateNotification, adminDeleteNotification, adminToggleNotificationVisibility, registerFCMToken } from '../controllers/notificationController';
 import { protect, admin } from '../middleware/authMiddleware';
 
 const router = express.Router();
 
 router.get('/my-notifications', protect, getMyNotifications);
+router.post('/register-token', protect, registerFCMToken);
 
 // Admin routes
 router.get('/admin', protect, admin, adminGetNotifications);
