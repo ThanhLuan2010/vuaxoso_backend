@@ -9,21 +9,49 @@ const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 let isFirebaseInitialized = false;
 try {
-    const configDir = path_1.default.resolve(__dirname, '../config');
-    let serviceAccountPath = path_1.default.join(configDir, 'app-xosolive-firebase-adminsdk-fbsvc-0ece81412e.json');
-    if (!fs_1.default.existsSync(serviceAccountPath)) {
-        serviceAccountPath = path_1.default.join(configDir, 'app-xosolive-firebase-adminsdk-fbsvc-024c98593a.json');
+    const candidateDirs = [
+        path_1.default.resolve(process.cwd(), 'src/config'),
+        path_1.default.resolve(process.cwd(), 'dist/config'),
+        path_1.default.resolve(__dirname, '../../src/config'),
+        path_1.default.resolve(__dirname, '../config')
+    ];
+    let resolvedPath = null;
+    const preferredFiles = [
+        'app-xosolive-firebase-adminsdk-fbsvc-0ece81412e.json',
+        'app-xosolive-firebase-adminsdk-fbsvc-024c98593a.json'
+    ];
+    for (const dir of candidateDirs) {
+        if (!fs_1.default.existsSync(dir))
+            continue;
+        for (const pref of preferredFiles) {
+            const p = path_1.default.join(dir, pref);
+            if (fs_1.default.existsSync(p)) {
+                resolvedPath = p;
+                break;
+            }
+        }
+        if (resolvedPath)
+            break;
+        const files = fs_1.default.readdirSync(dir);
+        for (const f of files) {
+            if (f.endsWith('.json') && (f.includes('adminsdk') || f.includes('firebase'))) {
+                resolvedPath = path_1.default.join(dir, f);
+                break;
+            }
+        }
+        if (resolvedPath)
+            break;
     }
-    if (fs_1.default.existsSync(serviceAccountPath)) {
-        const serviceAccount = JSON.parse(fs_1.default.readFileSync(serviceAccountPath, 'utf8'));
+    if (resolvedPath && fs_1.default.existsSync(resolvedPath)) {
+        const serviceAccount = JSON.parse(fs_1.default.readFileSync(resolvedPath, 'utf8'));
         firebase_admin_1.default.initializeApp({
             credential: firebase_admin_1.default.credential.cert(serviceAccount)
         });
         isFirebaseInitialized = true;
-        console.log('[FCM] Firebase Admin SDK initialized successfully with:', path_1.default.basename(serviceAccountPath));
+        console.log('[FCM] Firebase Admin SDK initialized successfully with:', resolvedPath);
     }
     else {
-        console.warn('[FCM] Warning: Firebase service account JSON not found in', configDir);
+        console.warn('[FCM] Warning: Firebase service account JSON not found in candidate paths:', candidateDirs);
     }
 }
 catch (error) {
