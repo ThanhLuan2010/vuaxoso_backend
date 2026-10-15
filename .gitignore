@@ -18,3 +18,4 @@ node_modules
 .vercel
 out
 dist/config/*.json
+src/config/*.json

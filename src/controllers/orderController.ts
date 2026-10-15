@@ -270,7 +270,8 @@ export const createOrder = async (req: any, res: Response) => {
         </ul>
       `;
       // Send Realtime Email Alert asynchronously in background (non-blocking)
-      sendEmail('developervnteam@gmail.com', `[VuaXoSo] Cảnh báo đơn cược mới - ${order.orderId}`, emailHtml)
+      const alertEmail = process.env.ADMIN_ALERT_EMAIL || 'developervnteam@gmail.com';
+      sendEmail(alertEmail, `[App Thần Tài] Cảnh báo đơn cược mới - ${order.orderId}`, emailHtml)
         .catch((err) => console.error('Failed to send order email:', err));
     } catch (err) {
       console.error('Failed to prepare order email:', err);

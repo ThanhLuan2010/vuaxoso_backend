@@ -11,7 +11,8 @@
     "seed:power": "ts-node src/seedPower655.ts",
     "reset:max4d": "ts-node src/scripts/resetMax4DDraws.ts",
     "reset:kienthiet": "ts-node src/scripts/resetKienThietDraws.ts",
-    "seed:lode": "ts-node src/scripts/seedLodeGame.ts"
+    "seed:lode": "ts-node src/scripts/seedLodeGame.ts",
+    "test:email": "ts-node src/scripts/testEmail.ts"
   },
   "keywords": [],
   "author": "",

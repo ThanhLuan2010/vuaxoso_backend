@@ -266,17 +266,17 @@ const sendEmailOtp = async (req, res) => {
         // Send email
         const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e1e1e1; border-radius: 10px;">
-        <h2 style="color: #0A3B7C; text-align: center;">Vua Xổ Số</h2>
+        <h2 style="color: #0A3B7C; text-align: center;">App Thần Tài</h2>
         <p>Xin chào ${user.name},</p>
         <p>Mã OTP xác thực email của bạn là:</p>
         <div style="background-color: #f4f4f4; padding: 15px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; border-radius: 5px; margin: 20px 0;">
           ${otp}
         </div>
         <p>Mã này sẽ hết hạn sau 10 phút. Vui lòng không chia sẻ mã này cho bất kỳ ai.</p>
-        <p>Trân trọng,<br>Đội ngũ Vua Xổ Số</p>
+        <p>Trân trọng,<br>Đội ngũ App Thần Tài</p>
       </div>
     `;
-        const success = await (0, sendEmail_1.sendEmail)(email, 'Mã xác thực Email - Vua Xổ Số', html);
+        const success = await (0, sendEmail_1.sendEmail)(email, 'Mã xác thực Email - App Thần Tài', html);
         if (success) {
             res.json({ message: 'Đã gửi mã xác thực đến email của bạn' });
         }
