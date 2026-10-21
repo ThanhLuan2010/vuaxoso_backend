@@ -10,6 +10,7 @@ export interface INotification extends Document {
   sender?: mongoose.Types.ObjectId;
   isHidden?: boolean;
   isRead: boolean;
+  readBy?: mongoose.Types.ObjectId[];
   createdAt: Date;
 }
 
@@ -24,8 +25,13 @@ const notificationSchema = new Schema(
     sender: { type: Schema.Types.ObjectId, ref: 'User' },
     isHidden: { type: Boolean, default: false },
     isRead: { type: Boolean, default: false },
+    readBy: [{ type: Schema.Types.ObjectId, ref: 'User' }],
   },
   { timestamps: true }
 );
+
+notificationSchema.index({ user: 1, isRead: 1 });
+notificationSchema.index({ readBy: 1 });
+notificationSchema.index({ createdAt: -1 });
 
 export default mongoose.model<INotification>('Notification', notificationSchema);
