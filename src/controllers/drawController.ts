@@ -39,9 +39,9 @@ export const getKienThietSchedule = async (req: any, res: Response) => {
       region: p.region
     });
 
-    const todayDay = today.getDay();
-    const tomorrowDay = tomorrow.getDay();
-    const dayAfterDay = dayAfter.getDay();
+    const todayDay = getVNDayOfWeek(today);
+    const tomorrowDay = getVNDayOfWeek(tomorrow);
+    const dayAfterDay = getVNDayOfWeek(dayAfter);
 
     const [todayProvinces, tomorrowProvinces, dayAfterProvinces] = await Promise.all([
       Province.find({ drawDays: todayDay }),
@@ -148,7 +148,7 @@ export const getActiveDraws = async (req: any, res: Response) => {
           }
         }
 
-        const durationMinutes = game.code === 'bingo18' ? 6 : (game.drawDurationMinutes || 8);
+        const durationMinutes = game.code === 'bingo18' ? 8 : (game.drawDurationMinutes || 8);
         const openDraws = await Draw.find({
           game: game._id,
           status: 'open',
@@ -189,6 +189,50 @@ export const getActiveDraws = async (req: any, res: Response) => {
             });
 
             lastCloseTime = closeTime;
+          }
+        }
+      } else if (game.code === 'lotto_535') {
+        const openDraws = await Draw.find({
+          game: game._id,
+          status: 'open',
+          closeTime: { $gt: now }
+        }).sort({ closeTime: 1 });
+
+        if (openDraws.length < 10) {
+          let lastDrawNum = 1300;
+          const allDraws = await Draw.find({ game: game._id }).sort({ closeTime: -1 });
+          if (allDraws.length > 0) {
+            const match = allDraws[0].drawCode.match(/#?(\d+)/);
+            if (match) lastDrawNum = parseInt(match[1]);
+          }
+
+          let checkDay = new Date(now);
+          const needed = 10 - openDraws.length;
+          let created = 0;
+          while (created < needed) {
+            const cutoffs = [
+              { close: getVNCutoffDate(checkDay, 12, 0), draw: getVNCutoffDate(checkDay, 13, 0) },
+              { close: getVNCutoffDate(checkDay, 20, 0), draw: getVNCutoffDate(checkDay, 21, 0) }
+            ];
+            for (const item of cutoffs) {
+              if (item.close > now) {
+                const exists = await Draw.findOne({ game: game._id, closeTime: item.close });
+                if (!exists && created < needed) {
+                  lastDrawNum += 1;
+                  const drawCode = `#${String(lastDrawNum).padStart(4, '0')}`;
+                  await Draw.create({
+                    game: game._id,
+                    drawCode,
+                    openTime: new Date(item.close.getTime() - 8 * 3600 * 1000),
+                    closeTime: item.close,
+                    drawTime: item.draw,
+                    status: 'open'
+                  });
+                  created++;
+                }
+              }
+            }
+            checkDay.setDate(checkDay.getDate() + 1);
           }
         }
       } else if (
@@ -249,16 +293,23 @@ export const getActiveDraws = async (req: any, res: Response) => {
           while (created < needed) {
             const dayOfWeek = getVNDayOfWeek(checkDate);
             if (drawDays.includes(dayOfWeek)) {
-              const cutoff = getVNCutoffDate(checkDate, 17, 20);
+              const isLotto570 = game.code === 'lotto_570';
+              const is18h15Game = ['dientoan_636', 'bao_636', 'loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(game.code);
 
-              if (cutoff > now) {
+              const closeCutoff = isLotto570 ? getVNCutoffDate(checkDate, 17, 0) : getVNCutoffDate(checkDate, 17, 20);
+              const drawCutoff = isLotto570 
+                ? getVNCutoffDate(checkDate, 17, 20) 
+                : (is18h15Game ? getVNCutoffDate(checkDate, 18, 15) : getVNCutoffDate(checkDate, 18, 0));
+
+              if (closeCutoff > now) {
                 lastDrawNum += 1;
                 const drawCode = `#${String(lastDrawNum).padStart(4, "0")}`;
                 await Draw.create({
                   game: game._id,
                   drawCode,
-                  openTime: new Date(cutoff.getTime() - 2 * 24 * 3600 * 1000),
-                  closeTime: cutoff,
+                  openTime: new Date(closeCutoff.getTime() - 2 * 24 * 3600 * 1000),
+                  closeTime: closeCutoff,
+                  drawTime: drawCutoff,
                   status: 'open'
                 });
                 created++;
