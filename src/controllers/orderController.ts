@@ -5,6 +5,7 @@ import Draw from '../models/Draw';
 import Game from '../models/Game';
 import Notification from '../models/Notification';
 import Order from '../models/Order';
+import Cart from '../models/Cart';
 import Province from '../models/Province';
 import Ticket from '../models/Ticket';
 import User from '../models/User';
@@ -194,6 +195,7 @@ export const createOrder = async (req: any, res: Response) => {
     const ipAddress = Array.isArray(rawIp) ? rawIp[0] : (typeof rawIp === 'string' ? rawIp.split(',')[0].trim() : rawIp);
     const loginDevice = req.headers['user-agent'] || '';
 
+    await Cart.findOneAndUpdate({ user: req.user.id }, { items: [] }).catch(() => {});
     const order = await Order.create({
       balanceBefore,
       balanceAfter,

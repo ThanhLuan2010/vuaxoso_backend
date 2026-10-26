@@ -19,6 +19,7 @@ import fraudRoutes from './routes/fraudRoutes';
 import logRoutes from './routes/logRoutes';
 import guideRoutes from './routes/guideRoutes';
 import adminRoutes from './routes/adminRoutes';
+import cartRoutes from './routes/cartRoutes';
 import { startCronJobs } from './services/cronService';
 import path from 'path';
 
@@ -62,6 +63,7 @@ app.use('/api/fraud', fraudRoutes);
 app.use('/api/logs', logRoutes);
 app.use('/api/guides', guideRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/cart', cartRoutes);
 
 app.get('/', (req: Request, res: Response) => {
   res.send('Vua Xổ Số API is running...');
