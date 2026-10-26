@@ -61,7 +61,7 @@ export const seedProvinces = async (req: any, res: Response) => {
       // MT
       { provinceId: 'KH', name: 'Khánh Hòa', code: 'K.Hòa', region: 'MT', drawDays: [0, 3] }, // Thu 4 & CN
       { provinceId: 'KT', name: 'Kon Tum', code: 'K.Tum', region: 'MT', drawDays: [0] },
-      { provinceId: 'TTH', name: 'Thừa Thiên Huế', code: 'T.T.Huế', region: 'MT', drawDays: [1] },
+      { provinceId: 'TTH', name: 'Thừa Thiên Huế', code: 'T.T.Huế', region: 'MT', drawDays: [0, 1] },
       { provinceId: 'PY', name: 'Phú Yên', code: 'P.Yên', region: 'MT', drawDays: [1] },
       { provinceId: 'DL', name: 'Đắk Lắk', code: 'Đ.Lắk', region: 'MT', drawDays: [2] },
       { provinceId: 'QN', name: 'Quảng Nam', code: 'Q.Nam', region: 'MT', drawDays: [2] },
