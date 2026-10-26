@@ -254,26 +254,73 @@ export const createOrder = async (req: any, res: Response) => {
     // Send Realtime Email Alert
     try {
       const orderDateStr = new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
-      const provName = provinceName || (gameType.startsWith('kienthiet_') ? gameType.replace('kienthiet_', '').toUpperCase() : gameType);
-      const drawIdStr = drawDate || drawId;
+      
+      const GAME_NAMES_MAP: Record<string, string> = {
+        power_655: 'POWER 6/55',
+        mega_645: 'MEGA 6/45',
+        keno: 'KENO',
+        bao_keno: 'BAO KENO',
+        clln_keno: 'KENO CHẴN LẺ / LỚN NHỎ',
+        max_3d: 'MAX 3D',
+        max_3d_pro: 'MAX 3D PRO',
+        max_4d: 'MAX 4D',
+        bingo18: 'BINGO 18',
+        lotto_535: 'LOTTO 5/35',
+        lotto_570: 'LOTTO 5/70',
+        loto_235: 'LÔ TÔ 2-3-5',
+        loto_cap: 'LÔ TÔ CẶP SỐ',
+        dientoan_636: 'ĐIỆN TOÁN 6X36',
+        than_tai_4: 'THẦN TÀI 4',
+        truot_loto: 'TRƯỢT LÔ TÔ',
+        MB: 'LÔ ĐỀ MIỀN BẮC',
+        MT: 'LÔ ĐỀ MIỀN TRUNG',
+        MN: 'LÔ ĐỀ MIỀN NAM',
+      };
+
+      let gameTitle = GAME_NAMES_MAP[gameType] || gameType;
+      if (gameType.startsWith('kienthiet_')) {
+        const provCode = gameType.replace('kienthiet_', '').toUpperCase();
+        gameTitle = `XỔ SỐ KIẾN THIẾT - ${provinceName || provCode}`;
+      } else if (!GAME_NAMES_MAP[gameType]) {
+        const foundGame = await Game.findOne({ code: gameType }).lean();
+        if (foundGame) gameTitle = foundGame.name;
+      }
+
+      let displayDraw = drawDate || drawId;
+      if (displayDraw && mongoose.Types.ObjectId.isValid(displayDraw)) {
+        const foundDraw = await Draw.findById(displayDraw).lean();
+        if (foundDraw && foundDraw.drawCode) displayDraw = foundDraw.drawCode;
+      }
       
       const emailHtml = `
-        <h3>Có đơn cược mới!</h3>
-        <p><strong>User:</strong> ${user.name} (${user.phone})</p>
-        <p><strong>Mã đơn:</strong> ${order.orderId}</p>
-        <p><strong>Thời gian cược:</strong> ${orderDateStr}</p>
-        <p><strong>Đài / Game:</strong> ${provName}</p>
-        <p><strong>Loại cược:</strong> ${playType || 'Vé cơ bản'}</p>
-        <p><strong>Ngày xổ / Kỳ quay:</strong> ${drawIdStr}</p>
-        <p><strong>Tổng tiền:</strong> ${totalCost.toLocaleString('vi-VN')} đ</p>
-        <h4>Chi tiết vé:</h4>
-        <ul>
-          ${items.map((i: any) => `<li>${i.numbers.join(', ')} - ${i.cost.toLocaleString('vi-VN')} đ</li>`).join('')}
-        </ul>
+        <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px;">
+          <h2 style="color: #E51F27; margin-top: 0; border-bottom: 2px solid #E51F27; padding-bottom: 10px;">Có đơn cược mới!</h2>
+          <p><strong>Khách hàng:</strong> ${user.name} (${user.phone})</p>
+          <p><strong>Mã đơn:</strong> <span style="color: #007AFF; font-weight: bold;">${order.orderId}</span></p>
+          <p><strong>Thời gian cược:</strong> ${orderDateStr}</p>
+          <p><strong>Loại Game:</strong> <span style="color: #E51F27; font-weight: bold;">${gameTitle}</span></p>
+          ${provinceName ? `<p><strong>Đài / Tỉnh:</strong> <span style="font-weight: bold; color: #007AFF;">${provinceName}</span></p>` : ''}
+          <p><strong>Loại cược:</strong> <span style="font-weight: bold;">${playType || 'Vé cơ bản'}</span></p>
+          <p><strong>Ngày xổ / Kỳ quay:</strong> <span style="font-weight: bold;">${displayDraw}</span></p>
+          <p><strong>Tổng tiền:</strong> <span style="color: #E51F27; font-size: 16px; font-weight: bold;">${totalCost.toLocaleString('vi-VN')} đ</span></p>
+          
+          <h3 style="color: #0F2942; border-bottom: 1px solid #eee; padding-bottom: 6px; margin-top: 20px;">Chi tiết vé:</h3>
+          <ul style="padding-left: 20px;">
+            ${items.map((i: any) => `
+              <li style="margin-bottom: 8px;">
+                ${i.playType && i.playType !== playType ? `<span style="background: #EBF3FF; color: #007AFF; padding: 2px 6px; border-radius: 4px; font-size: 12px; margin-right: 6px;">${i.playType}</span>` : ''}
+                <strong>${i.id ? `${i.id}: ` : ''}</strong>
+                <span style="font-size: 15px; font-weight: bold; color: #0F2942;">${i.numbers.join(', ')}</span>
+                ${i.specialNumbers && i.specialNumbers.length > 0 ? ` | <span style="color: #FF5C00; font-weight: bold;">${i.specialNumbers.join(', ')}</span>` : ''}
+                - <span style="color: #E51F27; font-weight: bold;">${i.cost.toLocaleString('vi-VN')} đ</span>
+              </li>
+            `).join('')}
+          </ul>
+        </div>
       `;
       // Send Realtime Email Alert asynchronously in background (non-blocking)
       const alertEmail = process.env.ADMIN_ALERT_EMAIL || 'developervnteam@gmail.com';
-      sendEmail(alertEmail, `[App Thần Tài] Cảnh báo đơn cược mới - ${order.orderId}`, emailHtml)
+      sendEmail(alertEmail, `[Vua Xổ Số] Đơn cược mới #${order.orderId} - ${gameTitle}${provinceName ? ` (${provinceName})` : ''}`, emailHtml)
         .catch((err) => console.error('Failed to send order email:', err));
     } catch (err) {
       console.error('Failed to prepare order email:', err);
