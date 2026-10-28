@@ -1,3 +1,246 @@
+
+export const checkoutOrders = async (req: any, res: Response) => {
+  try {
+    const rawOrders = req.body.orders || req.body.items || [];
+    if (!Array.isArray(rawOrders) || rawOrders.length === 0) {
+      return res.status(400).json({ message: "Giỏ hàng trống" });
+    }
+
+    const now = new Date();
+    const vnTimeStr = now.toLocaleString("en-US", { timeZone: "Asia/Ho_Chi_Minh" });
+    const vnDate = new Date(vnTimeStr);
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(400).json({ message: "Người dùng không tồn tại" });
+    }
+
+    const gameCache: Record<string, any> = {};
+    const drawCache: Record<string, any> = {};
+    const provinceCache: Record<string, any> = {};
+
+    let totalBatchCost = 0;
+    const preparedOrders: any[] = [];
+
+    for (const rawOrd of rawOrders) {
+      const gameType = rawOrd.gameType || rawOrd.gameId;
+      const playType = rawOrd.playType || rawOrd.subCategory || rawOrd.category || "Cơ bản";
+      let drawId = rawOrd.drawId || "DUMMY_DRAW_ID";
+      const provinceName = rawOrd.provinceName;
+      const drawDate = rawOrd.drawDate;
+      const items = Array.isArray(rawOrd.items) ? rawOrd.items : (rawOrd.numbers ? [{
+        id: "A",
+        numbers: Array.isArray(rawOrd.numbers) ? rawOrd.numbers : [rawOrd.numbers],
+        cost: (rawOrd.cost || 10000) * (rawOrd.quantity || 1),
+        baseCost: rawOrd.baseCost || rawOrd.cost || 10000,
+        unitAmount: rawOrd.unitAmount || rawOrd.cost || 10000,
+        multiplier: rawOrd.multiplier || 10000,
+      }] : []);
+
+      if (!gameType || items.length === 0) continue;
+
+      let ordCost = 0;
+      items.forEach((it: any) => { ordCost += (Number(it.cost) || 0); });
+      totalBatchCost += ordCost;
+
+      // Resolve draw / time limit
+      if (gameType.startsWith("kienthiet_")) {
+        const provinceId = gameType.replace("kienthiet_", "");
+        const todayDay = String(vnDate.getDate()).padStart(2, "0");
+        const todayMonth = String(vnDate.getMonth() + 1).padStart(2, "0");
+        const todayYear = vnDate.getFullYear();
+        const todayStr = `${todayDay}/${todayMonth}/${todayYear}`;
+        const targetDateStr = (drawId || "").substring(0, 10);
+
+        if (targetDateStr === todayStr) {
+          const currentMinutes = vnDate.getHours() * 60 + vnDate.getMinutes();
+          if (!provinceCache[provinceId]) {
+            provinceCache[provinceId] = await Province.findOne({ provinceId });
+          }
+          const province = provinceCache[provinceId];
+          if (province) {
+            let cutoffMinutes = 9999;
+            if (province.region === "MB") cutoffMinutes = 18 * 60 + 10;
+            else if (province.region === "MT") cutoffMinutes = 17 * 60 + 10;
+            else if (province.region === "MN") cutoffMinutes = 16 * 60 + 10;
+            if (currentMinutes >= cutoffMinutes) {
+              return res.status(400).json({ message: `Đài ${province.name || provinceId} đã quá thời gian chốt vé hôm nay.` });
+            }
+          }
+        }
+      } else {
+        const cacheKey = `${gameType}_${drawId}`;
+        if (!drawCache[cacheKey]) {
+          const searchGameCode = gameType.includes("max_3d") ? "max_3d" : ((gameType === "bao_keno" || gameType === "clln_keno") ? "keno" : gameType);
+          if (!gameCache[searchGameCode]) {
+            gameCache[searchGameCode] = await Game.findOne({ code: searchGameCode });
+          }
+          const gameDoc = gameCache[searchGameCode];
+
+          let draw: any = null;
+          if (drawId === "DUMMY_DRAW_ID") {
+            if (gameDoc) {
+              draw = await Draw.findOne({ game: gameDoc._id, status: "open", closeTime: { $gt: now } }).sort({ closeTime: 1 });
+            }
+          } else if (mongoose.Types.ObjectId.isValid(drawId)) {
+            draw = await Draw.findById(drawId);
+          } else if (typeof drawId === "string" && drawId.trim().length > 0) {
+            if (gameDoc) {
+              const cleanCode = drawId.startsWith("#") ? drawId : `#${drawId}`;
+              draw = await Draw.findOne({ game: gameDoc._id, drawCode: { $in: [drawId, cleanCode] } });
+            }
+          }
+
+          if (!draw || draw.status !== "open" || now > draw.closeTime) {
+            if (gameDoc) {
+              const fallbackDraw = await Draw.findOne({ game: gameDoc._id, status: "open", closeTime: { $gt: now } }).sort({ closeTime: 1 });
+              if (fallbackDraw) draw = fallbackDraw;
+            }
+          }
+
+          drawCache[cacheKey] = draw ? draw._id : drawId;
+        }
+
+        drawId = drawCache[cacheKey];
+      }
+
+      preparedOrders.push({
+        gameType,
+        playType,
+        drawId,
+        provinceName,
+        drawDate,
+        items,
+        totalCost: ordCost,
+      });
+    }
+
+    if (preparedOrders.length === 0) {
+      return res.status(400).json({ message: "Không có vé hợp lệ trong giỏ hàng" });
+    }
+
+    if (user.balance < totalBatchCost) {
+      return res.status(400).json({ message: `Số dư không đủ! Tổng tiền: ${totalBatchCost.toLocaleString("vi-VN")} đ, số dư: ${user.balance.toLocaleString("vi-VN")} đ.` });
+    }
+
+    // Deduct user balance once
+    const balanceBefore = user.balance;
+    user.balance -= totalBatchCost;
+    const balanceAfter = user.balance;
+    await user.save();
+
+    const rawIp = req.headers["x-forwarded-for"] || req.socket?.remoteAddress || req.ip || "";
+    const ipAddress = Array.isArray(rawIp) ? rawIp[0] : (typeof rawIp === "string" ? rawIp.split(",")[0].trim() : rawIp);
+    const loginDevice = req.headers["user-agent"] || "";
+
+    // Clear cart immediately
+    await Cart.findOneAndUpdate({ user: req.user.id }, { items: [] }).catch(() => {});
+
+    // Prepare all order documents
+    let runningBalance = balanceBefore;
+    const timestamp = Date.now();
+    const orderDocs = preparedOrders.map((ord, idx) => {
+      const ordBefore = runningBalance;
+      runningBalance -= ord.totalCost;
+      const ordAfter = runningBalance;
+      return {
+        balanceBefore: ordBefore,
+        balanceAfter: ordAfter,
+        user: req.user.id,
+        orderId: `ORD_${timestamp}_${Math.floor(100 + Math.random() * 900)}_${idx + 1}`,
+        gameType: ord.gameType,
+        playType: ord.playType,
+        drawId: ord.drawId,
+        provinceName: ord.provinceName,
+        drawDate: ord.drawDate,
+        items: ord.items,
+        totalCost: ord.totalCost,
+        status: "pending",
+        ipAddress: ipAddress,
+        loginDevice: loginDevice
+      };
+    });
+
+    const createdOrders = await Order.insertMany(orderDocs);
+
+    // Kien Thiet tickets update in background
+    (async () => {
+      try {
+        for (const ord of preparedOrders) {
+          if (ord.gameType.startsWith("kienthiet_")) {
+            const provinceId = ord.gameType.replace("kienthiet_", "");
+            const nums = ord.items.flatMap((item: any) => item.numbers.flatMap((n: string) => n.split(" ")));
+            const numCounts: Record<string, number> = {};
+            nums.forEach((n: string) => { numCounts[n] = (numCounts[n] || 0) + 1; });
+            for (const [num, count] of Object.entries(numCounts)) {
+              const ticket = await Ticket.findOne({ provinceId, number: num, isSold: false });
+              if (ticket) {
+                const isSpecial = num.toLowerCase().startsWith("x");
+                const currentMult = ticket.multiplier || 1;
+                if (isSpecial) {
+                  ticket.isSold = true;
+                  ticket.multiplier = 0;
+                } else {
+                  const newMult = currentMult - count;
+                  if (newMult <= 0) {
+                    ticket.isSold = true;
+                    ticket.multiplier = 0;
+                  } else {
+                    ticket.multiplier = newMult;
+                  }
+                }
+                await ticket.save();
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.error("Error updating tickets in checkoutOrders:", e);
+      }
+    })();
+
+    // Create 1 notification
+    await Notification.create({
+      user: user._id,
+      title: "Mua vé thành công",
+      body: `Bạn đã thanh toán thành công ${createdOrders.length} vé. Tổng tiền: ${totalBatchCost.toLocaleString("vi-VN")} đ`,
+      type: "order",
+      category: "important",
+      orderId: createdOrders[0]?._id?.toString()
+    }).catch(() => {});
+
+    // Send single summary email in background
+    (async () => {
+      try {
+        const alertEmail = process.env.ADMIN_ALERT_EMAIL || "developervnteam@gmail.com";
+        const orderDateStr = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
+        const emailHtml = `
+          <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px;">
+            <h2 style="color: #E51F27; margin-top: 0; border-bottom: 2px solid #E51F27; padding-bottom: 10px;">Có đơn cược hàng loạt mới (${createdOrders.length} vé)!</h2>
+            <p><strong>Khách hàng:</strong> ${user.name} (${user.phone})</p>
+            <p><strong>Số lượng vé:</strong> <span style="color: #007AFF; font-weight: bold;">${createdOrders.length} vé</span></p>
+            <p><strong>Tổng tiền:</strong> <span style="color: #E51F27; font-size: 16px; font-weight: bold;">${totalBatchCost.toLocaleString("vi-VN")} đ</span></p>
+            <p><strong>Thời gian cược:</strong> ${orderDateStr}</p>
+          </div>
+        `;
+        await sendEmail(alertEmail, `[Vua Xổ Số] Đơn cược giỏ hàng (${createdOrders.length} vé) - ${user.name}`, emailHtml);
+      } catch (err) {
+        console.error("Failed to send batch order email:", err);
+      }
+    })();
+
+    return res.status(201).json({
+      success: true,
+      message: `Thanh toán thành công ${createdOrders.length} vé!`,
+      orders: createdOrders,
+      totalCost: totalBatchCost
+    });
+  } catch (error: any) {
+    console.error("checkoutOrders error:", error);
+    return res.status(500).json({ message: error.message || "Lỗi xử lý thanh toán" });
+  }
+};
+
 import AdminLog from '../models/AdminLog';
 import { Response } from 'express';
 import mongoose from 'mongoose';
@@ -14,6 +257,9 @@ import { sendEmail } from '../utils/sendEmail';
 import { EncryptionHelper } from '../utils/EncryptionHelper';
 
 export const createOrder = async (req: any, res: Response) => {
+  if (Array.isArray(req.body.orders)) {
+    return checkoutOrders(req, res);
+  }
   try {
     let { gameType, drawId, items, playType, provinceName, drawDate } = req.body;
     // items: [{ numbers: ['12', '34'], cost: 10000 }]
