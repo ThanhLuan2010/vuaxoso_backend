@@ -209,21 +209,129 @@ export const checkoutOrders = async (req: any, res: Response) => {
       orderId: createdOrders[0]?._id?.toString()
     }).catch(() => {});
 
-    // Send single summary email in background
+    // Send single email containing full, clearly separated details of each ticket in background
     (async () => {
       try {
         const alertEmail = process.env.ADMIN_ALERT_EMAIL || "developervnteam@gmail.com";
         const orderDateStr = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
+
+        const GAME_NAMES_MAP: Record<string, string> = {
+          power_655: "POWER 6/55",
+          mega_645: "MEGA 6/45",
+          keno: "KENO",
+          bao_keno: "BAO KENO",
+          clln_keno: "KENO CHẴN LẺ / LỚN NHỎ",
+          max_3d: "MAX 3D",
+          max_3d_pro: "MAX 3D PRO",
+          max_4d: "MAX 4D",
+          bingo18: "BINGO 18",
+          lotto_535: "LOTTO 5/35",
+          lotto_570: "LOTTO 5/70",
+          loto_235: "LÔ TÔ 2-3-5",
+          loto_cap: "LÔ TÔ CẶP SỐ",
+          dientoan_636: "ĐIỆN TOÁN 6X36",
+          than_tai_4: "THẦN TÀI 4",
+          truot_loto: "TRƯỢT LÔ TÔ",
+          MB: "LÔ ĐỀ MIỀN BẮC",
+          MT: "LÔ ĐỀ MIỀN TRUNG",
+          MN: "LÔ ĐỀ MIỀN NAM",
+        };
+
+        const drawIdsToFetch = createdOrders
+          .map((o: any) => o.drawId)
+          .filter((d: any) => d && mongoose.Types.ObjectId.isValid(d));
+
+        const drawsList = await Draw.find({ _id: { $in: drawIdsToFetch } }).select("_id drawCode").lean();
+        const drawMap = new Map();
+        drawsList.forEach((d: any) => drawMap.set(d._id.toString(), d.drawCode));
+
+        const ticketCardsHtml = createdOrders.map((ord: any, idx: number) => {
+          let gameTitle = GAME_NAMES_MAP[ord.gameType] || ord.gameType;
+          if (ord.gameType.startsWith("kienthiet_")) {
+            const provCode = ord.gameType.replace("kienthiet_", "").toUpperCase();
+            gameTitle = `XỔ SỐ KIẾN THIẾT - ${ord.provinceName || provCode}`;
+          } else if (gameCache[ord.gameType]?.name) {
+            gameTitle = gameCache[ord.gameType].name;
+          }
+
+          let displayDraw = ord.drawDate || ord.drawId;
+          if (ord.drawId && drawMap.has(ord.drawId.toString())) {
+            displayDraw = drawMap.get(ord.drawId.toString());
+          }
+
+          const itemsListHtml = (ord.items || []).map((it: any) => `
+            <li style="margin-bottom: 5px; font-size: 13px;">
+              ${it.playType && it.playType !== ord.playType ? `<span style="background: #EBF3FF; color: #007AFF; padding: 2px 6px; border-radius: 4px; font-size: 11px; margin-right: 4px;">${it.playType}</span>` : ""}
+              <strong>${it.id ? `${it.id}: ` : ""}</strong>
+              <span style="font-weight: bold; color: #0F2942; font-size: 14px;">${Array.isArray(it.numbers) ? it.numbers.join(", ") : it.numbers}</span>
+              ${it.specialNumbers && it.specialNumbers.length > 0 ? ` | <span style="color: #FF5C00; font-weight: bold;">${it.specialNumbers.join(", ")}</span>` : ""}
+              - <span style="color: #E51F27; font-weight: bold;">${(Number(it.cost) || 0).toLocaleString("vi-VN")} đ</span>
+            </li>
+          `).join("");
+
+          return `
+            <div style="border: 1px solid #D0D7DE; border-radius: 6px; padding: 12px 14px; margin-bottom: 12px; background-color: #FAFAFA;">
+              <table style="width: 100%; border-bottom: 1px dashed #DDD; padding-bottom: 8px; margin-bottom: 8px;">
+                <tr>
+                  <td style="text-align: left;">
+                    <span style="background-color: #E51F27; color: #FFF; font-weight: bold; font-size: 11px; padding: 2px 8px; border-radius: 4px; margin-right: 6px;">VÉ #${idx + 1}</span>
+                    <strong style="color: #0A3B7C; font-size: 14px;">${gameTitle}</strong>
+                    ${ord.provinceName ? `<span style="color: #555; font-size: 12px;"> (${ord.provinceName})</span>` : ""}
+                  </td>
+                  <td style="text-align: right;">
+                    <span style="color: #007AFF; font-weight: bold; font-size: 13px;">#${ord.orderId}</span>
+                  </td>
+                </tr>
+              </table>
+
+              <table style="width: 100%; font-size: 13px; color: #444; margin-bottom: 8px;">
+                <tr>
+                  <td style="width: 50%;"><strong>Loại cược:</strong> ${ord.playType || "Vé cơ bản"}</td>
+                  <td style="width: 50%;"><strong>Kỳ quay / Ngày:</strong> ${displayDraw || "Đang cập nhật"}</td>
+                </tr>
+              </table>
+
+              <div style="background-color: #FFF; border: 1px solid #EAEAEA; border-radius: 4px; padding: 8px 10px; margin-bottom: 6px;">
+                <div style="font-size: 12px; font-weight: bold; color: #666; margin-bottom: 4px; text-transform: uppercase;">Dãy số đặt:</div>
+                <ul style="margin: 0; padding-left: 18px;">
+                  ${itemsListHtml}
+                </ul>
+              </div>
+
+              <div style="text-align: right; font-size: 13px;">
+                Tiền vé: <strong style="color: #E51F27; font-size: 15px;">${(ord.totalCost || 0).toLocaleString("vi-VN")} đ</strong>
+              </div>
+            </div>
+          `;
+        }).join("");
+
         const emailHtml = `
-          <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px;">
-            <h2 style="color: #E51F27; margin-top: 0; border-bottom: 2px solid #E51F27; padding-bottom: 10px;">Có đơn cược hàng loạt mới (${createdOrders.length} vé)!</h2>
-            <p><strong>Khách hàng:</strong> ${user.name} (${user.phone})</p>
-            <p><strong>Số lượng vé:</strong> <span style="color: #007AFF; font-weight: bold;">${createdOrders.length} vé</span></p>
-            <p><strong>Tổng tiền:</strong> <span style="color: #E51F27; font-size: 16px; font-weight: bold;">${totalBatchCost.toLocaleString("vi-VN")} đ</span></p>
-            <p><strong>Thời gian cược:</strong> ${orderDateStr}</p>
+          <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 650px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; background-color: #FFFFFF;">
+            <h2 style="color: #E51F27; margin-top: 0; border-bottom: 2px solid #E51F27; padding-bottom: 10px;">
+              Có đơn cược mới (${createdOrders.length} vé)!
+            </h2>
+            <div style="background-color: #F0F7FF; border-left: 4px solid #007AFF; padding: 10px 14px; margin-bottom: 18px; border-radius: 4px;">
+              <p style="margin: 4px 0;"><strong>Khách hàng:</strong> ${user.name} (${user.phone})</p>
+              <p style="margin: 4px 0;"><strong>Tổng số vé:</strong> <span style="color: #007AFF; font-weight: bold; font-size: 15px;">${createdOrders.length} vé</span></p>
+              <p style="margin: 4px 0;"><strong>Tổng tiền thanh toán:</strong> <span style="color: #E51F27; font-size: 17px; font-weight: bold;">${totalBatchCost.toLocaleString("vi-VN")} đ</span></p>
+              <p style="margin: 4px 0;"><strong>Thời gian cược:</strong> ${orderDateStr}</p>
+            </div>
+
+            <h3 style="color: #0F2942; border-bottom: 1px solid #eee; padding-bottom: 6px; margin-top: 20px;">
+              Chi tiết từng vé (${createdOrders.length} vé):
+            </h3>
+
+            <div style="margin-top: 14px;">
+              ${ticketCardsHtml}
+            </div>
+
+            <div style="margin-top: 20px; padding: 12px; background-color: #FFF8E6; border: 1px solid #FFE58F; border-radius: 6px; text-align: center;">
+              <span style="font-size: 14px; color: #874D00;">Tổng cộng đơn hàng: <strong>${createdOrders.length} vé</strong> - Tổng tiền: <strong style="color: #E51F27; font-size: 16px;">${totalBatchCost.toLocaleString("vi-VN")} đ</strong></span>
+            </div>
           </div>
         `;
-        await sendEmail(alertEmail, `[Vua Xổ Số] Đơn cược giỏ hàng (${createdOrders.length} vé) - ${user.name}`, emailHtml);
+
+        await sendEmail(alertEmail, `[Vua Xổ Số] Đơn cược mới (${createdOrders.length} vé) - Khách: ${user.name} (${user.phone})`, emailHtml);
       } catch (err) {
         console.error("Failed to send batch order email:", err);
       }
