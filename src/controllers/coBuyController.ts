@@ -6,16 +6,52 @@ import mongoose from 'mongoose';
 
 export const getRooms = async (req: any, res: Response) => {
   try {
-    const { gameType } = req.query;
-    const filter: any = { status: 'open' };
+    const { gameType, status = 'open' } = req.query;
+    const page = req.query.page ? parseInt(req.query.page as string) : undefined;
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
+
+    const filter: any = {};
+    if (status) {
+      filter.status = status;
+    }
     if (gameType) {
       filter.gameType = gameType;
     }
-    
-    const rooms = await CoBuyRoom.find(filter).sort({ createdAt: -1 });
+
+    let query = CoBuyRoom.find(filter).sort({ createdAt: -1 });
+    if (page) {
+      query = query.skip((page - 1) * limit).limit(limit);
+    }
+
+    const rooms = await query;
     res.json(rooms);
   } catch (error) {
     console.error('Lỗi khi lấy danh sách phòng mua chung:', error);
+    res.status(500).json({ message: 'Lỗi server' });
+  }
+};
+
+export const getMyCoBuyHistory = async (req: any, res: Response) => {
+  try {
+    const userId = req.user?.id || req.user?._id;
+    const page = req.query.page ? parseInt(req.query.page as string) : undefined;
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
+    const { status } = req.query;
+
+    const filter: any = { "participants.user": userId };
+    if (status === "cancelled") {
+      filter.status = "cancelled";
+    }
+
+    let query = CoBuyRoom.find(filter).sort({ createdAt: -1 });
+    if (page) {
+      query = query.skip((page - 1) * limit).limit(limit);
+    }
+
+    const rooms = await query;
+    res.json(rooms);
+  } catch (error) {
+    console.error('Lỗi khi lấy lịch sử mua chung:', error);
     res.status(500).json({ message: 'Lỗi server' });
   }
 };

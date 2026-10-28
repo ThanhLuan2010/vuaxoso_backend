@@ -8,7 +8,10 @@ import AdminLog from "../models/AdminLog";
 export const getMyNotifications = async (req: any, res: Response) => {
   try {
     const userId = (req.user?.id || req.user?._id)?.toString();
-    const notifications = await Notification.find({
+    const page = req.query.page ? parseInt(req.query.page as string) : undefined;
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
+
+    let query = Notification.find({
       isHidden: { $ne: true },
       $or: [
         { user: userId },
@@ -16,6 +19,12 @@ export const getMyNotifications = async (req: any, res: Response) => {
         { user: null, type: "promo" }
       ]
     }).sort({ createdAt: -1 });
+
+    if (page) {
+      query = query.skip((page - 1) * limit).limit(limit);
+    }
+
+    const notifications = await query;
 
     const formatted = notifications.map((n) => {
       const obj = n.toObject ? n.toObject() : { ...n };

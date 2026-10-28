@@ -149,34 +149,8 @@ export const createOrder = async (req: any, res: Response) => {
     // --- END CHECK BET LIMITS ---
 
 
-    // --- KENO LOGIC ---
-    if (gameType === 'keno' || gameType === 'bao_keno') {
-      const kenoOrders = await Order.find({
-        user: req.user.id,
-        gameType: { $in: ['keno', 'bao_keno'] },
-        drawId: drawId,
-        status: { $ne: 'cancelled' }
-      });
-
-      let totalKenoNumbersThisDraw = 0;
-      kenoOrders.forEach(o => {
-        if (o.items) {
-          o.items.forEach((item: any) => {
-            totalKenoNumbersThisDraw += item.numbers.length;
-          });
-        }
-      });
-
-      let newKenoNumbers = 0;
-      items.forEach((item: any) => {
-        newKenoNumbers += item.numbers.length;
-      });
-
-      if (totalKenoNumbersThisDraw + newKenoNumbers > 60) {
-        return res.status(400).json({ message: `Giới hạn số Keno: Max 60 số/1 khách/1 kỳ quay. Bạn đã mua ${totalKenoNumbersThisDraw} số trong kỳ quay này.` });
-      }
-    }
-    // --- END KENO LOGIC ---
+    // --- BỎ GIỚI HẠN 60 VÉ / SỐ 1 KỲ Ở TẤT CẢ CÁC GAME ---
+    // (Đã dỡ bỏ hạn mức 60 vé/kỳ cho Keno và tất cả các game theo yêu cầu)
 
     let totalCost = 0;
     items.forEach((item: any) => totalCost += item.cost);
@@ -334,7 +308,30 @@ export const createOrder = async (req: any, res: Response) => {
 
 export const getMyOrders = async (req: any, res: Response) => {
   try {
-    const orders = await Order.find({ user: req.user.id }).lean().sort({ createdAt: -1 });
+    const page = req.query.page ? parseInt(req.query.page as string) : undefined;
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
+    const { status, gameType } = req.query;
+
+    const filter: any = { user: req.user.id };
+    if (status) {
+      filter.status = status;
+    }
+    if (gameType) {
+      if (Array.isArray(gameType)) {
+        filter.gameType = { $in: gameType };
+      } else if (typeof gameType === "string" && gameType.includes(",")) {
+        filter.gameType = { $in: gameType.split(",") };
+      } else {
+        filter.gameType = gameType;
+      }
+    }
+
+    let query = Order.find(filter).lean().sort({ createdAt: -1 });
+    if (page) {
+      query = query.skip((page - 1) * limit).limit(limit);
+    }
+
+    const orders = await query;
     for (const order of orders) {
       if (order.drawId && mongoose.Types.ObjectId.isValid(order.drawId)) {
         const draw = await Draw.findById(order.drawId).lean();

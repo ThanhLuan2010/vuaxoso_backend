@@ -5,11 +5,27 @@ import Ticket from '../models/Ticket';
 
 export const getTickets = async (req: any, res: Response) => {
   try {
-    const { provinceId, drawDate } = req.query;
+    const { provinceId, drawDate, search, ticketType } = req.query;
     if (!provinceId || !drawDate) {
       return res.status(400).json({ message: 'Missing provinceId or drawDate' });
     }
-    const tickets = await Ticket.find({ provinceId, drawDate, isSold: false }).sort({ ticketType: 1, _id: 1 });
+    const page = req.query.page ? parseInt(req.query.page as string) : undefined;
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
+
+    const filter: any = { provinceId, drawDate, isSold: false };
+    if (ticketType) {
+      filter.ticketType = ticketType;
+    }
+    if (search) {
+      filter.number = { $regex: search, $options: "i" };
+    }
+
+    let query = Ticket.find(filter).sort({ ticketType: 1, _id: 1 });
+    if (page) {
+      query = query.skip((page - 1) * limit).limit(limit);
+    }
+
+    const tickets = await query;
     res.json(tickets);
   } catch (error: any) {
     res.status(500).json({ message: error.message });

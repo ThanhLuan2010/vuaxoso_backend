@@ -209,7 +209,21 @@ export const withdraw = async (req: any, res: Response) => {
 // @route   GET /api/wallet/history
 export const getHistory = async (req: any, res: Response) => {
   try {
-    const transactions = await Transaction.find({ user: req.user.id }).sort({ createdAt: -1 });
+    const page = req.query.page ? parseInt(req.query.page as string) : undefined;
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
+    const { type } = req.query;
+
+    const filter: any = { user: req.user.id };
+    if (type && type !== "all") {
+      filter.type = type;
+    }
+
+    let query = Transaction.find(filter).sort({ createdAt: -1 });
+    if (page) {
+      query = query.skip((page - 1) * limit).limit(limit);
+    }
+
+    const transactions = await query;
     res.json(transactions);
   } catch (error: any) {
     res.status(500).json({ message: error.message });

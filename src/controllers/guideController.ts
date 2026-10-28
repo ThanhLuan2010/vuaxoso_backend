@@ -5,7 +5,15 @@ import Guide from '../models/Guide';
 // Lấy danh sách hướng dẫn (Public)
 export const getGuides = async (req: Request, res: Response) => {
   try {
-    const guides = await Guide.find({ isActive: true }).sort({ order: 1, createdAt: -1 });
+    const page = req.query.page ? parseInt(req.query.page as string) : undefined;
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
+
+    let query = Guide.find({ isActive: true }).sort({ order: 1, createdAt: -1 });
+    if (page) {
+      query = query.skip((page - 1) * limit).limit(limit);
+    }
+
+    const guides = await query;
     res.json(guides);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
