@@ -235,7 +235,7 @@ export const getHistory = async (req: any, res: Response) => {
 // @route   GET /api/wallet/admin/transactions
 export const getAllTransactions = async (req: any, res: Response) => {
   try {
-    const { search, startDate, endDate, date, depositStatus, withdrawStatus, type, status } = req.query;
+    const { search, startDate, endDate, date, depositStatus, withdrawStatus, type, status, page, limit, paymentMethod } = req.query;
     const andConditions: any[] = [];
 
     // Search filter
@@ -317,9 +317,46 @@ export const getAllTransactions = async (req: any, res: Response) => {
       }
     }
 
+    if (paymentMethod && paymentMethod !== "all") {
+      if (paymentMethod === "crypto") {
+        andConditions.push({
+          $or: [
+            { paymentMethod: "binance" },
+            { type: "withdraw", "destinationInfo.network": { $exists: true, $ne: "" } }
+          ]
+        });
+      } else if (paymentMethod === "scratch") {
+        andConditions.push({ paymentMethod: "scratch" });
+      } else if (paymentMethod === "bank") {
+        andConditions.push({ paymentMethod: { $nin: ["binance", "scratch"] } });
+      }
+    }
+
+    const pageNum = page ? parseInt(page as string) : undefined;
+    const limitNum = limit ? parseInt(limit as string) : 20;
+
     const filter = andConditions.length > 0 ? { $and: andConditions } : {};
-    const transactions = await Transaction.find(filter).populate("user", "name phone").sort({ createdAt: -1 });
-    res.json(transactions);
+    const total = await Transaction.countDocuments(filter);
+
+    let dbQuery = Transaction.find(filter).populate("user", "name phone").sort({ createdAt: -1 });
+
+    if (pageNum) {
+      dbQuery = dbQuery.skip((pageNum - 1) * limitNum).limit(limitNum);
+    }
+
+    const transactions = await dbQuery;
+
+    if (pageNum) {
+      res.json({
+        transactions,
+        total,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(total / limitNum)
+      });
+    } else {
+      res.json(transactions);
+    }
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
