@@ -725,7 +725,7 @@ export const getOrderById = async (req: any, res: Response) => {
 export const getAllOrders = async (req: any, res: Response) => {
   try {
     let query: any = {};
-    const { date, startDate, endDate, search } = req.query;
+    const { date, startDate, endDate, search, page, limit, result, province, minBet, minWin } = req.query;
 
     const effectiveStart = startDate || (date && !endDate ? date : undefined);
     const effectiveEnd = endDate || (date && !startDate ? date : undefined);
@@ -747,12 +747,12 @@ export const getAllOrders = async (req: any, res: Response) => {
 
     if (req.query.search) {
       const searchStr = req.query.search as string;
-      const searchRegex = new RegExp(searchStr, 'i');
+      const searchRegex = new RegExp(searchStr, "i");
       const exactEncryptedPhone = EncryptionHelper.encryptDeterministic(searchStr);
       
       const users = await User.find({
         $or: [{ name: searchRegex }, { phone: searchRegex }, { phone: exactEncryptedPhone }]
-      }).select('_id');
+      }).select("_id");
       const userIds = users.map(u => u._id);
 
       query.$or = [
@@ -761,17 +761,54 @@ export const getAllOrders = async (req: any, res: Response) => {
       ];
     }
 
-    const orders = await Order.find(query).populate('user', 'name phone loginIp registerIp loginDevice').lean().sort({ createdAt: -1 });
+    if (result && result !== "all") {
+      if (result === "win") {
+        query.$or = [{ isWinner: true }, { prizeAmount: { $gt: 0 } }];
+        query.status = { $ne: "cancelled" };
+      } else if (result === "lose") {
+        query.isWinner = false;
+        query["winningNumbers.0"] = { $exists: true };
+        query.status = { $ne: "cancelled" };
+      } else if (result === "pending") {
+        query.status = { $ne: "cancelled" };
+        query.$or = [{ winningNumbers: { $exists: false } }, { winningNumbers: { $size: 0 } }];
+      } else if (result === "cancelled") {
+        query.status = "cancelled";
+      }
+    }
+
+    if (province && province !== "all") {
+      query.$or = [{ provinceName: province }, { gameType: province }];
+    }
+
+    if (minBet) {
+      query.totalCost = { ...(query.totalCost || {}), $gte: Number(minBet) };
+    }
+    if (minWin) {
+      query.prizeAmount = { ...(query.prizeAmount || {}), $gte: Number(minWin) };
+    }
+
+    const pageNum = page ? parseInt(page as string) : undefined;
+    const limitNum = limit ? parseInt(limit as string) : 10;
+    const total = await Order.countDocuments(query);
+
+    let dbQuery = Order.find(query).populate("user", "name phone loginIp registerIp loginDevice").lean().sort({ createdAt: -1 });
+
+    if (pageNum) {
+      dbQuery = dbQuery.skip((pageNum - 1) * limitNum).limit(limitNum);
+    }
+
+    const orders = await dbQuery;
 
     for (const order of orders) {
-      if (order.user && typeof (order.user as any).phone === 'string') {
+      if (order.user && typeof (order.user as any).phone === "string") {
         (order.user as any).phone = EncryptionHelper.decryptDeterministic((order.user as any).phone);
       }
       if (!order.ipAddress) {
-        order.ipAddress = (order.user as any)?.loginIp || (order.user as any)?.registerIp || '';
+        order.ipAddress = (order.user as any)?.loginIp || (order.user as any)?.registerIp || "";
       }
       if (!order.loginDevice) {
-        order.loginDevice = (order.user as any)?.loginDevice || '';
+        order.loginDevice = (order.user as any)?.loginDevice || "";
       }
       
       if (order.drawId && mongoose.Types.ObjectId.isValid(order.drawId)) {
@@ -780,13 +817,23 @@ export const getAllOrders = async (req: any, res: Response) => {
           order.drawId = draw.drawCode;
           if (!order.drawDate && (draw.drawTime || draw.closeTime)) {
             const timeToDisplay = draw.drawTime || draw.closeTime;
-            order.drawDate = new Date(timeToDisplay).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+            order.drawDate = new Date(timeToDisplay).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
           }
         }
       }
     }
 
-    res.json(orders);
+    if (pageNum) {
+      res.json({
+        orders,
+        total,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(total / limitNum)
+      });
+    } else {
+      res.json(orders);
+    }
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -815,20 +862,30 @@ export const getOrderSummary = async (req: any, res: Response) => {
       query.createdAt = dateFilter;
     }
 
-    // Only count completed/valid orders for revenue? Usually pending is also counted if paid.
-    // Assuming status != 'cancelled'
-    query.status = { $ne: 'cancelled' };
+    const allOrders = await Order.find(query).select("status isWinner prizeAmount winningNumbers totalCost").lean();
 
-    const orders = await Order.find(query);
-
-    let totalTickets = orders.length;
+    let totalTickets = 0;
     let totalSales = 0;
     let totalPrize = 0;
+    let winCount = 0;
+    let loseCount = 0;
+    let pendingCount = 0;
+    let cancelledCount = 0;
 
-    orders.forEach(order => {
-      totalSales += order.totalCost;
-      if (order.isWinner) {
+    allOrders.forEach(order => {
+      if (order.status === "cancelled") {
+        cancelledCount++;
+        return;
+      }
+      totalTickets++;
+      totalSales += order.totalCost || 0;
+      if (order.isWinner || (order.prizeAmount && order.prizeAmount > 0)) {
         totalPrize += order.prizeAmount || 0;
+        winCount++;
+      } else if (!order.winningNumbers || order.winningNumbers.length === 0) {
+        pendingCount++;
+      } else {
+        loseCount++;
       }
     });
 
@@ -836,7 +893,11 @@ export const getOrderSummary = async (req: any, res: Response) => {
       totalTickets,
       totalSales,
       totalPrize,
-      totalLoss: totalSales - totalPrize // Lợi nhuận gộp từ khách (Tiền khách thua)
+      totalLoss: totalSales - totalPrize,
+      winCount,
+      loseCount,
+      pendingCount,
+      cancelledCount
     });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
