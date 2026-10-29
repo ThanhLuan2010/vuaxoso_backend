@@ -16,7 +16,7 @@ export const getUsers = async (req: AuthRequest, res: Response) => {
     if (!isMaster && (!userTabPerms || !userTabPerms.view)) {
       return res.status(403).json({ message: "Bạn không có quyền xem danh sách người dùng" });
     }
-    const { search, startDate, endDate, status, memberType } = req.query;
+    const { search, startDate, endDate, status, memberType, page, limit, balanceFilter } = req.query;
     const pipeline: any[] = [];
 
     if (search && typeof search === 'string') {
@@ -55,6 +55,11 @@ export const getUsers = async (req: AuthRequest, res: Response) => {
         const extraMatch: any = {};
     if (status && typeof status === "string" && status !== "all") {
       extraMatch.status = status;
+    }
+    if (balanceFilter === "has_balance") {
+      extraMatch.balance = { $gt: 0 };
+    } else if (balanceFilter === "zero_balance") {
+      extraMatch.$or = [{ balance: { $lte: 0 } }, { balance: { $exists: false } }];
     }
 
     const vnNow = new Date();
@@ -167,7 +172,27 @@ export const getUsers = async (req: AuthRequest, res: Response) => {
       },
       { $sort: { createdAt: -1 } }
     );
-    const rawUsers = await User.aggregate(pipeline);
+    const pageNum = page ? parseInt(page as string) : undefined;
+    const limitNum = limit ? parseInt(limit as string) : 10;
+
+    let rawUsers: any[] = [];
+    let totalUsers = 0;
+
+    if (pageNum) {
+      const skipCount = (pageNum - 1) * limitNum;
+      pipeline.push({
+        $facet: {
+          metadata: [{ $count: "total" }],
+          data: [{ $skip: skipCount }, { $limit: limitNum }]
+        }
+      });
+      const facetResult = await User.aggregate(pipeline);
+      totalUsers = facetResult[0]?.metadata[0]?.total || 0;
+      rawUsers = facetResult[0]?.data || [];
+    } else {
+      rawUsers = await User.aggregate(pipeline);
+      totalUsers = rawUsers.length;
+    }
     const users = rawUsers.map(u => {
       if (u.phone) u.phone = EncryptionHelper.decryptDeterministic(u.phone);
       if (u.email) u.email = EncryptionHelper.decrypt(u.email);
@@ -221,7 +246,17 @@ export const getUsers = async (req: AuthRequest, res: Response) => {
       return u;
     });
 
-    res.json(sanitizedUsers);
+    if (pageNum) {
+      res.json({
+        users: sanitizedUsers,
+        total: totalUsers,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(totalUsers / limitNum)
+      });
+    } else {
+      res.json(sanitizedUsers);
+    }
   } catch (error) {
     res.status(500).json({ message: 'Error fetching users' });
   }
