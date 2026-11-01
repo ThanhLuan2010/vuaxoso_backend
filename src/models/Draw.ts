@@ -30,4 +30,11 @@ const drawSchema = new Schema<IDraw>(
   { timestamps: true }
 );
 
+drawSchema.index({ closeTime: -1, createdAt: -1 });
+drawSchema.index({ game: 1, closeTime: -1 });
+drawSchema.index({ game: 1, provinceId: 1, closeTime: -1 });
+drawSchema.index({ status: 1, closeTime: -1 });
+drawSchema.index({ drawCode: 1 });
+drawSchema.index({ openTime: 1, closeTime: 1 });
+
 export default mongoose.model<IDraw>('Draw', drawSchema);

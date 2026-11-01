@@ -99,15 +99,23 @@ function getVNDayOfWeek(date: Date): number {
 
 // Public: Lấy danh sách các kỳ quay đang mở
 
+let isEnsuringKienThiet = false;
+let lastEnsureKienThietTime = 0;
+
 export const ensureKienThietDraws = async () => {
+  if (isEnsuringKienThiet) return;
+  isEnsuringKienThiet = true;
   try {
     const Game = require("../models/Game").default;
     const now = new Date();
-    const ktGames = await Game.find({ code: { $in: ["MB", "MT", "MN"] } });
+    const ktGames = await Game.find({ code: { $in: ["MB", "MT", "MN"] } }).lean();
     if (!ktGames || ktGames.length === 0) return;
 
     // Auto-close any expired open draws
     await Draw.updateMany({ status: "open", closeTime: { $lte: now } }, { $set: { status: "closed" } });
+
+    // Load tất cả đài tỉnh miền Trung & Nam 1 lần duy nhất thay vì query lặp
+    const allProvinces = await Province.find({ region: { $in: ["MT", "MN"] } }).lean();
 
     for (const game of ktGames) {
       const cutoffHour = game.code === "MN" ? 16 : (game.code === "MT" ? 17 : 18);
@@ -116,11 +124,31 @@ export const ensureKienThietDraws = async () => {
       const drawMin = 15;
       let lastDrawNum = game.code === "MN" ? 1100 : (game.code === "MT" ? 1200 : 1350);
 
-      const lastDraw = await Draw.findOne({ game: game._id }).sort({ createdAt: -1 });
+      const lastDraw = await Draw.findOne({ game: game._id }).sort({ createdAt: -1 }).lean();
       if (lastDraw) {
         const match = lastDraw.drawCode.match(/#?(\d+)/);
         if (match) lastDrawNum = Math.max(lastDrawNum, parseInt(match[1]));
       }
+
+      // Lấy khoảng thời gian 6 ngày tới
+      const minCutoff = getVNCutoffDate(now, cutoffHour, cutoffMin);
+      const maxCheckDate = new Date(now.getTime() + 6 * 24 * 3600 * 1000);
+      const maxCutoff = getVNCutoffDate(maxCheckDate, cutoffHour, cutoffMin);
+
+      // Query toàn bộ kỳ quay đã tồn tại trong khoảng 6 ngày tới trong 1 query duy nhất
+      const existingDraws = await Draw.find({
+        game: game._id,
+        closeTime: {
+          $gte: new Date(minCutoff.getTime() - 24 * 3600 * 1000),
+          $lte: new Date(maxCutoff.getTime() + 24 * 3600 * 1000)
+        }
+      }).select("provinceId closeTime").lean();
+
+      const existingSet = new Set(
+        existingDraws.map(d => `${d.provinceId || "MB"}_${new Date(d.closeTime).getTime()}`)
+      );
+
+      const newDraws: any[] = [];
 
       for (let dayOffset = 0; dayOffset <= 5; dayOffset++) {
         const checkDate = new Date(now.getTime() + dayOffset * 24 * 3600 * 1000);
@@ -130,10 +158,11 @@ export const ensureKienThietDraws = async () => {
         const status = cutoff > now ? "open" : "closed";
 
         if (game.code === "MB") {
-          const exists = await Draw.findOne({ game: game._id, closeTime: cutoff });
-          if (!exists) {
+          const key = `MB_${cutoff.getTime()}`;
+          if (!existingSet.has(key)) {
+            existingSet.add(key);
             lastDrawNum += 1;
-            await Draw.create({
+            newDraws.push({
               game: game._id,
               drawCode: "#" + String(lastDrawNum).padStart(4, "0"),
               provinceId: "MB",
@@ -144,12 +173,13 @@ export const ensureKienThietDraws = async () => {
             });
           }
         } else {
-          const dayProvinces = await Province.find({ region: game.code, drawDays: dayOfWeek });
+          const dayProvinces = allProvinces.filter((p: any) => p.region === game.code && p.drawDays.includes(dayOfWeek));
           for (const prov of dayProvinces) {
-            const exists = await Draw.findOne({ game: game._id, provinceId: prov.provinceId, closeTime: cutoff });
-            if (!exists) {
+            const key = `${prov.provinceId}_${cutoff.getTime()}`;
+            if (!existingSet.has(key)) {
+              existingSet.add(key);
               lastDrawNum += 1;
-              await Draw.create({
+              newDraws.push({
                 game: game._id,
                 drawCode: "#" + String(lastDrawNum).padStart(4, "0"),
                 provinceId: prov.provinceId,
@@ -162,9 +192,15 @@ export const ensureKienThietDraws = async () => {
           }
         }
       }
+
+      if (newDraws.length > 0) {
+        await Draw.insertMany(newDraws);
+      }
     }
   } catch (err) {
     console.error("ensureKienThietDraws error:", err);
+  } finally {
+    isEnsuringKienThiet = false;
   }
 };
 
@@ -596,10 +632,15 @@ export const enterResults = async (req: any, res: Response) => {
 // Admin: Lấy tất cả kỳ quay để quản lý
 export const getAllDraws = async (req: any, res: Response) => {
   try {
-    await ensureKienThietDraws();
+    // Chạy đồng bộ kỳ quay Kiến Thiết trong background nếu đã quá 5 phút kể từ lần chạy trước (không block request)
+    const nowMs = Date.now();
+    if (nowMs - lastEnsureKienThietTime > 5 * 60 * 1000) {
+      lastEnsureKienThietTime = nowMs;
+      ensureKienThietDraws().catch(err => console.error("ensureKienThietDraws bg error:", err));
+    }
 
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit) || 10));
     const { gameId, provinceId, status, search, date } = req.query;
 
     let query: any = {};
@@ -629,10 +670,16 @@ export const getAllDraws = async (req: any, res: Response) => {
     }
 
     const skip = (page - 1) * limit;
+    const isFiltered = Object.keys(query).length > 0;
 
     const [draws, total] = await Promise.all([
-      Draw.find(query).populate("game").sort({ closeTime: -1, createdAt: -1 }).skip(skip).limit(limit),
-      Draw.countDocuments(query)
+      Draw.find(query)
+        .populate("game")
+        .sort({ closeTime: -1, createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      isFiltered ? Draw.countDocuments(query) : Draw.estimatedDocumentCount()
     ]);
 
     res.json({ data: draws, total, page, limit });
