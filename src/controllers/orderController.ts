@@ -857,8 +857,8 @@ export const getAllOrders = async (req: any, res: Response) => {
 
 export const getOrderSummary = async (req: any, res: Response) => {
   try {
-    let query: any = {};
-    const { date, startDate, endDate } = req.query;
+    const { date, startDate, endDate, search, result, province, minBet, minWin, userId } = req.query;
+    const andConditions: any[] = [];
 
     const effectiveStart = startDate || (date && !endDate ? date : undefined);
     const effectiveEnd = endDate || (date && !startDate ? date : undefined);
@@ -875,10 +875,73 @@ export const getOrderSummary = async (req: any, res: Response) => {
         const end = eStr.length <= 10 ? new Date(`${eStr}T23:59:59.999+07:00`) : new Date(eStr);
         dateFilter.$lte = end;
       }
-      query.createdAt = dateFilter;
+      andConditions.push({ createdAt: dateFilter });
     }
 
-    const allOrders = await Order.find(query).select("status isWinner prizeAmount winningNumbers totalCost").lean();
+    if (userId) {
+      andConditions.push({ user: userId });
+    } else if (search && (search as string).trim()) {
+      const searchStr = (search as string).trim();
+      const searchRegex = new RegExp(searchStr, "i");
+      const exactEncryptedPhone = EncryptionHelper.encryptDeterministic(searchStr);
+      
+      const users = await User.find({
+        $or: [{ name: searchRegex }, { phone: searchRegex }, { phone: exactEncryptedPhone }]
+      }).select("_id");
+      const userIds = users.map(u => u._id);
+
+      andConditions.push({
+        $or: [
+          { orderId: searchRegex },
+          { user: { $in: userIds } }
+        ]
+      });
+    }
+
+    if (result && result !== "all") {
+      if (result === "win") {
+        andConditions.push({
+          status: { $ne: "cancelled" },
+          $or: [{ isWinner: true }, { prizeAmount: { $gt: 0 } }]
+        });
+      } else if (result === "lose") {
+        andConditions.push({
+          status: { $ne: "cancelled" },
+          isWinner: { $ne: true },
+          $or: [{ prizeAmount: { $lte: 0 } }, { prizeAmount: { $exists: false } }],
+          "winningNumbers.0": { $exists: true }
+        });
+      } else if (result === "pending") {
+        andConditions.push({
+          status: { $ne: "cancelled" },
+          $or: [
+            { winningNumbers: { $exists: false } },
+            { winningNumbers: { $size: 0 } },
+            { winningNumbers: null }
+          ]
+        });
+      } else if (result === "cancelled") {
+        andConditions.push({ status: "cancelled" });
+      }
+    }
+
+    if (province && province !== "all") {
+      andConditions.push({
+        $or: [{ provinceName: province }, { gameType: province }]
+      });
+    }
+
+    if (minBet) {
+      andConditions.push({ totalCost: { $gte: Number(minBet) } });
+    }
+
+    if (minWin) {
+      andConditions.push({ prizeAmount: { $gte: Number(minWin) } });
+    }
+
+    const query = andConditions.length > 0 ? { $and: andConditions } : {};
+
+    const allOrders = await Order.find(query).select("status isWinner prizeAmount winningNumbers totalCost user").lean();
 
     let totalTickets = 0;
     let totalSales = 0;
