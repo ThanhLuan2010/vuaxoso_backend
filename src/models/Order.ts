@@ -22,6 +22,7 @@ export interface IOrder extends Document {
   ipAddress?: string;
   loginDevice?: string;
   createdAt: Date;
+  adminNote?: string;
   updatedAt: Date;
 }
 
@@ -58,6 +59,7 @@ const orderSchema = new Schema<IOrder>(
     winningNumbers: [{ type: String }],
     ipAddress: { type: String },
     loginDevice: { type: String },
+    adminNote: { type: String },
   },
   { timestamps: true }
 );

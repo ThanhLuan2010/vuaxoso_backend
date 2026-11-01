@@ -361,6 +361,7 @@ import Province from '../models/Province';
 import Ticket from '../models/Ticket';
 import User from '../models/User';
 import BalanceHistory from '../models/BalanceHistory';
+import Transaction from '../models/Transaction';
 import { sendEmail } from '../utils/sendEmail';
 import { EncryptionHelper } from '../utils/EncryptionHelper';
 
@@ -985,12 +986,161 @@ export const getOrderSummary = async (req: any, res: Response) => {
 
 export const updateOrderAdmin = async (req: any, res: Response) => {
   try {
-    const { status, ticketImageUrl } = req.body;
+    const { status, ticketImageUrl, isWinner, prizeAmount, note, adjustBalance } = req.body;
     const order = await Order.findById(req.params.id);
     if (!order) {
       return res.status(404).json({ message: 'Không tìm thấy vé' });
     }
 
+    // Kiểm tra nếu đây là thao tác điều chỉnh kết quả hoặc tiền thắng vé cược
+    const isEditingResult = isWinner !== undefined || prizeAmount !== undefined || (note && typeof note === 'string' && note.trim() !== '');
+
+    if (isEditingResult) {
+      // Kiểm tra quyền Master Admin
+      const adminUser = req.user;
+      const isMaster = !!adminUser && (
+        adminUser.isMasterAdmin ||
+        adminUser.name === 'Admin Master' ||
+        adminUser.phone === 'admin' ||
+        adminUser.phone === '0899955742' ||
+        (adminUser.role === 'admin' && (!adminUser.permissions?.tabs || Object.keys(adminUser.permissions.tabs).length === 0))
+      );
+
+      if (!isMaster) {
+        return res.status(403).json({ message: 'Chỉ tài khoản Master mới có quyền sửa kết quả và tiền thắng vé cược' });
+      }
+
+      if (!note || typeof note !== 'string' || !note.trim()) {
+        return res.status(400).json({ message: 'Vui lòng nhập lý do/ghi chú sửa kết quả để lưu vào Nhật ký hoạt động' });
+      }
+
+      const oldIsWinner = !!order.isWinner;
+      const oldPrizeAmount = Number(order.prizeAmount) || 0;
+      const oldStatus = order.status;
+
+      const newIsWinner = isWinner !== undefined ? Boolean(isWinner) : oldIsWinner;
+      let newPrizeAmount = oldPrizeAmount;
+      if (isWinner !== undefined && !isWinner) {
+        newPrizeAmount = 0;
+      } else if (prizeAmount !== undefined) {
+        newPrizeAmount = Math.max(0, Number(prizeAmount));
+      }
+
+      let newStatus = status || order.status;
+      if (newIsWinner || (isWinner !== undefined && !isWinner)) {
+        if (!status || status === 'pending') {
+          newStatus = 'completed';
+        }
+      }
+
+      // Tính chênh lệch tiền trả thưởng cho người chơi
+      const oldCredited = (oldIsWinner && oldStatus === 'completed') ? oldPrizeAmount : 0;
+      const newCredited = (newIsWinner && newStatus === 'completed') ? newPrizeAmount : 0;
+      const delta = newCredited - oldCredited;
+
+      let userDoc: any = null;
+      if (order.user) {
+        userDoc = await User.findById(order.user);
+      }
+
+      // Điều chỉnh số dư khách hàng nếu có chênh lệch và bật tuỳ chọn adjustBalance
+      if (userDoc && adjustBalance !== false && delta !== 0) {
+        const balanceBefore = userDoc.balance || 0;
+        userDoc.balance = Math.max(0, balanceBefore + delta);
+        const balanceAfter = userDoc.balance;
+        await userDoc.save();
+
+        await BalanceHistory.create({
+          user: userDoc._id,
+          type: delta > 0 ? 'win' : 'refund',
+          amount: Math.abs(delta),
+          balanceBefore,
+          balanceAfter,
+          description: `Master sửa kết quả vé #${order.orderId}: ${delta > 0 ? 'Cộng thêm thưởng' : 'Thu hồi tiền thưởng'} (Lý do: ${note.trim()})`,
+          reference: order._id.toString()
+        });
+
+        await Transaction.create({
+          user: userDoc._id,
+          type: delta > 0 ? 'deposit' : 'withdraw',
+          amount: Math.abs(delta),
+          status: 'approved',
+          balanceBefore,
+          balanceAfter,
+          note: `Master sửa kết quả vé #${order.orderId}: ${note.trim()}`
+        });
+
+        await Notification.create({
+          user: userDoc._id,
+          title: delta > 0 ? '🎉 CẬP NHẬT TRÚNG THƯỞNG BỔ SUNG' : '⚠️ ĐIỀU CHỈNH KẾT QUẢ VÉ CƯỢC',
+          body: `Đơn cược #${order.orderId} đã được điều chỉnh kết quả. Số dư thay đổi: ${delta > 0 ? '+' : ''}${delta.toLocaleString('vi-VN')} đ. Lý do: ${note.trim()}`,
+          type: delta > 0 ? 'win' : 'order',
+          category: 'important',
+          orderId: order._id.toString()
+        });
+      }
+
+      // Cập nhật thông tin vé
+      order.isWinner = newIsWinner;
+      order.prizeAmount = newPrizeAmount;
+      order.status = newStatus;
+      if (ticketImageUrl) order.ticketImageUrl = ticketImageUrl;
+      (order as any).adminNote = note.trim();
+      await order.save();
+
+      // Báo cáo thay đổi về Lịch sử hoạt động (AdminLog)
+      const oldResultText = oldStatus === 'pending' ? 'Chờ KQ' : (oldIsWinner ? `Thắng (${oldPrizeAmount.toLocaleString('vi-VN')}đ)` : 'Thua');
+      const newResultText = newStatus === 'pending' ? 'Chờ KQ' : (newIsWinner ? `Thắng (${newPrizeAmount.toLocaleString('vi-VN')}đ)` : (newStatus === 'cancelled' ? 'Đã huỷ' : 'Thua'));
+
+      const changes: any[] = [
+        {
+          field: 'Trạng thái kết quả',
+          old: oldResultText,
+          new: newResultText
+        }
+      ];
+
+      if (oldPrizeAmount !== newPrizeAmount) {
+        changes.push({
+          field: 'Tiền thắng',
+          old: `${oldPrizeAmount.toLocaleString('vi-VN')} đ`,
+          new: `${newPrizeAmount.toLocaleString('vi-VN')} đ`
+        });
+      }
+
+      if (delta !== 0) {
+        changes.push({
+          field: 'Biến động số dư KH',
+          old: `${delta > 0 ? '+' : ''}${delta.toLocaleString('vi-VN')} đ`,
+          new: `Số dư KH: ${userDoc ? userDoc.balance.toLocaleString('vi-VN') : 0} đ`
+        });
+      }
+
+      changes.push({
+        field: 'Lý do / Ghi chú sửa',
+        old: '(Trống)',
+        new: note.trim()
+      });
+
+      const summary = `Sửa vé #${order.orderId}: [${oldResultText} ➔ ${newResultText}]${delta !== 0 ? ` (${delta > 0 ? '+' : ''}${delta.toLocaleString('vi-VN')}đ)` : ''}. Lý do: ${note.trim()}`;
+
+      await AdminLog.create({
+        adminId: adminUser._id,
+        adminName: adminUser.name || 'Admin Master',
+        targetUserId: userDoc?._id || order.user,
+        action: 'UPDATE_ORDER_RESULT',
+        details: JSON.stringify({ summary, changes })
+      });
+
+      return res.json({
+        success: true,
+        message: 'Cập nhật vé cược và ghi nhận lịch sử hoạt động thành công',
+        order,
+        delta
+      });
+    }
+
+    // Logic cũ: Cập nhật trạng thái in vé / huỷ vé / upload ảnh vé
     if (status && status !== order.status) {
       order.status = status;
       if (status === 'completed') {
@@ -1017,8 +1167,9 @@ export const updateOrderAdmin = async (req: any, res: Response) => {
     if (ticketImageUrl) order.ticketImageUrl = ticketImageUrl;
 
     await order.save();
-    res.json(order);
+    return res.json(order);
   } catch (error: any) {
-    res.status(500).json({ message: error.message });
+    console.error('updateOrderAdmin error:', error);
+    res.status(500).json({ message: error.message || 'Lỗi cập nhật vé cược' });
   }
 };
