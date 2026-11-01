@@ -103,7 +103,6 @@ export const ensureKienThietDraws = async () => {
   try {
     const Game = require("../models/Game").default;
     const now = new Date();
-    await ensureKienThietDraws();
     const ktGames = await Game.find({ code: { $in: ["MB", "MT", "MN"] } });
     if (!ktGames || ktGames.length === 0) return;
 
