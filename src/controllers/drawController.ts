@@ -98,6 +98,77 @@ function getVNDayOfWeek(date: Date): number {
 }
 
 // Public: Lấy danh sách các kỳ quay đang mở
+
+export const ensureKienThietDraws = async () => {
+  try {
+    const Game = require("../models/Game").default;
+    const now = new Date();
+    await ensureKienThietDraws();
+    const ktGames = await Game.find({ code: { $in: ["MB", "MT", "MN"] } });
+    if (!ktGames || ktGames.length === 0) return;
+
+    // Auto-close any expired open draws
+    await Draw.updateMany({ status: "open", closeTime: { $lte: now } }, { $set: { status: "closed" } });
+
+    for (const game of ktGames) {
+      const cutoffHour = game.code === "MN" ? 16 : (game.code === "MT" ? 17 : 18);
+      const cutoffMin = 10;
+      const drawHour = game.code === "MN" ? 16 : (game.code === "MT" ? 17 : 18);
+      const drawMin = 15;
+      let lastDrawNum = game.code === "MN" ? 1100 : (game.code === "MT" ? 1200 : 1350);
+
+      const lastDraw = await Draw.findOne({ game: game._id }).sort({ createdAt: -1 });
+      if (lastDraw) {
+        const match = lastDraw.drawCode.match(/#?(\d+)/);
+        if (match) lastDrawNum = Math.max(lastDrawNum, parseInt(match[1]));
+      }
+
+      for (let dayOffset = 0; dayOffset <= 5; dayOffset++) {
+        const checkDate = new Date(now.getTime() + dayOffset * 24 * 3600 * 1000);
+        const dayOfWeek = getVNDayOfWeek(checkDate);
+        const cutoff = getVNCutoffDate(checkDate, cutoffHour, cutoffMin);
+        const drawCutoff = getVNCutoffDate(checkDate, drawHour, drawMin);
+        const status = cutoff > now ? "open" : "closed";
+
+        if (game.code === "MB") {
+          const exists = await Draw.findOne({ game: game._id, closeTime: cutoff });
+          if (!exists) {
+            lastDrawNum += 1;
+            await Draw.create({
+              game: game._id,
+              drawCode: "#" + String(lastDrawNum).padStart(4, "0"),
+              provinceId: "MB",
+              openTime: new Date(cutoff.getTime() - 24 * 3600 * 1000),
+              closeTime: cutoff,
+              drawTime: drawCutoff,
+              status
+            });
+          }
+        } else {
+          const dayProvinces = await Province.find({ region: game.code, drawDays: dayOfWeek });
+          for (const prov of dayProvinces) {
+            const exists = await Draw.findOne({ game: game._id, provinceId: prov.provinceId, closeTime: cutoff });
+            if (!exists) {
+              lastDrawNum += 1;
+              await Draw.create({
+                game: game._id,
+                drawCode: "#" + String(lastDrawNum).padStart(4, "0"),
+                provinceId: prov.provinceId,
+                openTime: new Date(cutoff.getTime() - 24 * 3600 * 1000),
+                closeTime: cutoff,
+                drawTime: drawCutoff,
+                status
+              });
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error("ensureKienThietDraws error:", err);
+  }
+};
+
 export const getActiveDraws = async (req: any, res: Response) => {
   try {
     const Game = require('../models/Game').default;
@@ -526,19 +597,42 @@ export const enterResults = async (req: any, res: Response) => {
 // Admin: Lấy tất cả kỳ quay để quản lý
 export const getAllDraws = async (req: any, res: Response) => {
   try {
+    await ensureKienThietDraws();
+
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
-    const gameId = req.query.gameId;
+    const { gameId, provinceId, status, search, date } = req.query;
 
     let query: any = {};
     if (gameId) {
       query.game = gameId;
     }
+    if (provinceId && provinceId !== "all") {
+      query.provinceId = provinceId;
+    }
+    if (status && status !== "all") {
+      query.status = status;
+    }
+    if (search && search.trim()) {
+      query.drawCode = { $regex: search.trim(), $options: "i" };
+    }
+    if (date) {
+      const parts = date.split("-").map(Number);
+      if (parts.length === 3) {
+        const [year, month, day] = parts;
+        const startUtc = new Date(Date.UTC(year, month - 1, day, -7, 0, 0, 0));
+        const endUtc = new Date(Date.UTC(year, month - 1, day, 16, 59, 59, 999));
+        query.$or = [
+          { closeTime: { $gte: startUtc, $lte: endUtc } },
+          { drawTime: { $gte: startUtc, $lte: endUtc } }
+        ];
+      }
+    }
 
     const skip = (page - 1) * limit;
 
     const [draws, total] = await Promise.all([
-      Draw.find(query).populate('game').sort({ createdAt: -1 }).skip(skip).limit(limit),
+      Draw.find(query).populate("game").sort({ closeTime: -1, createdAt: -1 }).skip(skip).limit(limit),
       Draw.countDocuments(query)
     ]);
 

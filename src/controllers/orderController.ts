@@ -724,8 +724,8 @@ export const getOrderById = async (req: any, res: Response) => {
 // Admin
 export const getAllOrders = async (req: any, res: Response) => {
   try {
-    let query: any = {};
     const { date, startDate, endDate, search, page, limit, result, province, minBet, minWin } = req.query;
+    const andConditions: any[] = [];
 
     const effectiveStart = startDate || (date && !endDate ? date : undefined);
     const effectiveEnd = endDate || (date && !startDate ? date : undefined);
@@ -742,7 +742,7 @@ export const getAllOrders = async (req: any, res: Response) => {
         const end = eStr.length <= 10 ? new Date(`${eStr}T23:59:59.999+07:00`) : new Date(eStr);
         dateFilter.$lte = end;
       }
-      query.createdAt = dateFilter;
+      andConditions.push({ createdAt: dateFilter });
     }
 
     if (req.query.search) {
@@ -755,39 +755,55 @@ export const getAllOrders = async (req: any, res: Response) => {
       }).select("_id");
       const userIds = users.map(u => u._id);
 
-      query.$or = [
-        { orderId: searchRegex },
-        { user: { $in: userIds } }
-      ];
+      andConditions.push({
+        $or: [
+          { orderId: searchRegex },
+          { user: { $in: userIds } }
+        ]
+      });
     }
 
     if (result && result !== "all") {
       if (result === "win") {
-        query.$or = [{ isWinner: true }, { prizeAmount: { $gt: 0 } }];
-        query.status = { $ne: "cancelled" };
+        andConditions.push({
+          status: { $ne: "cancelled" },
+          $or: [{ isWinner: true }, { prizeAmount: { $gt: 0 } }]
+        });
       } else if (result === "lose") {
-        query.isWinner = false;
-        query["winningNumbers.0"] = { $exists: true };
-        query.status = { $ne: "cancelled" };
+        andConditions.push({
+          status: { $ne: "cancelled" },
+          isWinner: { $ne: true },
+          $or: [{ prizeAmount: { $lte: 0 } }, { prizeAmount: { $exists: false } }],
+          "winningNumbers.0": { $exists: true }
+        });
       } else if (result === "pending") {
-        query.status = { $ne: "cancelled" };
-        query.$or = [{ winningNumbers: { $exists: false } }, { winningNumbers: { $size: 0 } }];
+        andConditions.push({
+          status: { $ne: "cancelled" },
+          $or: [
+            { winningNumbers: { $exists: false } },
+            { winningNumbers: { $size: 0 } },
+            { winningNumbers: null }
+          ]
+        });
       } else if (result === "cancelled") {
-        query.status = "cancelled";
+        andConditions.push({ status: "cancelled" });
       }
     }
 
     if (province && province !== "all") {
-      query.$or = [{ provinceName: province }, { gameType: province }];
+      andConditions.push({
+        $or: [{ provinceName: province }, { gameType: province }]
+      });
     }
 
     if (minBet) {
-      query.totalCost = { ...(query.totalCost || {}), $gte: Number(minBet) };
+      andConditions.push({ totalCost: { $gte: Number(minBet) } });
     }
     if (minWin) {
-      query.prizeAmount = { ...(query.prizeAmount || {}), $gte: Number(minWin) };
+      andConditions.push({ prizeAmount: { $gte: Number(minWin) } });
     }
 
+    const query = andConditions.length > 0 ? { $and: andConditions } : {};
     const pageNum = page ? parseInt(page as string) : undefined;
     const limitNum = limit ? parseInt(limit as string) : 10;
     const total = await Order.countDocuments(query);
