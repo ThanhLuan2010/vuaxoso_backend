@@ -3,19 +3,28 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.joinRoom = exports.getRoomById = exports.getRooms = void 0;
+exports.joinRoom = exports.getRoomById = exports.getMyCoBuyHistory = exports.getRooms = void 0;
 const CoBuyRoom_1 = __importDefault(require("../models/CoBuyRoom"));
 const User_1 = __importDefault(require("../models/User"));
 const Order_1 = __importDefault(require("../models/Order"));
 const mongoose_1 = __importDefault(require("mongoose"));
 const getRooms = async (req, res) => {
     try {
-        const { gameType } = req.query;
-        const filter = { status: 'open' };
+        const { gameType, status = 'open' } = req.query;
+        const page = req.query.page ? parseInt(req.query.page) : undefined;
+        const limit = req.query.limit ? parseInt(req.query.limit) : 10;
+        const filter = {};
+        if (status) {
+            filter.status = status;
+        }
         if (gameType) {
             filter.gameType = gameType;
         }
-        const rooms = await CoBuyRoom_1.default.find(filter).sort({ createdAt: -1 });
+        let query = CoBuyRoom_1.default.find(filter).sort({ createdAt: -1 });
+        if (page) {
+            query = query.skip((page - 1) * limit).limit(limit);
+        }
+        const rooms = await query;
         res.json(rooms);
     }
     catch (error) {
@@ -24,6 +33,29 @@ const getRooms = async (req, res) => {
     }
 };
 exports.getRooms = getRooms;
+const getMyCoBuyHistory = async (req, res) => {
+    try {
+        const userId = req.user?.id || req.user?._id;
+        const page = req.query.page ? parseInt(req.query.page) : undefined;
+        const limit = req.query.limit ? parseInt(req.query.limit) : 10;
+        const { status } = req.query;
+        const filter = { "participants.user": userId };
+        if (status === "cancelled") {
+            filter.status = "cancelled";
+        }
+        let query = CoBuyRoom_1.default.find(filter).sort({ createdAt: -1 });
+        if (page) {
+            query = query.skip((page - 1) * limit).limit(limit);
+        }
+        const rooms = await query;
+        res.json(rooms);
+    }
+    catch (error) {
+        console.error('Lỗi khi lấy lịch sử mua chung:', error);
+        res.status(500).json({ message: 'Lỗi server' });
+    }
+};
+exports.getMyCoBuyHistory = getMyCoBuyHistory;
 const getRoomById = async (req, res) => {
     try {
         const { id } = req.params;

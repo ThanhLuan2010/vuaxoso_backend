@@ -3,18 +3,355 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updateOrderAdmin = exports.getOrderSummary = exports.getAllOrders = exports.getOrderById = exports.getMyOrders = exports.createOrder = void 0;
+exports.updateOrderAdmin = exports.getOrderSummary = exports.getAllOrders = exports.getOrderById = exports.getMyOrders = exports.createOrder = exports.checkoutOrders = void 0;
+const checkoutOrders = async (req, res) => {
+    try {
+        const rawOrders = req.body.orders || req.body.items || [];
+        if (!Array.isArray(rawOrders) || rawOrders.length === 0) {
+            return res.status(400).json({ message: "Giỏ hàng trống" });
+        }
+        const now = new Date();
+        const vnTimeStr = now.toLocaleString("en-US", { timeZone: "Asia/Ho_Chi_Minh" });
+        const vnDate = new Date(vnTimeStr);
+        const user = await User_1.default.findById(req.user.id);
+        if (!user) {
+            return res.status(400).json({ message: "Người dùng không tồn tại" });
+        }
+        const gameCache = {};
+        const drawCache = {};
+        const provinceCache = {};
+        let totalBatchCost = 0;
+        const preparedOrders = [];
+        for (const rawOrd of rawOrders) {
+            const gameType = rawOrd.gameType || rawOrd.gameId;
+            const playType = rawOrd.playType || rawOrd.subCategory || rawOrd.category || "Cơ bản";
+            let drawId = rawOrd.drawId || "DUMMY_DRAW_ID";
+            const provinceName = rawOrd.provinceName;
+            const drawDate = rawOrd.drawDate;
+            const items = Array.isArray(rawOrd.items) ? rawOrd.items : (rawOrd.numbers ? [{
+                    id: "A",
+                    numbers: Array.isArray(rawOrd.numbers) ? rawOrd.numbers : [rawOrd.numbers],
+                    cost: (rawOrd.cost || 10000) * (rawOrd.quantity || 1),
+                    baseCost: rawOrd.baseCost || rawOrd.cost || 10000,
+                    unitAmount: rawOrd.unitAmount || rawOrd.cost || 10000,
+                    multiplier: rawOrd.multiplier || 10000,
+                }] : []);
+            if (!gameType || items.length === 0)
+                continue;
+            let ordCost = 0;
+            items.forEach((it) => { ordCost += (Number(it.cost) || 0); });
+            totalBatchCost += ordCost;
+            // Resolve draw / time limit
+            if (gameType.startsWith("kienthiet_")) {
+                const provinceId = gameType.replace("kienthiet_", "");
+                const todayDay = String(vnDate.getDate()).padStart(2, "0");
+                const todayMonth = String(vnDate.getMonth() + 1).padStart(2, "0");
+                const todayYear = vnDate.getFullYear();
+                const todayStr = `${todayDay}/${todayMonth}/${todayYear}`;
+                const targetDateStr = (drawId || "").substring(0, 10);
+                if (targetDateStr === todayStr) {
+                    const currentMinutes = vnDate.getHours() * 60 + vnDate.getMinutes();
+                    if (!provinceCache[provinceId]) {
+                        provinceCache[provinceId] = await Province_1.default.findOne({ provinceId });
+                    }
+                    const province = provinceCache[provinceId];
+                    if (province) {
+                        let cutoffMinutes = 9999;
+                        if (province.region === "MB")
+                            cutoffMinutes = 18 * 60 + 10;
+                        else if (province.region === "MT")
+                            cutoffMinutes = 17 * 60 + 10;
+                        else if (province.region === "MN")
+                            cutoffMinutes = 16 * 60 + 10;
+                        if (currentMinutes >= cutoffMinutes) {
+                            return res.status(400).json({ message: `Đài ${province.name || provinceId} đã quá thời gian chốt vé hôm nay.` });
+                        }
+                    }
+                }
+            }
+            else {
+                const cacheKey = `${gameType}_${drawId}`;
+                if (!drawCache[cacheKey]) {
+                    const searchGameCode = gameType.includes("max_3d") ? "max_3d" : ((gameType === "bao_keno" || gameType === "clln_keno") ? "keno" : gameType);
+                    if (!gameCache[searchGameCode]) {
+                        gameCache[searchGameCode] = await Game_1.default.findOne({ code: searchGameCode });
+                    }
+                    const gameDoc = gameCache[searchGameCode];
+                    let draw = null;
+                    if (drawId === "DUMMY_DRAW_ID") {
+                        if (gameDoc) {
+                            draw = await Draw_1.default.findOne({ game: gameDoc._id, status: "open", closeTime: { $gt: now } }).sort({ closeTime: 1 });
+                        }
+                    }
+                    else if (mongoose_1.default.Types.ObjectId.isValid(drawId)) {
+                        draw = await Draw_1.default.findById(drawId);
+                    }
+                    else if (typeof drawId === "string" && drawId.trim().length > 0) {
+                        if (gameDoc) {
+                            const cleanCode = drawId.startsWith("#") ? drawId : `#${drawId}`;
+                            draw = await Draw_1.default.findOne({ game: gameDoc._id, drawCode: { $in: [drawId, cleanCode] } });
+                        }
+                    }
+                    if (!draw || draw.status !== "open" || now > draw.closeTime) {
+                        if (gameDoc) {
+                            const fallbackDraw = await Draw_1.default.findOne({ game: gameDoc._id, status: "open", closeTime: { $gt: now } }).sort({ closeTime: 1 });
+                            if (fallbackDraw)
+                                draw = fallbackDraw;
+                        }
+                    }
+                    drawCache[cacheKey] = draw ? draw._id : drawId;
+                }
+                drawId = drawCache[cacheKey];
+            }
+            preparedOrders.push({
+                gameType,
+                playType,
+                drawId,
+                provinceName,
+                drawDate,
+                items,
+                totalCost: ordCost,
+            });
+        }
+        if (preparedOrders.length === 0) {
+            return res.status(400).json({ message: "Không có vé hợp lệ trong giỏ hàng" });
+        }
+        if (user.balance < totalBatchCost) {
+            return res.status(400).json({ message: `Số dư không đủ! Tổng tiền: ${totalBatchCost.toLocaleString("vi-VN")} đ, số dư: ${user.balance.toLocaleString("vi-VN")} đ.` });
+        }
+        // Deduct user balance once
+        const balanceBefore = user.balance;
+        user.balance -= totalBatchCost;
+        const balanceAfter = user.balance;
+        await user.save();
+        const rawIp = req.headers["x-forwarded-for"] || req.socket?.remoteAddress || req.ip || "";
+        const ipAddress = Array.isArray(rawIp) ? rawIp[0] : (typeof rawIp === "string" ? rawIp.split(",")[0].trim() : rawIp);
+        const loginDevice = req.headers["user-agent"] || "";
+        // Clear cart immediately
+        await Cart_1.default.findOneAndUpdate({ user: req.user.id }, { items: [] }).catch(() => { });
+        // Prepare all order documents
+        let runningBalance = balanceBefore;
+        const timestamp = Date.now();
+        const orderDocs = preparedOrders.map((ord, idx) => {
+            const ordBefore = runningBalance;
+            runningBalance -= ord.totalCost;
+            const ordAfter = runningBalance;
+            return {
+                balanceBefore: ordBefore,
+                balanceAfter: ordAfter,
+                user: req.user.id,
+                orderId: `ORD_${timestamp}_${Math.floor(100 + Math.random() * 900)}_${idx + 1}`,
+                gameType: ord.gameType,
+                playType: ord.playType,
+                drawId: ord.drawId,
+                provinceName: ord.provinceName,
+                drawDate: ord.drawDate,
+                items: ord.items,
+                totalCost: ord.totalCost,
+                status: "pending",
+                ipAddress: ipAddress,
+                loginDevice: loginDevice
+            };
+        });
+        const createdOrders = await Order_1.default.insertMany(orderDocs);
+        // Kien Thiet tickets update in background
+        (async () => {
+            try {
+                for (const ord of preparedOrders) {
+                    if (ord.gameType.startsWith("kienthiet_")) {
+                        const provinceId = ord.gameType.replace("kienthiet_", "");
+                        const nums = ord.items.flatMap((item) => item.numbers.flatMap((n) => n.split(" ")));
+                        const numCounts = {};
+                        nums.forEach((n) => { numCounts[n] = (numCounts[n] || 0) + 1; });
+                        for (const [num, count] of Object.entries(numCounts)) {
+                            const ticket = await Ticket_1.default.findOne({ provinceId, number: num, isSold: false });
+                            if (ticket) {
+                                const isSpecial = num.toLowerCase().startsWith("x");
+                                const currentMult = ticket.multiplier || 1;
+                                if (isSpecial) {
+                                    ticket.isSold = true;
+                                    ticket.multiplier = 0;
+                                }
+                                else {
+                                    const newMult = currentMult - count;
+                                    if (newMult <= 0) {
+                                        ticket.isSold = true;
+                                        ticket.multiplier = 0;
+                                    }
+                                    else {
+                                        ticket.multiplier = newMult;
+                                    }
+                                }
+                                await ticket.save();
+                            }
+                        }
+                    }
+                }
+            }
+            catch (e) {
+                console.error("Error updating tickets in checkoutOrders:", e);
+            }
+        })();
+        // Create 1 notification
+        await Notification_1.default.create({
+            user: user._id,
+            title: "Mua vé thành công",
+            body: `Bạn đã thanh toán thành công ${createdOrders.length} vé. Tổng tiền: ${totalBatchCost.toLocaleString("vi-VN")} đ`,
+            type: "order",
+            category: "important",
+            orderId: createdOrders[0]?._id?.toString()
+        }).catch(() => { });
+        // Send single email containing full, clearly separated details of each ticket in background
+        (async () => {
+            try {
+                const alertEmail = process.env.ADMIN_ALERT_EMAIL || "developervnteam@gmail.com";
+                const orderDateStr = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
+                const GAME_NAMES_MAP = {
+                    power_655: "POWER 6/55",
+                    mega_645: "MEGA 6/45",
+                    keno: "KENO",
+                    bao_keno: "BAO KENO",
+                    clln_keno: "KENO CHẴN LẺ / LỚN NHỎ",
+                    max_3d: "MAX 3D",
+                    max_3d_pro: "MAX 3D PRO",
+                    max_4d: "MAX 4D",
+                    bingo18: "BINGO 18",
+                    lotto_535: "LOTTO 5/35",
+                    lotto_570: "LOTTO 5/70",
+                    loto_235: "LÔ TÔ 2-3-5",
+                    loto_cap: "LÔ TÔ CẶP SỐ",
+                    dientoan_636: "ĐIỆN TOÁN 6X36",
+                    than_tai_4: "THẦN TÀI 4",
+                    truot_loto: "TRƯỢT LÔ TÔ",
+                    MB: "LÔ ĐỀ MIỀN BẮC",
+                    MT: "LÔ ĐỀ MIỀN TRUNG",
+                    MN: "LÔ ĐỀ MIỀN NAM",
+                };
+                const drawIdsToFetch = createdOrders
+                    .map((o) => o.drawId)
+                    .filter((d) => d && mongoose_1.default.Types.ObjectId.isValid(d));
+                const drawsList = await Draw_1.default.find({ _id: { $in: drawIdsToFetch } }).select("_id drawCode").lean();
+                const drawMap = new Map();
+                drawsList.forEach((d) => drawMap.set(d._id.toString(), d.drawCode));
+                const ticketCardsHtml = createdOrders.map((ord, idx) => {
+                    let gameTitle = GAME_NAMES_MAP[ord.gameType] || ord.gameType;
+                    if (ord.gameType.startsWith("kienthiet_")) {
+                        const provCode = ord.gameType.replace("kienthiet_", "").toUpperCase();
+                        gameTitle = `XỔ SỐ KIẾN THIẾT - ${ord.provinceName || provCode}`;
+                    }
+                    else if (gameCache[ord.gameType]?.name) {
+                        gameTitle = gameCache[ord.gameType].name;
+                    }
+                    let displayDraw = ord.drawDate || ord.drawId;
+                    if (ord.drawId && drawMap.has(ord.drawId.toString())) {
+                        displayDraw = drawMap.get(ord.drawId.toString());
+                    }
+                    const itemsListHtml = (ord.items || []).map((it) => `
+            <li style="margin-bottom: 5px; font-size: 13px;">
+              ${it.playType && it.playType !== ord.playType ? `<span style="background: #EBF3FF; color: #007AFF; padding: 2px 6px; border-radius: 4px; font-size: 11px; margin-right: 4px;">${it.playType}</span>` : ""}
+              <strong>${it.id ? `${it.id}: ` : ""}</strong>
+              <span style="font-weight: bold; color: #0F2942; font-size: 14px;">${Array.isArray(it.numbers) ? it.numbers.join(", ") : it.numbers}</span>
+              ${it.specialNumbers && it.specialNumbers.length > 0 ? ` | <span style="color: #FF5C00; font-weight: bold;">${it.specialNumbers.join(", ")}</span>` : ""}
+              - <span style="color: #E51F27; font-weight: bold;">${(Number(it.cost) || 0).toLocaleString("vi-VN")} đ</span>
+            </li>
+          `).join("");
+                    return `
+            <div style="border: 1px solid #D0D7DE; border-radius: 6px; padding: 12px 14px; margin-bottom: 12px; background-color: #FAFAFA;">
+              <table style="width: 100%; border-bottom: 1px dashed #DDD; padding-bottom: 8px; margin-bottom: 8px;">
+                <tr>
+                  <td style="text-align: left;">
+                    <span style="background-color: #E51F27; color: #FFF; font-weight: bold; font-size: 11px; padding: 2px 8px; border-radius: 4px; margin-right: 6px;">VÉ #${idx + 1}</span>
+                    <strong style="color: #0A3B7C; font-size: 14px;">${gameTitle}</strong>
+                    ${ord.provinceName ? `<span style="color: #555; font-size: 12px;"> (${ord.provinceName})</span>` : ""}
+                  </td>
+                  <td style="text-align: right;">
+                    <span style="color: #007AFF; font-weight: bold; font-size: 13px;">#${ord.orderId}</span>
+                  </td>
+                </tr>
+              </table>
+
+              <table style="width: 100%; font-size: 13px; color: #444; margin-bottom: 8px;">
+                <tr>
+                  <td style="width: 50%;"><strong>Loại cược:</strong> ${ord.playType || "Vé cơ bản"}</td>
+                  <td style="width: 50%;"><strong>Kỳ quay / Ngày:</strong> ${displayDraw || "Đang cập nhật"}</td>
+                </tr>
+              </table>
+
+              <div style="background-color: #FFF; border: 1px solid #EAEAEA; border-radius: 4px; padding: 8px 10px; margin-bottom: 6px;">
+                <div style="font-size: 12px; font-weight: bold; color: #666; margin-bottom: 4px; text-transform: uppercase;">Dãy số đặt:</div>
+                <ul style="margin: 0; padding-left: 18px;">
+                  ${itemsListHtml}
+                </ul>
+              </div>
+
+              <div style="text-align: right; font-size: 13px;">
+                Tiền vé: <strong style="color: #E51F27; font-size: 15px;">${(ord.totalCost || 0).toLocaleString("vi-VN")} đ</strong>
+              </div>
+            </div>
+          `;
+                }).join("");
+                const emailHtml = `
+          <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 650px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; background-color: #FFFFFF;">
+            <h2 style="color: #E51F27; margin-top: 0; border-bottom: 2px solid #E51F27; padding-bottom: 10px;">
+              Có đơn cược mới (${createdOrders.length} vé)!
+            </h2>
+            <div style="background-color: #F0F7FF; border-left: 4px solid #007AFF; padding: 10px 14px; margin-bottom: 18px; border-radius: 4px;">
+              <p style="margin: 4px 0;"><strong>Khách hàng:</strong> ${user.name} (${user.phone})</p>
+              <p style="margin: 4px 0;"><strong>Tổng số vé:</strong> <span style="color: #007AFF; font-weight: bold; font-size: 15px;">${createdOrders.length} vé</span></p>
+              <p style="margin: 4px 0;"><strong>Tổng tiền thanh toán:</strong> <span style="color: #E51F27; font-size: 17px; font-weight: bold;">${totalBatchCost.toLocaleString("vi-VN")} đ</span></p>
+              <p style="margin: 4px 0;"><strong>Thời gian cược:</strong> ${orderDateStr}</p>
+            </div>
+
+            <h3 style="color: #0F2942; border-bottom: 1px solid #eee; padding-bottom: 6px; margin-top: 20px;">
+              Chi tiết từng vé (${createdOrders.length} vé):
+            </h3>
+
+            <div style="margin-top: 14px;">
+              ${ticketCardsHtml}
+            </div>
+
+            <div style="margin-top: 20px; padding: 12px; background-color: #FFF8E6; border: 1px solid #FFE58F; border-radius: 6px; text-align: center;">
+              <span style="font-size: 14px; color: #874D00;">Tổng cộng đơn hàng: <strong>${createdOrders.length} vé</strong> - Tổng tiền: <strong style="color: #E51F27; font-size: 16px;">${totalBatchCost.toLocaleString("vi-VN")} đ</strong></span>
+            </div>
+          </div>
+        `;
+                await (0, sendEmail_1.sendEmail)(alertEmail, `[Vua Xổ Số] Đơn cược mới (${createdOrders.length} vé) - Khách: ${user.name} (${user.phone})`, emailHtml);
+            }
+            catch (err) {
+                console.error("Failed to send batch order email:", err);
+            }
+        })();
+        return res.status(201).json({
+            success: true,
+            message: `Thanh toán thành công ${createdOrders.length} vé!`,
+            orders: createdOrders,
+            totalCost: totalBatchCost
+        });
+    }
+    catch (error) {
+        console.error("checkoutOrders error:", error);
+        return res.status(500).json({ message: error.message || "Lỗi xử lý thanh toán" });
+    }
+};
+exports.checkoutOrders = checkoutOrders;
+const AdminLog_1 = __importDefault(require("../models/AdminLog"));
 const mongoose_1 = __importDefault(require("mongoose"));
 const Draw_1 = __importDefault(require("../models/Draw"));
 const Game_1 = __importDefault(require("../models/Game"));
 const Notification_1 = __importDefault(require("../models/Notification"));
 const Order_1 = __importDefault(require("../models/Order"));
+const Cart_1 = __importDefault(require("../models/Cart"));
 const Province_1 = __importDefault(require("../models/Province"));
 const Ticket_1 = __importDefault(require("../models/Ticket"));
 const User_1 = __importDefault(require("../models/User"));
+const BalanceHistory_1 = __importDefault(require("../models/BalanceHistory"));
+const Transaction_1 = __importDefault(require("../models/Transaction"));
 const sendEmail_1 = require("../utils/sendEmail");
 const EncryptionHelper_1 = require("../utils/EncryptionHelper");
 const createOrder = async (req, res) => {
+    if (Array.isArray(req.body.orders)) {
+        return (0, exports.checkoutOrders)(req, res);
+    }
     try {
         let { gameType, drawId, items, playType, provinceName, drawDate } = req.body;
         // items: [{ numbers: ['12', '34'], cost: 10000 }]
@@ -142,31 +479,8 @@ const createOrder = async (req, res) => {
             }
         }
         // --- END CHECK BET LIMITS ---
-        // --- KENO LOGIC ---
-        if (gameType === 'keno' || gameType === 'bao_keno') {
-            const kenoOrders = await Order_1.default.find({
-                user: req.user.id,
-                gameType: { $in: ['keno', 'bao_keno'] },
-                drawId: drawId,
-                status: { $ne: 'cancelled' }
-            });
-            let totalKenoNumbersThisDraw = 0;
-            kenoOrders.forEach(o => {
-                if (o.items) {
-                    o.items.forEach((item) => {
-                        totalKenoNumbersThisDraw += item.numbers.length;
-                    });
-                }
-            });
-            let newKenoNumbers = 0;
-            items.forEach((item) => {
-                newKenoNumbers += item.numbers.length;
-            });
-            if (totalKenoNumbersThisDraw + newKenoNumbers > 60) {
-                return res.status(400).json({ message: `Giới hạn số Keno: Max 60 số/1 khách/1 kỳ quay. Bạn đã mua ${totalKenoNumbersThisDraw} số trong kỳ quay này.` });
-            }
-        }
-        // --- END KENO LOGIC ---
+        // --- BỎ GIỚI HẠN 60 VÉ / SỐ 1 KỲ Ở TẤT CẢ CÁC GAME ---
+        // (Đã dỡ bỏ hạn mức 60 vé/kỳ cho Keno và tất cả các game theo yêu cầu)
         let totalCost = 0;
         items.forEach((item) => totalCost += item.cost);
         const user = await User_1.default.findById(req.user.id);
@@ -180,6 +494,7 @@ const createOrder = async (req, res) => {
         const rawIp = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || req.ip || '';
         const ipAddress = Array.isArray(rawIp) ? rawIp[0] : (typeof rawIp === 'string' ? rawIp.split(',')[0].trim() : rawIp);
         const loginDevice = req.headers['user-agent'] || '';
+        await Cart_1.default.findOneAndUpdate({ user: req.user.id }, { items: [] }).catch(() => { });
         const order = await Order_1.default.create({
             balanceBefore,
             balanceAfter,
@@ -235,25 +550,72 @@ const createOrder = async (req, res) => {
         // Send Realtime Email Alert
         try {
             const orderDateStr = new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
-            const provName = provinceName || (gameType.startsWith('kienthiet_') ? gameType.replace('kienthiet_', '').toUpperCase() : gameType);
-            const drawIdStr = drawDate || drawId;
+            const GAME_NAMES_MAP = {
+                power_655: 'POWER 6/55',
+                mega_645: 'MEGA 6/45',
+                keno: 'KENO',
+                bao_keno: 'BAO KENO',
+                clln_keno: 'KENO CHẴN LẺ / LỚN NHỎ',
+                max_3d: 'MAX 3D',
+                max_3d_pro: 'MAX 3D PRO',
+                max_4d: 'MAX 4D',
+                bingo18: 'BINGO 18',
+                lotto_535: 'LOTTO 5/35',
+                lotto_570: 'LOTTO 5/70',
+                loto_235: 'LÔ TÔ 2-3-5',
+                loto_cap: 'LÔ TÔ CẶP SỐ',
+                dientoan_636: 'ĐIỆN TOÁN 6X36',
+                than_tai_4: 'THẦN TÀI 4',
+                truot_loto: 'TRƯỢT LÔ TÔ',
+                MB: 'LÔ ĐỀ MIỀN BẮC',
+                MT: 'LÔ ĐỀ MIỀN TRUNG',
+                MN: 'LÔ ĐỀ MIỀN NAM',
+            };
+            let gameTitle = GAME_NAMES_MAP[gameType] || gameType;
+            if (gameType.startsWith('kienthiet_')) {
+                const provCode = gameType.replace('kienthiet_', '').toUpperCase();
+                gameTitle = `XỔ SỐ KIẾN THIẾT - ${provinceName || provCode}`;
+            }
+            else if (!GAME_NAMES_MAP[gameType]) {
+                const foundGame = await Game_1.default.findOne({ code: gameType }).lean();
+                if (foundGame)
+                    gameTitle = foundGame.name;
+            }
+            let displayDraw = drawDate || drawId;
+            if (displayDraw && mongoose_1.default.Types.ObjectId.isValid(displayDraw)) {
+                const foundDraw = await Draw_1.default.findById(displayDraw).lean();
+                if (foundDraw && foundDraw.drawCode)
+                    displayDraw = foundDraw.drawCode;
+            }
             const emailHtml = `
-        <h3>Có đơn cược mới!</h3>
-        <p><strong>User:</strong> ${user.name} (${user.phone})</p>
-        <p><strong>Mã đơn:</strong> ${order.orderId}</p>
-        <p><strong>Thời gian cược:</strong> ${orderDateStr}</p>
-        <p><strong>Đài / Game:</strong> ${provName}</p>
-        <p><strong>Loại cược:</strong> ${playType || 'Vé cơ bản'}</p>
-        <p><strong>Ngày xổ / Kỳ quay:</strong> ${drawIdStr}</p>
-        <p><strong>Tổng tiền:</strong> ${totalCost.toLocaleString('vi-VN')} đ</p>
-        <h4>Chi tiết vé:</h4>
-        <ul>
-          ${items.map((i) => `<li>${i.numbers.join(', ')} - ${i.cost.toLocaleString('vi-VN')} đ</li>`).join('')}
-        </ul>
+        <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px;">
+          <h2 style="color: #E51F27; margin-top: 0; border-bottom: 2px solid #E51F27; padding-bottom: 10px;">Có đơn cược mới!</h2>
+          <p><strong>Khách hàng:</strong> ${user.name} (${user.phone})</p>
+          <p><strong>Mã đơn:</strong> <span style="color: #007AFF; font-weight: bold;">${order.orderId}</span></p>
+          <p><strong>Thời gian cược:</strong> ${orderDateStr}</p>
+          <p><strong>Loại Game:</strong> <span style="color: #E51F27; font-weight: bold;">${gameTitle}</span></p>
+          ${provinceName ? `<p><strong>Đài / Tỉnh:</strong> <span style="font-weight: bold; color: #007AFF;">${provinceName}</span></p>` : ''}
+          <p><strong>Loại cược:</strong> <span style="font-weight: bold;">${playType || 'Vé cơ bản'}</span></p>
+          <p><strong>Ngày xổ / Kỳ quay:</strong> <span style="font-weight: bold;">${displayDraw}</span></p>
+          <p><strong>Tổng tiền:</strong> <span style="color: #E51F27; font-size: 16px; font-weight: bold;">${totalCost.toLocaleString('vi-VN')} đ</span></p>
+          
+          <h3 style="color: #0F2942; border-bottom: 1px solid #eee; padding-bottom: 6px; margin-top: 20px;">Chi tiết vé:</h3>
+          <ul style="padding-left: 20px;">
+            ${items.map((i) => `
+              <li style="margin-bottom: 8px;">
+                ${i.playType && i.playType !== playType ? `<span style="background: #EBF3FF; color: #007AFF; padding: 2px 6px; border-radius: 4px; font-size: 12px; margin-right: 6px;">${i.playType}</span>` : ''}
+                <strong>${i.id ? `${i.id}: ` : ''}</strong>
+                <span style="font-size: 15px; font-weight: bold; color: #0F2942;">${i.numbers.join(', ')}</span>
+                ${i.specialNumbers && i.specialNumbers.length > 0 ? ` | <span style="color: #FF5C00; font-weight: bold;">${i.specialNumbers.join(', ')}</span>` : ''}
+                - <span style="color: #E51F27; font-weight: bold;">${i.cost.toLocaleString('vi-VN')} đ</span>
+              </li>
+            `).join('')}
+          </ul>
+        </div>
       `;
             // Send Realtime Email Alert asynchronously in background (non-blocking)
             const alertEmail = process.env.ADMIN_ALERT_EMAIL || 'developervnteam@gmail.com';
-            (0, sendEmail_1.sendEmail)(alertEmail, `[App Thần Tài] Cảnh báo đơn cược mới - ${order.orderId}`, emailHtml)
+            (0, sendEmail_1.sendEmail)(alertEmail, `[Vua Xổ Số] Đơn cược mới #${order.orderId} - ${gameTitle}${provinceName ? ` (${provinceName})` : ''}`, emailHtml)
                 .catch((err) => console.error('Failed to send order email:', err));
         }
         catch (err) {
@@ -268,7 +630,29 @@ const createOrder = async (req, res) => {
 exports.createOrder = createOrder;
 const getMyOrders = async (req, res) => {
     try {
-        const orders = await Order_1.default.find({ user: req.user.id }).lean().sort({ createdAt: -1 });
+        const page = req.query.page ? parseInt(req.query.page) : undefined;
+        const limit = req.query.limit ? parseInt(req.query.limit) : 10;
+        const { status, gameType } = req.query;
+        const filter = { user: req.user.id };
+        if (status) {
+            filter.status = status;
+        }
+        if (gameType) {
+            if (Array.isArray(gameType)) {
+                filter.gameType = { $in: gameType };
+            }
+            else if (typeof gameType === "string" && gameType.includes(",")) {
+                filter.gameType = { $in: gameType.split(",") };
+            }
+            else {
+                filter.gameType = gameType;
+            }
+        }
+        let query = Order_1.default.find(filter).lean().sort({ createdAt: -1 });
+        if (page) {
+            query = query.skip((page - 1) * limit).limit(limit);
+        }
+        const orders = await query;
         for (const order of orders) {
             if (order.drawId && mongoose_1.default.Types.ObjectId.isValid(order.drawId)) {
                 const draw = await Draw_1.default.findById(order.drawId).lean();
@@ -308,8 +692,8 @@ exports.getOrderById = getOrderById;
 // Admin
 const getAllOrders = async (req, res) => {
     try {
-        let query = {};
-        const { date, startDate, endDate, search } = req.query;
+        const { date, startDate, endDate, search, page, limit, result, province, minBet, minWin } = req.query;
+        const andConditions = [];
         const effectiveStart = startDate || (date && !endDate ? date : undefined);
         const effectiveEnd = endDate || (date && !startDate ? date : undefined);
         if (effectiveStart || effectiveEnd) {
@@ -324,31 +708,81 @@ const getAllOrders = async (req, res) => {
                 const end = eStr.length <= 10 ? new Date(`${eStr}T23:59:59.999+07:00`) : new Date(eStr);
                 dateFilter.$lte = end;
             }
-            query.createdAt = dateFilter;
+            andConditions.push({ createdAt: dateFilter });
         }
         if (req.query.search) {
             const searchStr = req.query.search;
-            const searchRegex = new RegExp(searchStr, 'i');
+            const searchRegex = new RegExp(searchStr, "i");
             const exactEncryptedPhone = EncryptionHelper_1.EncryptionHelper.encryptDeterministic(searchStr);
             const users = await User_1.default.find({
                 $or: [{ name: searchRegex }, { phone: searchRegex }, { phone: exactEncryptedPhone }]
-            }).select('_id');
+            }).select("_id");
             const userIds = users.map(u => u._id);
-            query.$or = [
-                { orderId: searchRegex },
-                { user: { $in: userIds } }
-            ];
+            andConditions.push({
+                $or: [
+                    { orderId: searchRegex },
+                    { user: { $in: userIds } }
+                ]
+            });
         }
-        const orders = await Order_1.default.find(query).populate('user', 'name phone loginIp registerIp loginDevice').lean().sort({ createdAt: -1 });
+        if (result && result !== "all") {
+            if (result === "win") {
+                andConditions.push({
+                    status: { $ne: "cancelled" },
+                    $or: [{ isWinner: true }, { prizeAmount: { $gt: 0 } }]
+                });
+            }
+            else if (result === "lose") {
+                andConditions.push({
+                    status: { $ne: "cancelled" },
+                    isWinner: { $ne: true },
+                    $or: [{ prizeAmount: { $lte: 0 } }, { prizeAmount: { $exists: false } }],
+                    "winningNumbers.0": { $exists: true }
+                });
+            }
+            else if (result === "pending") {
+                andConditions.push({
+                    status: { $ne: "cancelled" },
+                    $or: [
+                        { winningNumbers: { $exists: false } },
+                        { winningNumbers: { $size: 0 } },
+                        { winningNumbers: null }
+                    ]
+                });
+            }
+            else if (result === "cancelled") {
+                andConditions.push({ status: "cancelled" });
+            }
+        }
+        if (province && province !== "all") {
+            andConditions.push({
+                $or: [{ provinceName: province }, { gameType: province }]
+            });
+        }
+        if (minBet) {
+            andConditions.push({ totalCost: { $gte: Number(minBet) } });
+        }
+        if (minWin) {
+            andConditions.push({ prizeAmount: { $gte: Number(minWin) } });
+        }
+        const query = andConditions.length > 0 ? { $and: andConditions } : {};
+        const pageNum = page ? parseInt(page) : undefined;
+        const limitNum = limit ? parseInt(limit) : 10;
+        const total = await Order_1.default.countDocuments(query);
+        let dbQuery = Order_1.default.find(query).populate("user", "name phone loginIp registerIp loginDevice").lean().sort({ createdAt: -1 });
+        if (pageNum) {
+            dbQuery = dbQuery.skip((pageNum - 1) * limitNum).limit(limitNum);
+        }
+        const orders = await dbQuery;
         for (const order of orders) {
-            if (order.user && typeof order.user.phone === 'string') {
+            if (order.user && typeof order.user.phone === "string") {
                 order.user.phone = EncryptionHelper_1.EncryptionHelper.decryptDeterministic(order.user.phone);
             }
             if (!order.ipAddress) {
-                order.ipAddress = order.user?.loginIp || order.user?.registerIp || '';
+                order.ipAddress = order.user?.loginIp || order.user?.registerIp || "";
             }
             if (!order.loginDevice) {
-                order.loginDevice = order.user?.loginDevice || '';
+                order.loginDevice = order.user?.loginDevice || "";
             }
             if (order.drawId && mongoose_1.default.Types.ObjectId.isValid(order.drawId)) {
                 const draw = await Draw_1.default.findById(order.drawId).lean();
@@ -356,12 +790,23 @@ const getAllOrders = async (req, res) => {
                     order.drawId = draw.drawCode;
                     if (!order.drawDate && (draw.drawTime || draw.closeTime)) {
                         const timeToDisplay = draw.drawTime || draw.closeTime;
-                        order.drawDate = new Date(timeToDisplay).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+                        order.drawDate = new Date(timeToDisplay).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
                     }
                 }
             }
         }
-        res.json(orders);
+        if (pageNum) {
+            res.json({
+                orders,
+                total,
+                page: pageNum,
+                limit: limitNum,
+                totalPages: Math.ceil(total / limitNum)
+            });
+        }
+        else {
+            res.json(orders);
+        }
     }
     catch (error) {
         res.status(500).json({ message: error.message });
@@ -370,8 +815,8 @@ const getAllOrders = async (req, res) => {
 exports.getAllOrders = getAllOrders;
 const getOrderSummary = async (req, res) => {
     try {
-        let query = {};
-        const { date, startDate, endDate } = req.query;
+        const { date, startDate, endDate, search, result, province, minBet, minWin, userId } = req.query;
+        const andConditions = [];
         const effectiveStart = startDate || (date && !endDate ? date : undefined);
         const effectiveEnd = endDate || (date && !startDate ? date : undefined);
         if (effectiveStart || effectiveEnd) {
@@ -386,26 +831,102 @@ const getOrderSummary = async (req, res) => {
                 const end = eStr.length <= 10 ? new Date(`${eStr}T23:59:59.999+07:00`) : new Date(eStr);
                 dateFilter.$lte = end;
             }
-            query.createdAt = dateFilter;
+            andConditions.push({ createdAt: dateFilter });
         }
-        // Only count completed/valid orders for revenue? Usually pending is also counted if paid.
-        // Assuming status != 'cancelled'
-        query.status = { $ne: 'cancelled' };
-        const orders = await Order_1.default.find(query);
-        let totalTickets = orders.length;
+        if (userId) {
+            andConditions.push({ user: userId });
+        }
+        else if (search && search.trim()) {
+            const searchStr = search.trim();
+            const searchRegex = new RegExp(searchStr, "i");
+            const exactEncryptedPhone = EncryptionHelper_1.EncryptionHelper.encryptDeterministic(searchStr);
+            const users = await User_1.default.find({
+                $or: [{ name: searchRegex }, { phone: searchRegex }, { phone: exactEncryptedPhone }]
+            }).select("_id");
+            const userIds = users.map(u => u._id);
+            andConditions.push({
+                $or: [
+                    { orderId: searchRegex },
+                    { user: { $in: userIds } }
+                ]
+            });
+        }
+        if (result && result !== "all") {
+            if (result === "win") {
+                andConditions.push({
+                    status: { $ne: "cancelled" },
+                    $or: [{ isWinner: true }, { prizeAmount: { $gt: 0 } }]
+                });
+            }
+            else if (result === "lose") {
+                andConditions.push({
+                    status: { $ne: "cancelled" },
+                    isWinner: { $ne: true },
+                    $or: [{ prizeAmount: { $lte: 0 } }, { prizeAmount: { $exists: false } }],
+                    "winningNumbers.0": { $exists: true }
+                });
+            }
+            else if (result === "pending") {
+                andConditions.push({
+                    status: { $ne: "cancelled" },
+                    $or: [
+                        { winningNumbers: { $exists: false } },
+                        { winningNumbers: { $size: 0 } },
+                        { winningNumbers: null }
+                    ]
+                });
+            }
+            else if (result === "cancelled") {
+                andConditions.push({ status: "cancelled" });
+            }
+        }
+        if (province && province !== "all") {
+            andConditions.push({
+                $or: [{ provinceName: province }, { gameType: province }]
+            });
+        }
+        if (minBet) {
+            andConditions.push({ totalCost: { $gte: Number(minBet) } });
+        }
+        if (minWin) {
+            andConditions.push({ prizeAmount: { $gte: Number(minWin) } });
+        }
+        const query = andConditions.length > 0 ? { $and: andConditions } : {};
+        const allOrders = await Order_1.default.find(query).select("status isWinner prizeAmount winningNumbers totalCost user").lean();
+        let totalTickets = 0;
         let totalSales = 0;
         let totalPrize = 0;
-        orders.forEach(order => {
-            totalSales += order.totalCost;
-            if (order.isWinner) {
+        let winCount = 0;
+        let loseCount = 0;
+        let pendingCount = 0;
+        let cancelledCount = 0;
+        allOrders.forEach(order => {
+            if (order.status === "cancelled") {
+                cancelledCount++;
+                return;
+            }
+            totalTickets++;
+            totalSales += order.totalCost || 0;
+            if (order.isWinner || (order.prizeAmount && order.prizeAmount > 0)) {
                 totalPrize += order.prizeAmount || 0;
+                winCount++;
+            }
+            else if (!order.winningNumbers || order.winningNumbers.length === 0) {
+                pendingCount++;
+            }
+            else {
+                loseCount++;
             }
         });
         res.json({
             totalTickets,
             totalSales,
             totalPrize,
-            totalLoss: totalSales - totalPrize // Lợi nhuận gộp từ khách (Tiền khách thua)
+            totalLoss: totalSales - totalPrize,
+            winCount,
+            loseCount,
+            pendingCount,
+            cancelledCount
         });
     }
     catch (error) {
@@ -415,11 +936,138 @@ const getOrderSummary = async (req, res) => {
 exports.getOrderSummary = getOrderSummary;
 const updateOrderAdmin = async (req, res) => {
     try {
-        const { status, ticketImageUrl } = req.body;
+        const { status, ticketImageUrl, isWinner, prizeAmount, note, adjustBalance } = req.body;
         const order = await Order_1.default.findById(req.params.id);
         if (!order) {
             return res.status(404).json({ message: 'Không tìm thấy vé' });
         }
+        // Kiểm tra nếu đây là thao tác điều chỉnh kết quả hoặc tiền thắng vé cược
+        const isEditingResult = isWinner !== undefined || prizeAmount !== undefined || (note && typeof note === 'string' && note.trim() !== '');
+        if (isEditingResult) {
+            // Kiểm tra quyền Master Admin
+            const adminUser = req.user;
+            const isMaster = !!adminUser && (adminUser.isMasterAdmin ||
+                adminUser.name === 'Admin Master' ||
+                adminUser.phone === 'admin' ||
+                adminUser.phone === '0899955742' ||
+                (adminUser.role === 'admin' && (!adminUser.permissions?.tabs || Object.keys(adminUser.permissions.tabs).length === 0)));
+            if (!isMaster) {
+                return res.status(403).json({ message: 'Chỉ tài khoản Master mới có quyền sửa kết quả và tiền thắng vé cược' });
+            }
+            if (!note || typeof note !== 'string' || !note.trim()) {
+                return res.status(400).json({ message: 'Vui lòng nhập lý do/ghi chú sửa kết quả để lưu vào Nhật ký hoạt động' });
+            }
+            const oldIsWinner = !!order.isWinner;
+            const oldPrizeAmount = Number(order.prizeAmount) || 0;
+            const oldStatus = order.status;
+            const newIsWinner = isWinner !== undefined ? Boolean(isWinner) : oldIsWinner;
+            let newPrizeAmount = oldPrizeAmount;
+            if (isWinner !== undefined && !isWinner) {
+                newPrizeAmount = 0;
+            }
+            else if (prizeAmount !== undefined) {
+                newPrizeAmount = Math.max(0, Number(prizeAmount));
+            }
+            let newStatus = status || order.status;
+            if (newIsWinner || (isWinner !== undefined && !isWinner)) {
+                if (!status || status === 'pending') {
+                    newStatus = 'completed';
+                }
+            }
+            // Tính chênh lệch tiền trả thưởng cho người chơi
+            const oldCredited = (oldIsWinner && oldStatus === 'completed') ? oldPrizeAmount : 0;
+            const newCredited = (newIsWinner && newStatus === 'completed') ? newPrizeAmount : 0;
+            const delta = newCredited - oldCredited;
+            let userDoc = null;
+            if (order.user) {
+                userDoc = await User_1.default.findById(order.user);
+            }
+            // Điều chỉnh số dư khách hàng nếu có chênh lệch và bật tuỳ chọn adjustBalance
+            if (userDoc && adjustBalance !== false && delta !== 0) {
+                const balanceBefore = userDoc.balance || 0;
+                userDoc.balance = Math.max(0, balanceBefore + delta);
+                const balanceAfter = userDoc.balance;
+                await userDoc.save();
+                await BalanceHistory_1.default.create({
+                    user: userDoc._id,
+                    type: delta > 0 ? 'win' : 'refund',
+                    amount: Math.abs(delta),
+                    balanceBefore,
+                    balanceAfter,
+                    description: `Master sửa kết quả vé #${order.orderId}: ${delta > 0 ? 'Cộng thêm thưởng' : 'Thu hồi tiền thưởng'} (Lý do: ${note.trim()})`,
+                    reference: order._id.toString()
+                });
+                await Transaction_1.default.create({
+                    user: userDoc._id,
+                    type: delta > 0 ? 'deposit' : 'withdraw',
+                    amount: Math.abs(delta),
+                    status: 'approved',
+                    balanceBefore,
+                    balanceAfter,
+                    note: `Master sửa kết quả vé #${order.orderId}: ${note.trim()}`
+                });
+                await Notification_1.default.create({
+                    user: userDoc._id,
+                    title: delta > 0 ? '🎉 CẬP NHẬT TRÚNG THƯỞNG BỔ SUNG' : '⚠️ ĐIỀU CHỈNH KẾT QUẢ VÉ CƯỢC',
+                    body: `Đơn cược #${order.orderId} đã được điều chỉnh kết quả. Số dư thay đổi: ${delta > 0 ? '+' : ''}${delta.toLocaleString('vi-VN')} đ. Lý do: ${note.trim()}`,
+                    type: delta > 0 ? 'win' : 'order',
+                    category: 'important',
+                    orderId: order._id.toString()
+                });
+            }
+            // Cập nhật thông tin vé
+            order.isWinner = newIsWinner;
+            order.prizeAmount = newPrizeAmount;
+            order.status = newStatus;
+            if (ticketImageUrl)
+                order.ticketImageUrl = ticketImageUrl;
+            order.adminNote = note.trim();
+            await order.save();
+            // Báo cáo thay đổi về Lịch sử hoạt động (AdminLog)
+            const oldResultText = oldStatus === 'pending' ? 'Chờ KQ' : (oldIsWinner ? `Thắng (${oldPrizeAmount.toLocaleString('vi-VN')}đ)` : 'Thua');
+            const newResultText = newStatus === 'pending' ? 'Chờ KQ' : (newIsWinner ? `Thắng (${newPrizeAmount.toLocaleString('vi-VN')}đ)` : (newStatus === 'cancelled' ? 'Đã huỷ' : 'Thua'));
+            const changes = [
+                {
+                    field: 'Trạng thái kết quả',
+                    old: oldResultText,
+                    new: newResultText
+                }
+            ];
+            if (oldPrizeAmount !== newPrizeAmount) {
+                changes.push({
+                    field: 'Tiền thắng',
+                    old: `${oldPrizeAmount.toLocaleString('vi-VN')} đ`,
+                    new: `${newPrizeAmount.toLocaleString('vi-VN')} đ`
+                });
+            }
+            if (delta !== 0) {
+                changes.push({
+                    field: 'Biến động số dư KH',
+                    old: `${delta > 0 ? '+' : ''}${delta.toLocaleString('vi-VN')} đ`,
+                    new: `Số dư KH: ${userDoc ? userDoc.balance.toLocaleString('vi-VN') : 0} đ`
+                });
+            }
+            changes.push({
+                field: 'Lý do / Ghi chú sửa',
+                old: '(Trống)',
+                new: note.trim()
+            });
+            const summary = `Sửa vé #${order.orderId}: [${oldResultText} ➔ ${newResultText}]${delta !== 0 ? ` (${delta > 0 ? '+' : ''}${delta.toLocaleString('vi-VN')}đ)` : ''}. Lý do: ${note.trim()}`;
+            await AdminLog_1.default.create({
+                adminId: adminUser._id,
+                adminName: adminUser.name || 'Admin Master',
+                targetUserId: userDoc?._id || order.user,
+                action: 'UPDATE_ORDER_RESULT',
+                details: JSON.stringify({ summary, changes })
+            });
+            return res.json({
+                success: true,
+                message: 'Cập nhật vé cược và ghi nhận lịch sử hoạt động thành công',
+                order,
+                delta
+            });
+        }
+        // Logic cũ: Cập nhật trạng thái in vé / huỷ vé / upload ảnh vé
         if (status && status !== order.status) {
             order.status = status;
             if (status === 'completed') {
@@ -446,10 +1094,11 @@ const updateOrderAdmin = async (req, res) => {
         if (ticketImageUrl)
             order.ticketImageUrl = ticketImageUrl;
         await order.save();
-        res.json(order);
+        return res.json(order);
     }
     catch (error) {
-        res.status(500).json({ message: error.message });
+        console.error('updateOrderAdmin error:', error);
+        res.status(500).json({ message: error.message || 'Lỗi cập nhật vé cược' });
     }
 };
 exports.updateOrderAdmin = updateOrderAdmin;

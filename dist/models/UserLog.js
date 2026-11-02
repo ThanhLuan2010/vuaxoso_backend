@@ -41,4 +41,5 @@ const userLogSchema = new mongoose_1.Schema({
     ip: { type: String },
     device: { type: String },
 }, { timestamps: true });
+userLogSchema.index({ user: 1, createdAt: -1 });
 exports.default = mongoose_1.default.model('UserLog', userLogSchema);

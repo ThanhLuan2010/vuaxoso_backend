@@ -8,7 +8,13 @@ const Guide_1 = __importDefault(require("../models/Guide"));
 // Lấy danh sách hướng dẫn (Public)
 const getGuides = async (req, res) => {
     try {
-        const guides = await Guide_1.default.find({ isActive: true }).sort({ order: 1, createdAt: -1 });
+        const page = req.query.page ? parseInt(req.query.page) : undefined;
+        const limit = req.query.limit ? parseInt(req.query.limit) : 10;
+        let query = Guide_1.default.find({ isActive: true }).sort({ order: 1, createdAt: -1 });
+        if (page) {
+            query = query.skip((page - 1) * limit).limit(limit);
+        }
+        const guides = await query;
         res.json(guides);
     }
     catch (error) {

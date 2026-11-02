@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getMyBalanceHistory = exports.rejectTransaction = exports.approveTransaction = exports.getAllTransactions = exports.getHistory = exports.withdraw = exports.depositBinance = exports.deposit = void 0;
+const AdminLog_1 = __importDefault(require("../models/AdminLog"));
 const Transaction_1 = __importDefault(require("../models/Transaction"));
 const User_1 = __importDefault(require("../models/User"));
 const UserLog_1 = __importDefault(require("../models/UserLog"));
@@ -13,6 +14,7 @@ const BalanceHistory_1 = __importDefault(require("../models/BalanceHistory"));
 const crypto_1 = __importDefault(require("crypto"));
 const bcrypt_1 = __importDefault(require("bcrypt"));
 const axios_1 = __importDefault(require("axios"));
+const EncryptionHelper_1 = require("../utils/EncryptionHelper");
 // @route   POST /api/wallet/deposit
 const deposit = async (req, res) => {
     try {
@@ -32,6 +34,15 @@ const deposit = async (req, res) => {
             status: 'pending',
         });
         await UserLog_1.default.create({ user: req.user.id, action: 'DEPOSIT_CREATED', details: `Tạo lệnh nạp ${Number(amount).toLocaleString('vi-VN')}đ` });
+        const user = await User_1.default.findById(req.user.id);
+        const userName = user?.name || 'Khách hàng';
+        const userPhone = user?.phone ? EncryptionHelper_1.EncryptionHelper.decryptDeterministic(user.phone) : '';
+        await AdminLog_1.default.create({
+            targetUserId: req.user.id,
+            adminName: 'Khách hàng',
+            action: 'NẠP TIỀN',
+            details: `Khách hàng ${userName}${userPhone ? ` (${userPhone})` : ''} tạo yêu cầu nạp ${Number(amount).toLocaleString('vi-VN')} đ (Phương thức: ${paymentMethod}${txId ? `, Mã GD: ${txId}` : ''})`
+        });
         res.status(201).json(transaction);
     }
     catch (error) {
@@ -98,6 +109,14 @@ const depositBinance = async (req, res) => {
             user: user._id,
         });
         await UserLog_1.default.create({ user: req.user.id, action: 'DEPOSIT_CREATED', details: `Tạo lệnh nạp ${amountVnd.toLocaleString('vi-VN')}đ` });
+        const userName = user?.name || 'Khách hàng';
+        const userPhone = user?.phone ? EncryptionHelper_1.EncryptionHelper.decryptDeterministic(user.phone) : '';
+        await AdminLog_1.default.create({
+            targetUserId: user._id,
+            adminName: 'Hệ thống',
+            action: 'NẠP TIỀN TỰ ĐỘNG (BINANCE)',
+            details: `Nạp tiền Binance tự động thành công cho khách hàng ${userName}${userPhone ? ` (${userPhone})` : ''}: +${amountVnd.toLocaleString('vi-VN')} đ (${amountUsdt} USDT). TxID: ${deposit.txId}`
+        });
         res.status(201).json(transaction);
     }
     catch (error) {
@@ -180,6 +199,19 @@ const withdraw = async (req, res) => {
             reference: transaction._id.toString()
         });
         await UserLog_1.default.create({ user: req.user.id, action: 'WITHDRAW_CREATED', details: `Tạo lệnh rút ${amount.toLocaleString('vi-VN')}đ` });
+        const userName = user?.name || 'Khách hàng';
+        const userPhone = user?.phone ? EncryptionHelper_1.EncryptionHelper.decryptDeterministic(user.phone) : '';
+        const destStr = destinationInfo
+            ? (destinationInfo.bankName
+                ? `${destinationInfo.bankName} - ${destinationInfo.accountNumber || ''} (${destinationInfo.accountName || ''})`
+                : `${destinationInfo.network || 'USDT'} - ${destinationInfo.walletAddress || ''}`)
+            : '';
+        await AdminLog_1.default.create({
+            targetUserId: user._id,
+            adminName: 'Khách hàng',
+            action: 'RÚT TIỀN',
+            details: `Khách hàng ${userName}${userPhone ? ` (${userPhone})` : ''} tạo yêu cầu rút ${amount.toLocaleString('vi-VN')} đ.${destStr ? ` Nhận qua: ${destStr}` : ''}`
+        });
         res.status(201).json(transaction);
     }
     catch (error) {
@@ -190,7 +222,18 @@ exports.withdraw = withdraw;
 // @route   GET /api/wallet/history
 const getHistory = async (req, res) => {
     try {
-        const transactions = await Transaction_1.default.find({ user: req.user.id }).sort({ createdAt: -1 });
+        const page = req.query.page ? parseInt(req.query.page) : undefined;
+        const limit = req.query.limit ? parseInt(req.query.limit) : 10;
+        const { type } = req.query;
+        const filter = { user: req.user.id };
+        if (type && type !== "all") {
+            filter.type = type;
+        }
+        let query = Transaction_1.default.find(filter).sort({ createdAt: -1 });
+        if (page) {
+            query = query.skip((page - 1) * limit).limit(limit);
+        }
+        const transactions = await query;
         res.json(transactions);
     }
     catch (error) {
@@ -202,7 +245,7 @@ exports.getHistory = getHistory;
 // @route   GET /api/wallet/admin/transactions
 const getAllTransactions = async (req, res) => {
     try {
-        const { search, startDate, endDate, date, depositStatus, withdrawStatus, type, status } = req.query;
+        const { search, startDate, endDate, date, depositStatus, withdrawStatus, type, status, page, limit, paymentMethod } = req.query;
         const andConditions = [];
         // Search filter
         if (search) {
@@ -279,9 +322,43 @@ const getAllTransactions = async (req, res) => {
                 andConditions.push({ status });
             }
         }
+        if (paymentMethod && paymentMethod !== "all") {
+            if (paymentMethod === "crypto") {
+                andConditions.push({
+                    $or: [
+                        { paymentMethod: "binance" },
+                        { type: "withdraw", "destinationInfo.network": { $exists: true, $ne: "" } }
+                    ]
+                });
+            }
+            else if (paymentMethod === "scratch") {
+                andConditions.push({ paymentMethod: "scratch" });
+            }
+            else if (paymentMethod === "bank") {
+                andConditions.push({ paymentMethod: { $nin: ["binance", "scratch"] } });
+            }
+        }
+        const pageNum = page ? parseInt(page) : undefined;
+        const limitNum = limit ? parseInt(limit) : 20;
         const filter = andConditions.length > 0 ? { $and: andConditions } : {};
-        const transactions = await Transaction_1.default.find(filter).populate("user", "name phone").sort({ createdAt: -1 });
-        res.json(transactions);
+        const total = await Transaction_1.default.countDocuments(filter);
+        let dbQuery = Transaction_1.default.find(filter).populate("user", "name phone").sort({ createdAt: -1 });
+        if (pageNum) {
+            dbQuery = dbQuery.skip((pageNum - 1) * limitNum).limit(limitNum);
+        }
+        const transactions = await dbQuery;
+        if (pageNum) {
+            res.json({
+                transactions,
+                total,
+                page: pageNum,
+                limit: limitNum,
+                totalPages: Math.ceil(total / limitNum)
+            });
+        }
+        else {
+            res.json(transactions);
+        }
     }
     catch (error) {
         res.status(500).json({ message: error.message });
@@ -333,6 +410,15 @@ const approveTransaction = async (req, res) => {
                 category: 'important',
                 user: user._id,
             });
+            const userName = user.name || 'Khách hàng';
+            const userPhone = user.phone ? EncryptionHelper_1.EncryptionHelper.decryptDeterministic(user.phone) : '';
+            await AdminLog_1.default.create({
+                adminId: req.user?._id,
+                adminName: req.user?.name || 'Admin',
+                targetUserId: user._id,
+                action: 'DUYỆT NẠP TIỀN',
+                details: `Duyệt nạp tiền cho khách hàng ${userName}${userPhone ? ` (${userPhone})` : ''}: +${amount.toLocaleString('vi-VN')} đ (Mã GD: ${transaction.txId || transaction._id}).${note ? ` Ghi chú: ${note}` : ''}`
+            });
         }
         else if (transaction.type === 'withdraw') {
             await Notification_1.default.create({
@@ -341,6 +427,15 @@ const approveTransaction = async (req, res) => {
                 type: 'deposit', // using deposit icon since there is no 'withdraw' type icon yet
                 category: 'important',
                 user: user._id,
+            });
+            const userName = user.name || 'Khách hàng';
+            const userPhone = user.phone ? EncryptionHelper_1.EncryptionHelper.decryptDeterministic(user.phone) : '';
+            await AdminLog_1.default.create({
+                adminId: req.user?._id,
+                adminName: req.user?.name || 'Admin',
+                targetUserId: user._id,
+                action: 'DUYỆT RÚT TIỀN',
+                details: `Duyệt rút tiền cho khách hàng ${userName}${userPhone ? ` (${userPhone})` : ''}: ${transaction.amount.toLocaleString('vi-VN')} đ (Mã GD: ${transaction.txId || transaction._id}).${note ? ` Ghi chú: ${note}` : ''}`
             });
         }
         transaction.status = 'approved';
@@ -388,6 +483,15 @@ const rejectTransaction = async (req, res) => {
                     category: 'important',
                     user: user._id,
                 });
+                const userName = user.name || 'Khách hàng';
+                const userPhone = user.phone ? EncryptionHelper_1.EncryptionHelper.decryptDeterministic(user.phone) : '';
+                await AdminLog_1.default.create({
+                    adminId: req.user?._id,
+                    adminName: req.user?.name || 'Admin',
+                    targetUserId: user._id,
+                    action: 'TỪ CHỐI RÚT TIỀN',
+                    details: `Từ chối rút tiền của khách hàng ${userName}${userPhone ? ` (${userPhone})` : ''}: ${transaction.amount.toLocaleString('vi-VN')} đ (Đã hoàn lại số dư).${note ? ` Lý do: ${note}` : ''}`
+                });
             }
         }
         else if (transaction.type === 'deposit') {
@@ -399,6 +503,15 @@ const rejectTransaction = async (req, res) => {
                     type: 'deposit',
                     category: 'important',
                     user: user._id,
+                });
+                const userName = user.name || 'Khách hàng';
+                const userPhone = user.phone ? EncryptionHelper_1.EncryptionHelper.decryptDeterministic(user.phone) : '';
+                await AdminLog_1.default.create({
+                    adminId: req.user?._id,
+                    adminName: req.user?.name || 'Admin',
+                    targetUserId: user._id,
+                    action: 'TỪ CHỐI NẠP TIỀN',
+                    details: `Từ chối nạp tiền của khách hàng ${userName}${userPhone ? ` (${userPhone})` : ''}: ${transaction.amount.toLocaleString('vi-VN')} đ.${note ? ` Lý do: ${note}` : ''}`
                 });
             }
         }

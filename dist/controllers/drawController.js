@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteDraw = exports.updateDraw = exports.getAllDraws = exports.enterResults = exports.createDraw = exports.getDrawResults = exports.getActiveDraws = exports.getKienThietSchedule = void 0;
+exports.deleteDraw = exports.updateDraw = exports.getAllDraws = exports.enterResults = exports.createDraw = exports.getDrawResults = exports.getActiveDraws = exports.ensureKienThietDraws = exports.getKienThietSchedule = void 0;
 const AdminLog_1 = __importDefault(require("../models/AdminLog"));
 const Draw_1 = __importDefault(require("../models/Draw"));
 const Province_1 = __importDefault(require("../models/Province"));
@@ -35,9 +35,9 @@ const getKienThietSchedule = async (req, res) => {
             code: p.code,
             region: p.region
         });
-        const todayDay = today.getDay();
-        const tomorrowDay = tomorrow.getDay();
-        const dayAfterDay = dayAfter.getDay();
+        const todayDay = getVNDayOfWeek(today);
+        const tomorrowDay = getVNDayOfWeek(tomorrow);
+        const dayAfterDay = getVNDayOfWeek(dayAfter);
         const [todayProvinces, tomorrowProvinces, dayAfterProvinces] = await Promise.all([
             Province_1.default.find({ drawDays: todayDay }),
             Province_1.default.find({ drawDays: tomorrowDay }),
@@ -88,6 +88,103 @@ function getVNDayOfWeek(date) {
     return dayMap[dayStr] ?? date.getDay();
 }
 // Public: Lấy danh sách các kỳ quay đang mở
+let isEnsuringKienThiet = false;
+let lastEnsureKienThietTime = 0;
+const ensureKienThietDraws = async () => {
+    if (isEnsuringKienThiet)
+        return;
+    isEnsuringKienThiet = true;
+    try {
+        const Game = require("../models/Game").default;
+        const now = new Date();
+        const ktGames = await Game.find({ code: { $in: ["MB", "MT", "MN"] } }).lean();
+        if (!ktGames || ktGames.length === 0)
+            return;
+        // Auto-close any expired open draws
+        await Draw_1.default.updateMany({ status: "open", closeTime: { $lte: now } }, { $set: { status: "closed" } });
+        // Load tất cả đài tỉnh miền Trung & Nam 1 lần duy nhất thay vì query lặp
+        const allProvinces = await Province_1.default.find({ region: { $in: ["MT", "MN"] } }).lean();
+        for (const game of ktGames) {
+            const cutoffHour = game.code === "MN" ? 16 : (game.code === "MT" ? 17 : 18);
+            const cutoffMin = 10;
+            const drawHour = game.code === "MN" ? 16 : (game.code === "MT" ? 17 : 18);
+            const drawMin = 15;
+            let lastDrawNum = game.code === "MN" ? 1100 : (game.code === "MT" ? 1200 : 1350);
+            const lastDraw = await Draw_1.default.findOne({ game: game._id }).sort({ createdAt: -1 }).lean();
+            if (lastDraw) {
+                const match = lastDraw.drawCode.match(/#?(\d+)/);
+                if (match)
+                    lastDrawNum = Math.max(lastDrawNum, parseInt(match[1]));
+            }
+            // Lấy khoảng thời gian 6 ngày tới
+            const minCutoff = getVNCutoffDate(now, cutoffHour, cutoffMin);
+            const maxCheckDate = new Date(now.getTime() + 6 * 24 * 3600 * 1000);
+            const maxCutoff = getVNCutoffDate(maxCheckDate, cutoffHour, cutoffMin);
+            // Query toàn bộ kỳ quay đã tồn tại trong khoảng 6 ngày tới trong 1 query duy nhất
+            const existingDraws = await Draw_1.default.find({
+                game: game._id,
+                closeTime: {
+                    $gte: new Date(minCutoff.getTime() - 24 * 3600 * 1000),
+                    $lte: new Date(maxCutoff.getTime() + 24 * 3600 * 1000)
+                }
+            }).select("provinceId closeTime").lean();
+            const existingSet = new Set(existingDraws.map(d => `${d.provinceId || "MB"}_${new Date(d.closeTime).getTime()}`));
+            const newDraws = [];
+            for (let dayOffset = 0; dayOffset <= 5; dayOffset++) {
+                const checkDate = new Date(now.getTime() + dayOffset * 24 * 3600 * 1000);
+                const dayOfWeek = getVNDayOfWeek(checkDate);
+                const cutoff = getVNCutoffDate(checkDate, cutoffHour, cutoffMin);
+                const drawCutoff = getVNCutoffDate(checkDate, drawHour, drawMin);
+                const status = cutoff > now ? "open" : "closed";
+                if (game.code === "MB") {
+                    const key = `MB_${cutoff.getTime()}`;
+                    if (!existingSet.has(key)) {
+                        existingSet.add(key);
+                        lastDrawNum += 1;
+                        newDraws.push({
+                            game: game._id,
+                            drawCode: "#" + String(lastDrawNum).padStart(4, "0"),
+                            provinceId: "MB",
+                            openTime: new Date(cutoff.getTime() - 24 * 3600 * 1000),
+                            closeTime: cutoff,
+                            drawTime: drawCutoff,
+                            status
+                        });
+                    }
+                }
+                else {
+                    const dayProvinces = allProvinces.filter((p) => p.region === game.code && p.drawDays.includes(dayOfWeek));
+                    for (const prov of dayProvinces) {
+                        const key = `${prov.provinceId}_${cutoff.getTime()}`;
+                        if (!existingSet.has(key)) {
+                            existingSet.add(key);
+                            lastDrawNum += 1;
+                            newDraws.push({
+                                game: game._id,
+                                drawCode: "#" + String(lastDrawNum).padStart(4, "0"),
+                                provinceId: prov.provinceId,
+                                openTime: new Date(cutoff.getTime() - 24 * 3600 * 1000),
+                                closeTime: cutoff,
+                                drawTime: drawCutoff,
+                                status
+                            });
+                        }
+                    }
+                }
+            }
+            if (newDraws.length > 0) {
+                await Draw_1.default.insertMany(newDraws);
+            }
+        }
+    }
+    catch (err) {
+        console.error("ensureKienThietDraws error:", err);
+    }
+    finally {
+        isEnsuringKienThiet = false;
+    }
+};
+exports.ensureKienThietDraws = ensureKienThietDraws;
 const getActiveDraws = async (req, res) => {
     try {
         const Game = require('../models/Game').default;
@@ -133,7 +230,7 @@ const getActiveDraws = async (req, res) => {
                         catch (err) { }
                     }
                 }
-                const durationMinutes = game.code === 'bingo18' ? 6 : (game.drawDurationMinutes || 8);
+                const durationMinutes = game.code === 'bingo18' ? 8 : (game.drawDurationMinutes || 8);
                 const openDraws = await Draw_1.default.find({
                     game: game._id,
                     status: 'open',
@@ -172,6 +269,50 @@ const getActiveDraws = async (req, res) => {
                             status: 'open'
                         });
                         lastCloseTime = closeTime;
+                    }
+                }
+            }
+            else if (game.code === 'lotto_535') {
+                const openDraws = await Draw_1.default.find({
+                    game: game._id,
+                    status: 'open',
+                    closeTime: { $gt: now }
+                }).sort({ closeTime: 1 });
+                if (openDraws.length < 10) {
+                    let lastDrawNum = 1300;
+                    const allDraws = await Draw_1.default.find({ game: game._id }).sort({ closeTime: -1 });
+                    if (allDraws.length > 0) {
+                        const match = allDraws[0].drawCode.match(/#?(\d+)/);
+                        if (match)
+                            lastDrawNum = parseInt(match[1]);
+                    }
+                    let checkDay = new Date(now);
+                    const needed = 10 - openDraws.length;
+                    let created = 0;
+                    while (created < needed) {
+                        const cutoffs = [
+                            { close: getVNCutoffDate(checkDay, 12, 0), draw: getVNCutoffDate(checkDay, 13, 0) },
+                            { close: getVNCutoffDate(checkDay, 20, 0), draw: getVNCutoffDate(checkDay, 21, 0) }
+                        ];
+                        for (const item of cutoffs) {
+                            if (item.close > now) {
+                                const exists = await Draw_1.default.findOne({ game: game._id, closeTime: item.close });
+                                if (!exists && created < needed) {
+                                    lastDrawNum += 1;
+                                    const drawCode = `#${String(lastDrawNum).padStart(4, '0')}`;
+                                    await Draw_1.default.create({
+                                        game: game._id,
+                                        drawCode,
+                                        openTime: new Date(item.close.getTime() - 8 * 3600 * 1000),
+                                        closeTime: item.close,
+                                        drawTime: item.draw,
+                                        status: 'open'
+                                    });
+                                    created++;
+                                }
+                            }
+                        }
+                        checkDay.setDate(checkDay.getDate() + 1);
                     }
                 }
             }
@@ -237,15 +378,21 @@ const getActiveDraws = async (req, res) => {
                     while (created < needed) {
                         const dayOfWeek = getVNDayOfWeek(checkDate);
                         if (drawDays.includes(dayOfWeek)) {
-                            const cutoff = getVNCutoffDate(checkDate, 17, 20);
-                            if (cutoff > now) {
+                            const isLotto570 = game.code === 'lotto_570';
+                            const is18h15Game = ['dientoan_636', 'bao_636', 'loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(game.code);
+                            const closeCutoff = isLotto570 ? getVNCutoffDate(checkDate, 17, 0) : getVNCutoffDate(checkDate, 17, 20);
+                            const drawCutoff = isLotto570
+                                ? getVNCutoffDate(checkDate, 17, 20)
+                                : (is18h15Game ? getVNCutoffDate(checkDate, 18, 15) : getVNCutoffDate(checkDate, 18, 0));
+                            if (closeCutoff > now) {
                                 lastDrawNum += 1;
                                 const drawCode = `#${String(lastDrawNum).padStart(4, "0")}`;
                                 await Draw_1.default.create({
                                     game: game._id,
                                     drawCode,
-                                    openTime: new Date(cutoff.getTime() - 2 * 24 * 3600 * 1000),
-                                    closeTime: cutoff,
+                                    openTime: new Date(closeCutoff.getTime() - 2 * 24 * 3600 * 1000),
+                                    closeTime: closeCutoff,
+                                    drawTime: drawCutoff,
                                     status: 'open'
                                 });
                                 created++;
@@ -455,17 +602,50 @@ exports.enterResults = enterResults;
 // Admin: Lấy tất cả kỳ quay để quản lý
 const getAllDraws = async (req, res) => {
     try {
-        const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 10;
-        const gameId = req.query.gameId;
+        // Chạy đồng bộ kỳ quay Kiến Thiết trong background nếu đã quá 5 phút kể từ lần chạy trước (không block request)
+        const nowMs = Date.now();
+        if (nowMs - lastEnsureKienThietTime > 5 * 60 * 1000) {
+            lastEnsureKienThietTime = nowMs;
+            (0, exports.ensureKienThietDraws)().catch(err => console.error("ensureKienThietDraws bg error:", err));
+        }
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.max(1, Math.min(100, parseInt(req.query.limit) || 10));
+        const { gameId, provinceId, status, search, date } = req.query;
         let query = {};
         if (gameId) {
             query.game = gameId;
         }
+        if (provinceId && provinceId !== "all") {
+            query.provinceId = provinceId;
+        }
+        if (status && status !== "all") {
+            query.status = status;
+        }
+        if (search && search.trim()) {
+            query.drawCode = { $regex: search.trim(), $options: "i" };
+        }
+        if (date) {
+            const parts = date.split("-").map(Number);
+            if (parts.length === 3) {
+                const [year, month, day] = parts;
+                const startUtc = new Date(Date.UTC(year, month - 1, day, -7, 0, 0, 0));
+                const endUtc = new Date(Date.UTC(year, month - 1, day, 16, 59, 59, 999));
+                query.$or = [
+                    { closeTime: { $gte: startUtc, $lte: endUtc } },
+                    { drawTime: { $gte: startUtc, $lte: endUtc } }
+                ];
+            }
+        }
         const skip = (page - 1) * limit;
+        const isFiltered = Object.keys(query).length > 0;
         const [draws, total] = await Promise.all([
-            Draw_1.default.find(query).populate('game').sort({ createdAt: -1 }).skip(skip).limit(limit),
-            Draw_1.default.countDocuments(query)
+            Draw_1.default.find(query)
+                .populate("game")
+                .sort({ closeTime: -1, createdAt: -1 })
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+            isFiltered ? Draw_1.default.countDocuments(query) : Draw_1.default.estimatedDocumentCount()
         ]);
         res.json({ data: draws, total, page, limit });
     }

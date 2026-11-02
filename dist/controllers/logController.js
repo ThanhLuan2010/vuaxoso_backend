@@ -29,7 +29,18 @@ const getAdminLogs = async (req, res) => {
             };
         }
         const logs = await AdminLog_1.default.find(filter).sort({ createdAt: -1 }).populate('targetUserId', 'name phone').limit(500);
-        res.json(logs);
+        const { EncryptionHelper } = require('../utils/EncryptionHelper');
+        const decryptedLogs = logs.map((log) => {
+            const obj = log.toObject ? log.toObject() : log;
+            if (obj.targetUserId && obj.targetUserId.phone) {
+                try {
+                    obj.targetUserId.phone = EncryptionHelper.decryptDeterministic(obj.targetUserId.phone);
+                }
+                catch (e) { }
+            }
+            return obj;
+        });
+        res.json(decryptedLogs);
     }
     catch (error) {
         res.status(500).json({ message: 'Error fetching logs' });

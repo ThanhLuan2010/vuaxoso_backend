@@ -10,6 +10,8 @@ const User_1 = __importDefault(require("../models/User"));
 const Transaction_1 = __importDefault(require("../models/Transaction"));
 const BalanceHistory_1 = __importDefault(require("../models/BalanceHistory"));
 const Notification_1 = __importDefault(require("../models/Notification"));
+const AdminLog_1 = __importDefault(require("../models/AdminLog"));
+const EncryptionHelper_1 = require("../utils/EncryptionHelper");
 const getCombinationsList = (array, k) => {
     const result = [];
     const helper = (start, combo) => {
@@ -51,6 +53,9 @@ const processDrawResults = async (drawId) => {
                     /^kienthiet_/i
                 ]
             };
+        }
+        else if (game.code === 'keno' || game.code === 'bao_keno' || game.code === 'clln_keno') {
+            orderQuery.gameType = { $in: ['keno', 'bao_keno', 'clln_keno'] };
         }
         else {
             orderQuery.gameType = game.code;
@@ -97,195 +102,204 @@ const processDrawResults = async (drawId) => {
             else if (order.numbers && order.numbers.length > 0) {
                 allBoards = [{ numbers: order.numbers, cost: order.totalCost, playType: order.playType }];
             }
-            // --- LOGIC DÒ VÉ CƠ BẢN (MVP) ---
-            if (game.code === 'keno') {
-                const drawNumbers = new Set(draw.winningNumbers);
-                let lonCount = 0, nhoCount = 0, chanCount = 0, leCount = 0;
-                draw.winningNumbers.forEach(n => {
-                    const num = parseInt(n, 10);
-                    if (num >= 41 && num <= 80)
-                        lonCount++;
-                    if (num >= 1 && num <= 40)
-                        nhoCount++;
-                    if (num % 2 === 0)
-                        chanCount++;
-                    if (num % 2 !== 0)
-                        leCount++;
-                });
-                allBoards.forEach((board) => {
-                    let matchCount = 0;
-                    let boardPrize = 0;
-                    const bac = board.numbers.length;
-                    const numStr1 = board.numbers[0];
-                    if (bac === 1 && isNaN(parseInt(numStr1, 10))) {
-                        // Chẵn Lẻ - Lớn Nhỏ logic
-                        const betType = numStr1;
-                        if (betType === 'Lớn' && lonCount >= 13)
-                            boardPrize = (lonCount >= 15 ? 200000 : 40000);
-                        else if (betType === 'Hòa LN' && lonCount === 10 && nhoCount === 10)
-                            boardPrize = 26000;
-                        else if (betType === 'Nhỏ' && nhoCount >= 13)
-                            boardPrize = (nhoCount >= 15 ? 200000 : 40000);
-                        else if (betType === 'Lớn 11-12' && (lonCount === 11 || lonCount === 12))
-                            boardPrize = 20000;
-                        else if (betType === 'Nhỏ 11-12' && (nhoCount === 11 || nhoCount === 12))
-                            boardPrize = 20000;
-                        else if (betType === 'Chẵn' && chanCount >= 13)
-                            boardPrize = (chanCount >= 15 ? 200000 : 40000);
-                        else if (betType === 'Hòa CL' && chanCount === 10 && leCount === 10)
-                            boardPrize = 26000;
-                        else if (betType === 'Lẻ' && leCount >= 13)
-                            boardPrize = (leCount >= 15 ? 200000 : 40000);
-                        else if (betType === 'Chẵn 11-12' && (chanCount === 11 || chanCount === 12))
-                            boardPrize = 20000;
-                        else if (betType === 'Lẻ 11-12' && (leCount === 11 || leCount === 12))
-                            boardPrize = 20000;
-                    }
-                    else {
-                        // Keno Cơ Bản
+            // --- LOGIC DÒ VÉ KENO / BAO KENO / CHẴN LẺ LỚN NHỎ ---
+            if (game.code === 'keno' || game.code === 'bao_keno' || game.code === 'clln_keno') {
+                const isBaoKeno = order.gameType === 'bao_keno' || (order.playType && order.playType.includes('Bao'));
+                if (isBaoKeno) {
+                    // BAO KENO LOGIC (Theo bảng tỷ lệ thưởng chuẩn)
+                    const drawNumbers = new Set(draw.winningNumbers);
+                    const BAO_KENO_RATES = {
+                        2: 9, // Bậc 2: 1 ăn 9 -> 90.000đ
+                        3: 30, // Bậc 3: 1 ăn 30 -> 300.000đ
+                        4: 150, // Bậc 4: 1 ăn 150 -> 1.500.000đ
+                        5: 350, // Bậc 5: 1 ăn 350 -> 3.500.000đ
+                        6: 650, // Bậc 6: 1 ăn 650 -> 6.500.000đ
+                        7: 950, // Bậc 7: 1 ăn 950 -> 9.500.000đ
+                        8: 1950, // Bậc 8: 1 ăn 1950 -> 19.500.000đ
+                        9: 2950, // Bậc 9: 1 ăn 2950 -> 29.500.000đ
+                        10: 4500, // Bậc 10: 1 ăn 4500 -> 45.000.000đ
+                    };
+                    const combinationsCount = (n, k) => {
+                        if (k < 0 || k > n)
+                            return 0;
+                        if (k === 0 || k === n)
+                            return 1;
+                        let res = 1;
+                        for (let i = 1; i <= k; i++) {
+                            res = (res * (n - i + 1)) / i;
+                        }
+                        return Math.round(res);
+                    };
+                    allBoards.forEach((board) => {
+                        let matchCount = 0;
                         board.numbers.forEach((numStr) => {
                             if (drawNumbers.has(numStr))
                                 matchCount++;
                         });
-                        if (bac === 1 && matchCount === 1)
-                            boardPrize = 30000;
-                        else if (bac === 2 && matchCount === 2)
-                            boardPrize = 100000;
-                        else if (bac === 3) {
-                            if (matchCount === 2)
-                                boardPrize = 30000;
-                            if (matchCount === 3)
-                                boardPrize = 200000;
+                        // Lấy Bậc K từ playType (vd: "Bao 3 - Bậc 2") hoặc từ số lượng con nếu là vé xiên cũ
+                        const match = (order.playType || '').match(/Bậc\s+(\d+)/i);
+                        const baoBac = match ? parseInt(match[1], 10) : (board.numbers.length <= 10 ? board.numbers.length : 2);
+                        const baoType = board.numbers.length;
+                        if (matchCount >= baoBac) {
+                            const winningPairsCount = combinationsCount(matchCount, baoBac);
+                            const rate = BAO_KENO_RATES[baoBac] || 0;
+                            const totalPairsInBet = combinationsCount(baoType, baoBac);
+                            const baseCost = totalPairsInBet > 0 ? totalPairsInBet * 10000 : 10000;
+                            const multiplierCount = Math.max(1, Math.round(board.cost / baseCost));
+                            const boardPrize = winningPairsCount * (rate * 10000) * multiplierCount;
+                            if (boardPrize > 0) {
+                                isWinner = true;
+                                prizeAmount += boardPrize;
+                            }
                         }
-                        else if (bac === 4) {
-                            if (matchCount === 2)
-                                boardPrize = 20000;
-                            if (matchCount === 3)
-                                boardPrize = 50000;
-                            if (matchCount === 4)
-                                boardPrize = 410000;
-                        }
-                        else if (bac === 5) {
-                            if (matchCount === 3)
-                                boardPrize = 20000;
-                            if (matchCount === 4)
-                                boardPrize = 160000;
-                            if (matchCount === 5)
-                                boardPrize = 4410000;
-                        }
-                        else if (bac === 6) {
-                            if (matchCount === 3)
-                                boardPrize = 20000;
-                            if (matchCount === 4)
-                                boardPrize = 50000;
-                            if (matchCount === 5)
-                                boardPrize = 460000;
-                            if (matchCount === 6)
-                                boardPrize = 12510000;
-                        }
-                        else if (bac === 7) {
-                            if (matchCount === 4)
-                                boardPrize = 30000;
-                            if (matchCount === 5)
-                                boardPrize = 110000;
-                            if (matchCount === 6)
-                                boardPrize = 1210000;
-                            if (matchCount === 7)
-                                boardPrize = 40010000;
-                        }
-                        else if (bac === 8) {
-                            if (matchCount === 0)
-                                boardPrize = 10000;
-                            if (matchCount === 5)
-                                boardPrize = 60000;
-                            if (matchCount === 6)
-                                boardPrize = 510000;
-                            if (matchCount === 7)
-                                boardPrize = 5010000;
-                            if (matchCount === 8)
-                                boardPrize = 200010000;
-                        }
-                        else if (bac === 9) {
-                            if (matchCount === 0)
-                                boardPrize = 10000;
-                            if (matchCount === 5)
-                                boardPrize = 20000;
-                            if (matchCount === 6)
-                                boardPrize = 160000;
-                            if (matchCount === 7)
-                                boardPrize = 1510000;
-                            if (matchCount === 8)
-                                boardPrize = 12010000;
-                            if (matchCount === 9)
-                                boardPrize = 800010000;
-                        }
-                        else if (bac === 10) {
-                            if (matchCount === 0)
-                                boardPrize = 10000;
-                            if (matchCount === 5)
-                                boardPrize = 20000;
-                            if (matchCount === 6)
-                                boardPrize = 30000;
-                            if (matchCount === 7)
-                                boardPrize = 50000;
-                            if (matchCount === 8)
-                                boardPrize = 1000000;
-                            if (matchCount === 9)
-                                boardPrize = 100010000;
-                            if (matchCount === 10)
-                                boardPrize = jackpotPrizePerWinner;
-                        }
-                    }
-                    if (boardPrize > 0) {
-                        isWinner = true;
-                        const multiplier = Math.floor(board.cost / 10000);
-                        prizeAmount += boardPrize * (multiplier > 0 ? multiplier : 1);
-                    }
-                });
-            }
-            else if (game.code === 'bao_keno') {
-                // BAO KENO LOGIC (Xiên Keno)
-                const drawNumbers = new Set(draw.winningNumbers);
-                allBoards.forEach((board) => {
-                    let matchCount = 0;
-                    let boardPrize = 0;
-                    const bac = board.numbers.length;
-                    // Đếm số lượng con số trùng khớp trong vé xiên này
-                    board.numbers.forEach((numStr) => {
-                        if (drawNumbers.has(numStr))
-                            matchCount++;
                     });
-                    // Chỉ trúng khi toàn bộ con số trong xiên đều trùng khớp
-                    if (matchCount === bac) {
-                        let multiplier = 0;
-                        if (bac === 2)
-                            multiplier = 9;
-                        else if (bac === 3)
-                            multiplier = 30;
-                        else if (bac === 4)
-                            multiplier = 150;
-                        else if (bac === 5)
-                            multiplier = 350;
-                        else if (bac === 6)
-                            multiplier = 650;
-                        else if (bac === 7)
-                            multiplier = 950;
-                        else if (bac === 8)
-                            multiplier = 1950;
-                        else if (bac === 9)
-                            multiplier = 2950;
-                        else if (bac === 10)
-                            multiplier = 4500;
-                        if (multiplier > 0) {
-                            boardPrize = multiplier * 10000;
+                }
+                else {
+                    // Keno Cơ Bản & Chẵn Lẻ - Lớn Nhỏ
+                    const drawNumbers = new Set(draw.winningNumbers);
+                    let lonCount = 0, nhoCount = 0, chanCount = 0, leCount = 0;
+                    draw.winningNumbers.forEach(n => {
+                        const num = parseInt(n, 10);
+                        if (num >= 41 && num <= 80)
+                            lonCount++;
+                        if (num >= 1 && num <= 40)
+                            nhoCount++;
+                        if (num % 2 === 0)
+                            chanCount++;
+                        if (num % 2 !== 0)
+                            leCount++;
+                    });
+                    allBoards.forEach((board) => {
+                        let matchCount = 0;
+                        let boardPrize = 0;
+                        const bac = board.numbers.length;
+                        const numStr1 = board.numbers[0];
+                        if (bac === 1 && isNaN(parseInt(numStr1, 10))) {
+                            // Chẵn Lẻ - Lớn Nhỏ logic
+                            const betType = numStr1;
+                            if (betType === 'Lớn' && lonCount >= 13)
+                                boardPrize = (lonCount >= 15 ? 200000 : 40000);
+                            else if (betType === 'Hòa LN' && lonCount === 10 && nhoCount === 10)
+                                boardPrize = 26000;
+                            else if (betType === 'Nhỏ' && nhoCount >= 13)
+                                boardPrize = (nhoCount >= 15 ? 200000 : 40000);
+                            else if (betType === 'Lớn 11-12' && (lonCount === 11 || lonCount === 12))
+                                boardPrize = 20000;
+                            else if (betType === 'Nhỏ 11-12' && (nhoCount === 11 || nhoCount === 12))
+                                boardPrize = 20000;
+                            else if (betType === 'Chẵn' && chanCount >= 13)
+                                boardPrize = (chanCount >= 15 ? 200000 : 40000);
+                            else if (betType === 'Hòa CL' && chanCount === 10 && leCount === 10)
+                                boardPrize = 26000;
+                            else if (betType === 'Lẻ' && leCount >= 13)
+                                boardPrize = (leCount >= 15 ? 200000 : 40000);
+                            else if (betType === 'Chẵn 11-12' && (chanCount === 11 || chanCount === 12))
+                                boardPrize = 20000;
+                            else if (betType === 'Lẻ 11-12' && (leCount === 11 || leCount === 12))
+                                boardPrize = 20000;
                         }
-                    }
-                    if (boardPrize > 0) {
-                        isWinner = true;
-                        const multiplierCount = Math.floor(board.cost / 10000);
-                        prizeAmount += boardPrize * (multiplierCount > 0 ? multiplierCount : 1);
-                    }
-                });
+                        else {
+                            // Keno Cơ Bản
+                            board.numbers.forEach((numStr) => {
+                                if (drawNumbers.has(numStr))
+                                    matchCount++;
+                            });
+                            if (bac === 1 && matchCount === 1)
+                                boardPrize = 30000;
+                            else if (bac === 2 && matchCount === 2)
+                                boardPrize = 100000;
+                            else if (bac === 3) {
+                                if (matchCount === 2)
+                                    boardPrize = 30000;
+                                if (matchCount === 3)
+                                    boardPrize = 200000;
+                            }
+                            else if (bac === 4) {
+                                if (matchCount === 2)
+                                    boardPrize = 20000;
+                                if (matchCount === 3)
+                                    boardPrize = 50000;
+                                if (matchCount === 4)
+                                    boardPrize = 410000;
+                            }
+                            else if (bac === 5) {
+                                if (matchCount === 3)
+                                    boardPrize = 20000;
+                                if (matchCount === 4)
+                                    boardPrize = 160000;
+                                if (matchCount === 5)
+                                    boardPrize = 4410000;
+                            }
+                            else if (bac === 6) {
+                                if (matchCount === 3)
+                                    boardPrize = 20000;
+                                if (matchCount === 4)
+                                    boardPrize = 50000;
+                                if (matchCount === 5)
+                                    boardPrize = 460000;
+                                if (matchCount === 6)
+                                    boardPrize = 12510000;
+                            }
+                            else if (bac === 7) {
+                                if (matchCount === 4)
+                                    boardPrize = 30000;
+                                if (matchCount === 5)
+                                    boardPrize = 110000;
+                                if (matchCount === 6)
+                                    boardPrize = 1210000;
+                                if (matchCount === 7)
+                                    boardPrize = 40010000;
+                            }
+                            else if (bac === 8) {
+                                if (matchCount === 0)
+                                    boardPrize = 10000;
+                                if (matchCount === 5)
+                                    boardPrize = 60000;
+                                if (matchCount === 6)
+                                    boardPrize = 510000;
+                                if (matchCount === 7)
+                                    boardPrize = 5010000;
+                                if (matchCount === 8)
+                                    boardPrize = 200010000;
+                            }
+                            else if (bac === 9) {
+                                if (matchCount === 0)
+                                    boardPrize = 10000;
+                                if (matchCount === 5)
+                                    boardPrize = 20000;
+                                if (matchCount === 6)
+                                    boardPrize = 160000;
+                                if (matchCount === 7)
+                                    boardPrize = 1510000;
+                                if (matchCount === 8)
+                                    boardPrize = 12010000;
+                                if (matchCount === 9)
+                                    boardPrize = 800010000;
+                            }
+                            else if (bac === 10) {
+                                if (matchCount === 0)
+                                    boardPrize = 10000;
+                                if (matchCount === 5)
+                                    boardPrize = 20000;
+                                if (matchCount === 6)
+                                    boardPrize = 30000;
+                                if (matchCount === 7)
+                                    boardPrize = 50000;
+                                if (matchCount === 8)
+                                    boardPrize = 1000000;
+                                if (matchCount === 9)
+                                    boardPrize = 100010000;
+                                if (matchCount === 10)
+                                    boardPrize = jackpotPrizePerWinner;
+                            }
+                        }
+                        if (boardPrize > 0) {
+                            isWinner = true;
+                            const multiplier = Math.floor(board.cost / 10000);
+                            prizeAmount += boardPrize * (multiplier > 0 ? multiplier : 1);
+                        }
+                    });
+                }
             }
             else if (game.type === 'vietlott') {
                 if (game.code === 'max_3d' || game.code === 'max_3d_pro') {
@@ -1202,13 +1216,10 @@ const processDrawResults = async (drawId) => {
             if (isWinner && prizeAmount > 0) {
                 order.isWinner = true;
                 order.prizeAmount = prizeAmount;
-                // Cộng tiền cho User (Sau thuế 10% nếu là Keno)
+                // Cộng tiền cho User (Không trừ phí thắng)
                 const user = await User_1.default.findById(order.user);
                 if (user) {
-                    let finalPrize = prizeAmount;
-                    if (game.code === 'keno' || game.code === 'bao_keno') {
-                        finalPrize = prizeAmount * 0.9; // Trừ 10% thuế
-                    }
+                    const finalPrize = prizeAmount;
                     const balanceBefore = user.balance;
                     user.balance += finalPrize;
                     const balanceAfter = user.balance;
@@ -1219,31 +1230,52 @@ const processDrawResults = async (drawId) => {
                         amount: finalPrize,
                         balanceBefore,
                         balanceAfter,
-                        description: 'Trả thưởng cược',
+                        description: `Trả thưởng cược vé ${order.orderId}`,
                         reference: order._id.toString()
                     });
-                    // Ghi lại giao dịch
+                    // Ghi lại giao dịch với mã GD là mã vé và loại là thắng cược
                     await Transaction_1.default.create({
                         user: user._id,
-                        type: 'deposit',
+                        type: 'win',
+                        txId: order.orderId,
                         amount: finalPrize,
-                        status: 'approved'
+                        status: 'approved',
+                        balanceBefore,
+                        balanceAfter,
+                        note: `Thắng cược vé ${order.orderId}`
                     });
                     // Tạo thông báo
                     await Notification_1.default.create({
                         user: user._id,
                         title: '🎉 CHÚC MỪNG TRÚNG THƯỞNG 🎉',
-                        body: `Quý khách đã trúng thưởng vé thuộc kỳ quay ${draw.drawCode} (${game.name}). Tổng giá trị giải thưởng (sau thuế): ${finalPrize.toLocaleString('vi-VN')} đ`,
+                        body: `Quý khách đã trúng thưởng vé thuộc kỳ quay ${draw.drawCode} (${game.name}). Tổng giá trị giải thưởng: ${finalPrize.toLocaleString('vi-VN')} đ`,
                         type: 'win',
                         category: 'important',
                         orderId: order._id.toString()
                     });
-                    console.log(`PrizeService: User ${user.phone} TRÚNG THƯỞNG ${finalPrize}đ (Sau thuế)`);
+                    console.log(`PrizeService: User ${user.phone} TRÚNG THƯỞNG ${finalPrize}đ`);
+                    const userName = user.name || 'Khách hàng';
+                    const userPhone = user.phone ? EncryptionHelper_1.EncryptionHelper.decryptDeterministic(user.phone) : '';
+                    await AdminLog_1.default.create({
+                        targetUserId: user._id,
+                        adminName: 'Hệ thống',
+                        action: 'THẮNG CƯỢC',
+                        details: `Vé #${order.orderId} TRÚNG THƯỞNG: +${finalPrize.toLocaleString('vi-VN')} đ. Khách hàng: ${userName}${userPhone ? ` (${userPhone})` : ''}. Kỳ quay: ${draw.drawCode} (${game.name || game.code}). Tiền cược: ${(order.totalCost || 0).toLocaleString('vi-VN')} đ.`
+                    });
                 }
             }
             else {
                 order.isWinner = false;
                 order.prizeAmount = 0;
+                const user = await User_1.default.findById(order.user);
+                const userName = user?.name || 'Khách hàng';
+                const userPhone = user?.phone ? EncryptionHelper_1.EncryptionHelper.decryptDeterministic(user.phone) : '';
+                await AdminLog_1.default.create({
+                    targetUserId: (user?._id || order.user?._id || order.user),
+                    adminName: 'Hệ thống',
+                    action: 'THUA CƯỢC',
+                    details: `Vé #${order.orderId} KHÔNG TRÚNG (THUA CƯỢC): -${(order.totalCost || 0).toLocaleString('vi-VN')} đ. Khách hàng: ${userName}${userPhone ? ` (${userPhone})` : ''}. Kỳ quay: ${draw.drawCode} (${game.name || game.code}).`
+                });
             }
             await order.save();
         }

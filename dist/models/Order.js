@@ -66,5 +66,7 @@ const orderSchema = new mongoose_1.Schema({
     winningNumbers: [{ type: String }],
     ipAddress: { type: String },
     loginDevice: { type: String },
+    adminNote: { type: String },
 }, { timestamps: true });
+orderSchema.index({ user: 1, createdAt: -1 });
 exports.default = mongoose_1.default.model('Order', orderSchema);

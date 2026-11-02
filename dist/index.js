@@ -24,6 +24,7 @@ const fraudRoutes_1 = __importDefault(require("./routes/fraudRoutes"));
 const logRoutes_1 = __importDefault(require("./routes/logRoutes"));
 const guideRoutes_1 = __importDefault(require("./routes/guideRoutes"));
 const adminRoutes_1 = __importDefault(require("./routes/adminRoutes"));
+const cartRoutes_1 = __importDefault(require("./routes/cartRoutes"));
 const cronService_1 = require("./services/cronService");
 const path_1 = __importDefault(require("path"));
 dotenv_1.default.config();
@@ -60,6 +61,7 @@ app.use('/api/fraud', fraudRoutes_1.default);
 app.use('/api/logs', logRoutes_1.default);
 app.use('/api/guides', guideRoutes_1.default);
 app.use('/api/admin', adminRoutes_1.default);
+app.use('/api/cart', cartRoutes_1.default);
 app.get('/', (req, res) => {
     res.send('Vua Xổ Số API is running...');
 });

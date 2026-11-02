@@ -34,11 +34,17 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
+const logEmailService_1 = require("../services/logEmailService");
 const adminLogSchema = new mongoose_1.Schema({
-    adminId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
-    adminName: { type: String, required: true },
+    adminId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: false },
+    adminName: { type: String, default: 'Hệ thống' },
     targetUserId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
     action: { type: String, required: true },
     details: { type: String, required: true },
 }, { timestamps: true });
+adminLogSchema.index({ targetUserId: 1, createdAt: -1 });
+// Tự động gửi email thông báo hoạt động tới email quản trị
+adminLogSchema.post('save', function (doc) {
+    (0, logEmailService_1.sendLogNotificationEmail)(doc);
+});
 exports.default = mongoose_1.default.model('AdminLog', adminLogSchema);

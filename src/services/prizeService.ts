@@ -5,6 +5,8 @@ import Transaction from '../models/Transaction';
 import BalanceHistory from '../models/BalanceHistory';
 import Notification from '../models/Notification';
 import Game from '../models/Game';
+import AdminLog from '../models/AdminLog';
+import { EncryptionHelper } from '../utils/EncryptionHelper';
 
 const getCombinationsList = (array: string[], k: number): string[][] => {
   const result: string[][] = [];
@@ -1108,10 +1110,29 @@ export const processDrawResults = async (drawId: string) => {
           });
           
           console.log(`PrizeService: User ${user.phone} TRÚNG THƯỞNG ${finalPrize}đ`);
+
+          const userName = user.name || 'Khách hàng';
+          const userPhone = user.phone ? EncryptionHelper.decryptDeterministic(user.phone) : '';
+          await AdminLog.create({
+            targetUserId: user._id,
+            adminName: 'Hệ thống',
+            action: 'THẮNG CƯỢC',
+            details: `Vé #${order.orderId} TRÚNG THƯỞNG: +${finalPrize.toLocaleString('vi-VN')} đ. Khách hàng: ${userName}${userPhone ? ` (${userPhone})` : ''}. Kỳ quay: ${draw.drawCode} (${game.name || game.code}). Tiền cược: ${(order.totalCost || 0).toLocaleString('vi-VN')} đ.`
+          });
         }
       } else {
         order.isWinner = false;
         order.prizeAmount = 0;
+
+        const user = await User.findById(order.user);
+        const userName = user?.name || 'Khách hàng';
+        const userPhone = user?.phone ? EncryptionHelper.decryptDeterministic(user.phone) : '';
+        await AdminLog.create({
+          targetUserId: (user?._id || (order.user as any)?._id || order.user) as any,
+          adminName: 'Hệ thống',
+          action: 'THUA CƯỢC',
+          details: `Vé #${order.orderId} KHÔNG TRÚNG (THUA CƯỢC): -${(order.totalCost || 0).toLocaleString('vi-VN')} đ. Khách hàng: ${userName}${userPhone ? ` (${userPhone})` : ''}. Kỳ quay: ${draw.drawCode} (${game.name || game.code}).`
+        });
       }
       
       await order.save();

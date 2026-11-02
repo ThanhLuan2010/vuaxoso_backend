@@ -3,13 +3,14 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getUserBalanceHistory = exports.resetWithdrawPassword = exports.resetPassword = exports.deleteUser = exports.getUserHistory = exports.updateUser = exports.getUsers = void 0;
+exports.getUserBalanceHistory = exports.resetWithdrawPassword = exports.resetPassword = exports.deleteUser = exports.getUserHistory = exports.getUserActivities = exports.getUserTransactions = exports.getUserOrders = exports.updateUser = exports.getUsers = void 0;
 const EncryptionHelper_1 = require("../utils/EncryptionHelper");
 const bcrypt_1 = __importDefault(require("bcrypt"));
 const User_1 = __importDefault(require("../models/User"));
 const Order_1 = __importDefault(require("../models/Order"));
 const Transaction_1 = __importDefault(require("../models/Transaction"));
 const AdminLog_1 = __importDefault(require("../models/AdminLog"));
+const UserLog_1 = __importDefault(require("../models/UserLog"));
 const BalanceHistory_1 = __importDefault(require("../models/BalanceHistory"));
 const getUsers = async (req, res) => {
     try {
@@ -19,7 +20,7 @@ const getUsers = async (req, res) => {
         if (!isMaster && (!userTabPerms || !userTabPerms.view)) {
             return res.status(403).json({ message: "Bạn không có quyền xem danh sách người dùng" });
         }
-        const { search, startDate, endDate, status, memberType } = req.query;
+        const { search, startDate, endDate, status, memberType, page, limit, balanceFilter } = req.query;
         const pipeline = [];
         if (search && typeof search === 'string') {
             const searchRegex = new RegExp(search, 'i');
@@ -54,6 +55,12 @@ const getUsers = async (req, res) => {
         const extraMatch = {};
         if (status && typeof status === "string" && status !== "all") {
             extraMatch.status = status;
+        }
+        if (balanceFilter === "has_balance") {
+            extraMatch.balance = { $gt: 0 };
+        }
+        else if (balanceFilter === "zero_balance") {
+            extraMatch.$or = [{ balance: { $lte: 0 } }, { balance: { $exists: false } }];
         }
         const vnNow = new Date();
         const vnTodayStr = vnNow.toLocaleDateString("en-CA", { timeZone: "Asia/Ho_Chi_Minh" });
@@ -162,7 +169,26 @@ const getUsers = async (req, res) => {
                 txs: 0
             }
         }, { $sort: { createdAt: -1 } });
-        const rawUsers = await User_1.default.aggregate(pipeline);
+        const pageNum = page ? parseInt(page) : undefined;
+        const limitNum = limit ? parseInt(limit) : 10;
+        let rawUsers = [];
+        let totalUsers = 0;
+        if (pageNum) {
+            const skipCount = (pageNum - 1) * limitNum;
+            pipeline.push({
+                $facet: {
+                    metadata: [{ $count: "total" }],
+                    data: [{ $skip: skipCount }, { $limit: limitNum }]
+                }
+            });
+            const facetResult = await User_1.default.aggregate(pipeline);
+            totalUsers = facetResult[0]?.metadata[0]?.total || 0;
+            rawUsers = facetResult[0]?.data || [];
+        }
+        else {
+            rawUsers = await User_1.default.aggregate(pipeline);
+            totalUsers = rawUsers.length;
+        }
         const users = rawUsers.map(u => {
             if (u.phone)
                 u.phone = EncryptionHelper_1.EncryptionHelper.decryptDeterministic(u.phone);
@@ -229,7 +255,18 @@ const getUsers = async (req, res) => {
             }
             return u;
         });
-        res.json(sanitizedUsers);
+        if (pageNum) {
+            res.json({
+                users: sanitizedUsers,
+                total: totalUsers,
+                page: pageNum,
+                limit: limitNum,
+                totalPages: Math.ceil(totalUsers / limitNum)
+            });
+        }
+        else {
+            res.json(sanitizedUsers);
+        }
     }
     catch (error) {
         res.status(500).json({ message: 'Error fetching users' });
@@ -336,18 +373,161 @@ const updateUser = async (req, res) => {
     }
 };
 exports.updateUser = updateUser;
-const getUserHistory = async (req, res) => {
+const getUserOrders = async (req, res) => {
     try {
         const { id } = req.params;
-        const orders = await Order_1.default.find({ user: id }).sort({ createdAt: -1 }).lean();
-        const transactions = await Transaction_1.default.find({ user: id }).sort({ createdAt: -1 }).lean();
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.max(1, Math.min(100, parseInt(req.query.limit) || 10));
+        const skip = (page - 1) * limit;
+        const [orders, total] = await Promise.all([
+            Order_1.default.find({ user: id })
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+            Order_1.default.countDocuments({ user: id })
+        ]);
+        const Game = require('../models/Game').default;
+        const games = await Game.find().select('name code').lean();
+        const gameMap = new Map(games.map((g) => [g.code, g]));
+        const mappedOrders = orders.map((order) => ({
+            ...order,
+            game: gameMap.get(order.gameType) || {
+                name: order.provinceName || order.gameType?.toUpperCase() || '-',
+                code: order.gameType
+            }
+        }));
         res.json({
-            orders,
-            transactions
+            orders: mappedOrders,
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit)
         });
     }
     catch (error) {
-        res.status(500).json({ message: 'Error fetching user history' });
+        console.error('getUserOrders error:', error);
+        res.status(500).json({ message: error.message || 'Error fetching user orders' });
+    }
+};
+exports.getUserOrders = getUserOrders;
+const getUserTransactions = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.max(1, Math.min(100, parseInt(req.query.limit) || 10));
+        const skip = (page - 1) * limit;
+        const [transactions, total] = await Promise.all([
+            Transaction_1.default.find({ user: id })
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+            Transaction_1.default.countDocuments({ user: id })
+        ]);
+        res.json({
+            transactions,
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit)
+        });
+    }
+    catch (error) {
+        console.error('getUserTransactions error:', error);
+        res.status(500).json({ message: error.message || 'Error fetching user transactions' });
+    }
+};
+exports.getUserTransactions = getUserTransactions;
+const getUserActivities = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.max(1, Math.min(100, parseInt(req.query.limit) || 10));
+        const skip = (page - 1) * limit;
+        const [adminLogs, userLogs] = await Promise.all([
+            AdminLog_1.default.find({ targetUserId: id, action: { $ne: 'VIEW_USER' } }).sort({ createdAt: -1 }).lean(),
+            UserLog_1.default.find({ user: id }).sort({ createdAt: -1 }).lean()
+        ]);
+        const formattedAdminLogs = adminLogs.map((log) => ({
+            _id: log._id,
+            createdAt: log.createdAt,
+            actor: 'Admin',
+            adminName: log.adminName || 'Admin',
+            action: log.action,
+            details: log.details,
+            ip: log.ip || '-'
+        }));
+        const formattedUserLogs = userLogs.map((log) => ({
+            _id: log._id,
+            createdAt: log.createdAt,
+            actor: 'User',
+            action: log.action,
+            details: log.details,
+            ip: log.ip || '-'
+        }));
+        const allLogs = [...formattedAdminLogs, ...formattedUserLogs].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        const total = allLogs.length;
+        const paginatedLogs = allLogs.slice(skip, skip + limit);
+        res.json({
+            logs: paginatedLogs,
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit)
+        });
+    }
+    catch (error) {
+        console.error('getUserActivities error:', error);
+        res.status(500).json({ message: error.message || 'Error fetching user activities' });
+    }
+};
+exports.getUserActivities = getUserActivities;
+const getUserHistory = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const ordersPage = Math.max(1, parseInt(req.query.ordersPage) || 1);
+        const ordersLimit = Math.max(1, Math.min(100, parseInt(req.query.ordersLimit) || 10));
+        const txPage = Math.max(1, parseInt(req.query.transactionsPage) || 1);
+        const txLimit = Math.max(1, Math.min(100, parseInt(req.query.transactionsLimit) || 10));
+        const [orders, totalOrders, transactions, totalTransactions] = await Promise.all([
+            Order_1.default.find({ user: id })
+                .sort({ createdAt: -1 })
+                .skip((ordersPage - 1) * ordersLimit)
+                .limit(ordersLimit)
+                .lean(),
+            Order_1.default.countDocuments({ user: id }),
+            Transaction_1.default.find({ user: id })
+                .sort({ createdAt: -1 })
+                .skip((txPage - 1) * txLimit)
+                .limit(txLimit)
+                .lean(),
+            Transaction_1.default.countDocuments({ user: id })
+        ]);
+        const Game = require('../models/Game').default;
+        const games = await Game.find().select('name code').lean();
+        const gameMap = new Map(games.map((g) => [g.code, g]));
+        const mappedOrders = orders.map((order) => ({
+            ...order,
+            game: gameMap.get(order.gameType) || {
+                name: order.provinceName || order.gameType?.toUpperCase() || '-',
+                code: order.gameType
+            }
+        }));
+        res.json({
+            orders: mappedOrders,
+            transactions,
+            totalOrders,
+            totalTransactions,
+            ordersPage,
+            ordersLimit,
+            transactionsPage: txPage,
+            transactionsLimit: txLimit
+        });
+    }
+    catch (error) {
+        console.error('getUserHistory error:', error);
+        res.status(500).json({ message: error.message || 'Error fetching user history' });
     }
 };
 exports.getUserHistory = getUserHistory;

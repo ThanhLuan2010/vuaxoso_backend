@@ -8,6 +8,7 @@ const coBuyController_1 = require("../controllers/coBuyController");
 const authMiddleware_1 = require("../middleware/authMiddleware");
 const router = express_1.default.Router();
 router.get('/rooms', coBuyController_1.getRooms);
+router.get('/my-history', authMiddleware_1.protect, coBuyController_1.getMyCoBuyHistory);
 router.get('/rooms/:id', coBuyController_1.getRoomById);
 router.post('/rooms/:id/join', authMiddleware_1.protect, coBuyController_1.joinRoom);
 exports.default = router;

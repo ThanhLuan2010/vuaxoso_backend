@@ -52,20 +52,21 @@ const ensureUpcomingDraws = async () => {
                     let created = 0;
                     while (created < needed) {
                         const cutoffs = [
-                            getVNCutoffDate(checkDay, 12, 0),
-                            getVNCutoffDate(checkDay, 20, 0)
+                            { close: getVNCutoffDate(checkDay, 12, 0), draw: getVNCutoffDate(checkDay, 13, 0) },
+                            { close: getVNCutoffDate(checkDay, 20, 0), draw: getVNCutoffDate(checkDay, 21, 0) }
                         ];
-                        for (const cutoff of cutoffs) {
-                            if (cutoff > now) {
-                                const exists = await Draw_1.default.findOne({ game: game._id, closeTime: cutoff });
+                        for (const item of cutoffs) {
+                            if (item.close > now) {
+                                const exists = await Draw_1.default.findOne({ game: game._id, closeTime: item.close });
                                 if (!exists && created < needed) {
                                     lastDrawNum += 1;
                                     const drawCode = `#${String(lastDrawNum).padStart(4, '0')}`;
                                     await Draw_1.default.create({
                                         game: game._id,
                                         drawCode,
-                                        openTime: new Date(cutoff.getTime() - 8 * 3600 * 1000),
-                                        closeTime: cutoff,
+                                        openTime: new Date(item.close.getTime() - 8 * 3600 * 1000),
+                                        closeTime: item.close,
+                                        drawTime: item.draw,
                                         status: 'open'
                                     });
                                     created++;
@@ -124,8 +125,11 @@ const ensureUpcomingDraws = async () => {
                     const dayOfWeek = getVNDayOfWeek(checkDate);
                     if (drawDays.includes(dayOfWeek)) {
                         const isLotto570 = game.code === 'lotto_570';
+                        const is18h15Game = ['dientoan_636', 'bao_636', 'loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(game.code);
                         const closeCutoff = isLotto570 ? getVNCutoffDate(checkDate, 17, 0) : getVNCutoffDate(checkDate, 17, 20);
-                        const drawCutoff = getVNCutoffDate(checkDate, 17, 20);
+                        const drawCutoff = isLotto570
+                            ? getVNCutoffDate(checkDate, 17, 20)
+                            : (is18h15Game ? getVNCutoffDate(checkDate, 18, 15) : getVNCutoffDate(checkDate, 18, 0));
                         if (closeCutoff > now) {
                             lastDrawNum += 1;
                             const drawCode = `#${String(lastDrawNum).padStart(4, "0")}`;
@@ -170,7 +174,7 @@ const ensureUpcomingDraws = async () => {
                     if (match)
                         lastDrawNum = parseInt(match[1]);
                 }
-                const durationMinutes = kg.code === 'bingo18' ? 6 : (kg.drawDurationMinutes || 8);
+                const durationMinutes = kg.code === 'bingo18' ? 8 : (kg.drawDurationMinutes || 8);
                 const needed = 10 - openDraws.length;
                 for (let i = 0; i < needed; i++) {
                     const openTime = new Date(lastCloseTime.getTime());
@@ -188,67 +192,9 @@ const ensureUpcomingDraws = async () => {
                 }
             }
         }
-        // 3. Xổ số Kiến Thiết (Miền Nam, Miền Trung, Miền Bắc): Luôn đảm bảo có sẵn 10 kỳ quay mở
-        const kienThietConfigs = [
-            { code: 'MN', cutoffHour: 16, cutoffMin: 10, drawHour: 16, drawMin: 15, startDrawNum: 1100 },
-            { code: 'MT', cutoffHour: 17, cutoffMin: 10, drawHour: 17, drawMin: 15, startDrawNum: 1200 },
-            { code: 'MB', cutoffHour: 18, cutoffMin: 10, drawHour: 18, drawMin: 15, startDrawNum: 1350 }
-        ];
-        for (const kt of kienThietConfigs) {
-            const ktGame = await Game_1.default.findOne({ code: kt.code });
-            if (!ktGame)
-                continue;
-            await Draw_1.default.updateMany({ game: ktGame._id, status: 'open', closeTime: { $lte: now } }, { $set: { status: 'closed' } });
-            const openDraws = await Draw_1.default.find({
-                game: ktGame._id,
-                status: 'open',
-                closeTime: { $gt: now }
-            }).sort({ closeTime: 1 });
-            if (openDraws.length < 10) {
-                let lastDrawNum = kt.startDrawNum;
-                if (openDraws.length > 0) {
-                    const match = openDraws[openDraws.length - 1].drawCode.match(/#?(\d+)/);
-                    if (match)
-                        lastDrawNum = parseInt(match[1]);
-                }
-                else {
-                    const lastCompleted = await Draw_1.default.findOne({ game: ktGame._id }).sort({ closeTime: -1 });
-                    if (lastCompleted) {
-                        const match = lastCompleted.drawCode.match(/#?(\d+)/);
-                        if (match)
-                            lastDrawNum = parseInt(match[1]);
-                    }
-                }
-                let checkDay = new Date(now);
-                if (openDraws.length > 0) {
-                    const lastClose = new Date(openDraws[openDraws.length - 1].closeTime);
-                    checkDay = new Date(lastClose.getTime() + 24 * 3600 * 1000);
-                }
-                const needed = 10 - openDraws.length;
-                let created = 0;
-                while (created < needed) {
-                    const cutoff = getVNCutoffDate(checkDay, kt.cutoffHour, kt.cutoffMin);
-                    const drawCutoff = getVNCutoffDate(checkDay, kt.drawHour, kt.drawMin);
-                    if (cutoff > now) {
-                        const exists = await Draw_1.default.findOne({ game: ktGame._id, closeTime: cutoff });
-                        if (!exists) {
-                            lastDrawNum += 1;
-                            const drawCode = `#${String(lastDrawNum).padStart(4, '0')}`;
-                            await Draw_1.default.create({
-                                game: ktGame._id,
-                                drawCode,
-                                openTime: new Date(cutoff.getTime() - 24 * 3600 * 1000),
-                                closeTime: cutoff,
-                                drawTime: drawCutoff,
-                                status: 'open'
-                            });
-                            created++;
-                        }
-                    }
-                    checkDay.setDate(checkDay.getDate() + 1);
-                }
-            }
-        }
+        // 3. Xổ số Kiến Thiết (Miền Nam, Miền Trung, Miền Bắc): Luôn đảm bảo có sẵn các kỳ quay mở theo từng tỉnh/đài
+        const { ensureKienThietDraws } = require('../controllers/drawController');
+        await ensureKienThietDraws();
     }
     catch (err) {
         console.error('CronService: Lỗi ensureUpcomingDraws:', err);
@@ -264,14 +210,16 @@ const GAME_CONFIGS = [
     { code: 'max_3d', cronExpression: '0 18 * * 1,3,5', drawDurationMinutes: 0 },
     { code: 'max_3d_pro', cronExpression: '0 18 * * 2,4,6', drawDurationMinutes: 0 },
     { code: 'max_4d', cronExpression: '0 18 * * *', drawDurationMinutes: 0 },
-    { code: 'dientoan_636', cronExpression: '0 18 * * 3,6', drawDurationMinutes: 0 },
-    { code: 'bao_636', cronExpression: '0 18 * * 3,6', drawDurationMinutes: 0 },
+    { code: 'dientoan_636', cronExpression: '15 18 * * 3,6', drawDurationMinutes: 0 },
+    { code: 'bao_636', cronExpression: '15 18 * * 3,6', drawDurationMinutes: 0 },
     { code: 'loto_235', cronExpression: '15 18 * * *', drawDurationMinutes: 0 },
-    { code: 'loto_cap', cronExpression: '0 18 * * *', drawDurationMinutes: 0 },
-    { code: 'truot_loto', cronExpression: '0 18 * * *', drawDurationMinutes: 0 },
-    { code: 'than_tai_4', cronExpression: '20 17 * * *', drawDurationMinutes: 0 },
-    { code: 'bingo18', cronExpression: '*/6 * * * *', drawDurationMinutes: 6 },
+    { code: 'loto_cap', cronExpression: '15 18 * * *', drawDurationMinutes: 0 },
+    { code: 'truot_loto', cronExpression: '15 18 * * *', drawDurationMinutes: 0 },
+    { code: 'than_tai_4', cronExpression: '0 18 * * *', drawDurationMinutes: 0 },
+    { code: 'bingo18', cronExpression: '*/8 * * * *', drawDurationMinutes: 8 },
     { code: 'bao_loto_2', cronExpression: '15 18 * * *', drawDurationMinutes: 0 },
+    { code: 'lotto_535', cronExpression: '0 13,21 * * *', drawDurationMinutes: 0 },
+    { code: 'lotto_570', cronExpression: '20 17 * * *', drawDurationMinutes: 0 },
     { code: 'MB', cronExpression: '15 18 * * *', drawDurationMinutes: 0 },
     { code: 'MT', cronExpression: '15 17 * * *', drawDurationMinutes: 0 },
     { code: 'MN', cronExpression: '15 16 * * *', drawDurationMinutes: 0 }
@@ -332,9 +280,9 @@ const startCronJobs = () => {
                 const vnHourStr = now.toLocaleTimeString('en-US', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false, hour: '2-digit' });
                 const vnHour = parseInt(vnHourStr);
                 const isScheduledGame = !game.code.includes('keno') && game.code !== 'bingo18';
-                // Đối với các game Vietlott / Điện toán xổ lúc 18h00 (như Max 4D, Max 3D...):
-                // Chốt vé lúc 17h20 (chuyển sang 'closed'), chờ đến 18h00 mới xổ số
-                if (isScheduledGame && vnHour < 18 && game.code !== 'lotto_570') {
+                // Đối với các game chưa có drawTime cụ thể mà thuộc loại có giờ xổ cố định sau 18h:
+                // Chốt vé lúc 17h20 (chuyển sang 'closed'), chờ đến 18h00/18h15 mới xổ số
+                if (!draw.drawTime && isScheduledGame && vnHour < 18 && game.code !== 'lotto_570' && game.code !== 'lotto_535') {
                     if (draw.status !== 'closed') {
                         draw.status = 'closed';
                         await draw.save();

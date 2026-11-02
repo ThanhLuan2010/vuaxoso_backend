@@ -62,12 +62,18 @@ const seedProvinces = async (req, res) => {
     try {
         await Province_1.default.deleteMany({}); // Clear existing
         const seedData = [
-            // MB (All days)
-            { provinceId: 'MB', name: 'Miền Bắc', code: 'XSMB', region: 'MB', drawDays: [0, 1, 2, 3, 4, 5, 6] },
+            // MB (Thứ 2 đến CN theo lịch quay thưởng Xổ số Miền Bắc)
+            { provinceId: 'HN', name: 'Hà Nội', code: 'H.Nội', region: 'MB', drawDays: [1, 4] },
+            { provinceId: 'QN_MB', name: 'Quảng Ninh', code: 'Q.Ninh', region: 'MB', drawDays: [2] },
+            { provinceId: 'BN', name: 'Bắc Ninh', code: 'B.Ninh', region: 'MB', drawDays: [3] },
+            { provinceId: 'HP', name: 'Hải Phòng', code: 'H.Phòng', region: 'MB', drawDays: [5] },
+            { provinceId: 'ND', name: 'Nam Định', code: 'N.Định', region: 'MB', drawDays: [6] },
+            { provinceId: 'TB', name: 'Thái Bình', code: 'T.Bình', region: 'MB', drawDays: [0] },
+            { provinceId: 'MB', name: 'Miền Bắc', code: 'XSMB', region: 'MB', drawDays: [] },
             // MT
             { provinceId: 'KH', name: 'Khánh Hòa', code: 'K.Hòa', region: 'MT', drawDays: [0, 3] }, // Thu 4 & CN
             { provinceId: 'KT', name: 'Kon Tum', code: 'K.Tum', region: 'MT', drawDays: [0] },
-            { provinceId: 'TTH', name: 'Thừa Thiên Huế', code: 'T.T.Huế', region: 'MT', drawDays: [1] },
+            { provinceId: 'TTH', name: 'Thừa Thiên Huế', code: 'T.T.Huế', region: 'MT', drawDays: [0, 1] },
             { provinceId: 'PY', name: 'Phú Yên', code: 'P.Yên', region: 'MT', drawDays: [1] },
             { provinceId: 'DL', name: 'Đắk Lắk', code: 'Đ.Lắk', region: 'MT', drawDays: [2] },
             { provinceId: 'QN', name: 'Quảng Nam', code: 'Q.Nam', region: 'MT', drawDays: [2] },

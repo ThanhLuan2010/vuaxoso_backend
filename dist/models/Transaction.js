@@ -36,7 +36,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
 const transactionSchema = new mongoose_1.Schema({
     user: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
-    type: { type: String, enum: ['deposit', 'withdraw'], required: true },
+    type: { type: String, enum: ['deposit', 'withdraw', 'win'], required: true },
     amount: { type: Number, required: true },
     status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
     txId: { type: String, sparse: true, unique: true },
@@ -47,4 +47,5 @@ const transactionSchema = new mongoose_1.Schema({
     balanceAfter: { type: Number },
     note: { type: String },
 }, { timestamps: true });
+transactionSchema.index({ user: 1, createdAt: -1 });
 exports.default = mongoose_1.default.model('Transaction', transactionSchema);

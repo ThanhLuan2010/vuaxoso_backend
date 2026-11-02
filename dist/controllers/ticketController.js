@@ -9,11 +9,24 @@ const AdminLog_1 = __importDefault(require("../models/AdminLog"));
 const Ticket_1 = __importDefault(require("../models/Ticket"));
 const getTickets = async (req, res) => {
     try {
-        const { provinceId, drawDate } = req.query;
+        const { provinceId, drawDate, search, ticketType } = req.query;
         if (!provinceId || !drawDate) {
             return res.status(400).json({ message: 'Missing provinceId or drawDate' });
         }
-        const tickets = await Ticket_1.default.find({ provinceId, drawDate, isSold: false }).sort({ ticketType: 1, _id: 1 });
+        const page = req.query.page ? parseInt(req.query.page) : undefined;
+        const limit = req.query.limit ? parseInt(req.query.limit) : 10;
+        const filter = { provinceId, drawDate, isSold: false };
+        if (ticketType) {
+            filter.ticketType = ticketType;
+        }
+        if (search) {
+            filter.number = { $regex: search, $options: "i" };
+        }
+        let query = Ticket_1.default.find(filter).sort({ ticketType: 1, _id: 1 });
+        if (page) {
+            query = query.skip((page - 1) * limit).limit(limit);
+        }
+        const tickets = await query;
         res.json(tickets);
     }
     catch (error) {

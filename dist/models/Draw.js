@@ -45,4 +45,10 @@ const drawSchema = new mongoose_1.Schema({
     jackpotAmount: { type: Number },
     provinceId: { type: String }, // For Kien Thiet MT/MN specific draws
 }, { timestamps: true });
+drawSchema.index({ closeTime: -1, createdAt: -1 });
+drawSchema.index({ game: 1, closeTime: -1 });
+drawSchema.index({ game: 1, provinceId: 1, closeTime: -1 });
+drawSchema.index({ status: 1, closeTime: -1 });
+drawSchema.index({ drawCode: 1 });
+drawSchema.index({ openTime: 1, closeTime: 1 });
 exports.default = mongoose_1.default.model('Draw', drawSchema);
