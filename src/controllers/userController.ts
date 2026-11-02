@@ -377,7 +377,6 @@ export const getUserOrders = async (req: Request, res: Response) => {
 
     const [orders, total] = await Promise.all([
       Order.find({ user: id })
-        .populate('game', 'name code')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -385,14 +384,27 @@ export const getUserOrders = async (req: Request, res: Response) => {
       Order.countDocuments({ user: id })
     ]);
 
+    const Game = require('../models/Game').default;
+    const games = await Game.find().select('name code').lean();
+    const gameMap = new Map(games.map((g: any) => [g.code, g]));
+
+    const mappedOrders = orders.map((order: any) => ({
+      ...order,
+      game: gameMap.get(order.gameType) || {
+        name: order.provinceName || order.gameType?.toUpperCase() || '-',
+        code: order.gameType
+      }
+    }));
+
     res.json({
-      orders,
+      orders: mappedOrders,
       total,
       page,
       limit,
       totalPages: Math.ceil(total / limit)
     });
   } catch (error: any) {
+    console.error('getUserOrders error:', error);
     res.status(500).json({ message: error.message || 'Error fetching user orders' });
   }
 };
@@ -421,6 +433,7 @@ export const getUserTransactions = async (req: Request, res: Response) => {
       totalPages: Math.ceil(total / limit)
     });
   } catch (error: any) {
+    console.error('getUserTransactions error:', error);
     res.status(500).json({ message: error.message || 'Error fetching user transactions' });
   }
 };
@@ -435,7 +448,6 @@ export const getUserHistory = async (req: Request, res: Response) => {
 
     const [orders, totalOrders, transactions, totalTransactions] = await Promise.all([
       Order.find({ user: id })
-        .populate('game', 'name code')
         .sort({ createdAt: -1 })
         .skip((ordersPage - 1) * ordersLimit)
         .limit(ordersLimit)
@@ -449,8 +461,20 @@ export const getUserHistory = async (req: Request, res: Response) => {
       Transaction.countDocuments({ user: id })
     ]);
 
+    const Game = require('../models/Game').default;
+    const games = await Game.find().select('name code').lean();
+    const gameMap = new Map(games.map((g: any) => [g.code, g]));
+
+    const mappedOrders = orders.map((order: any) => ({
+      ...order,
+      game: gameMap.get(order.gameType) || {
+        name: order.provinceName || order.gameType?.toUpperCase() || '-',
+        code: order.gameType
+      }
+    }));
+
     res.json({
-      orders,
+      orders: mappedOrders,
       transactions,
       totalOrders,
       totalTransactions,
@@ -460,6 +484,7 @@ export const getUserHistory = async (req: Request, res: Response) => {
       transactionsLimit: txLimit
     });
   } catch (error: any) {
+    console.error('getUserHistory error:', error);
     res.status(500).json({ message: error.message || 'Error fetching user history' });
   }
 };
