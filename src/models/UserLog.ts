@@ -21,4 +21,6 @@ const userLogSchema = new Schema<IUserLog>(
   { timestamps: true }
 );
 
+userLogSchema.index({ user: 1, createdAt: -1 });
+
 export default mongoose.model<IUserLog>('UserLog', userLogSchema);

@@ -6,6 +6,7 @@ import User from '../models/User';
 import Order from '../models/Order';
 import Transaction from '../models/Transaction';
 import AdminLog from '../models/AdminLog';
+import UserLog from '../models/UserLog';
 import BalanceHistory from '../models/BalanceHistory';
 
 export const getUsers = async (req: AuthRequest, res: Response) => {
@@ -435,6 +436,57 @@ export const getUserTransactions = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('getUserTransactions error:', error);
     res.status(500).json({ message: error.message || 'Error fetching user transactions' });
+  }
+};
+
+export const getUserActivities = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit as string) || 10));
+    const skip = (page - 1) * limit;
+
+    const [adminLogs, userLogs] = await Promise.all([
+      AdminLog.find({ targetUserId: id, action: { $ne: 'VIEW_USER' } }).sort({ createdAt: -1 }).lean(),
+      UserLog.find({ user: id }).sort({ createdAt: -1 }).lean()
+    ]);
+
+    const formattedAdminLogs = adminLogs.map((log: any) => ({
+      _id: log._id,
+      createdAt: log.createdAt,
+      actor: 'Admin',
+      adminName: log.adminName || 'Admin',
+      action: log.action,
+      details: log.details,
+      ip: log.ip || '-'
+    }));
+
+    const formattedUserLogs = userLogs.map((log: any) => ({
+      _id: log._id,
+      createdAt: log.createdAt,
+      actor: 'User',
+      action: log.action,
+      details: log.details,
+      ip: log.ip || '-'
+    }));
+
+    const allLogs = [...formattedAdminLogs, ...formattedUserLogs].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+
+    const total = allLogs.length;
+    const paginatedLogs = allLogs.slice(skip, skip + limit);
+
+    res.json({
+      logs: paginatedLogs,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit)
+    });
+  } catch (error: any) {
+    console.error('getUserActivities error:', error);
+    res.status(500).json({ message: error.message || 'Error fetching user activities' });
   }
 };
 
