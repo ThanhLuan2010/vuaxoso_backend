@@ -1066,13 +1066,10 @@ export const processDrawResults = async (drawId: string) => {
         order.isWinner = true;
         order.prizeAmount = prizeAmount;
 
-        // Cộng tiền cho User (Sau thuế 10% nếu là Keno)
+        // Cộng tiền cho User (Không trừ phí thắng)
         const user = await User.findById(order.user);
         if (user) {
-          let finalPrize = prizeAmount;
-          if (game.code === 'keno' || game.code === 'bao_keno') {
-             finalPrize = prizeAmount * 0.9; // Trừ 10% thuế
-          }
+          const finalPrize = prizeAmount;
           const balanceBefore = user.balance;
           user.balance += finalPrize;
           const balanceAfter = user.balance;
@@ -1084,29 +1081,33 @@ export const processDrawResults = async (drawId: string) => {
             amount: finalPrize,
             balanceBefore,
             balanceAfter,
-            description: 'Trả thưởng cược',
+            description: `Trả thưởng cược vé ${order.orderId}`,
             reference: order._id.toString()
           });
 
-          // Ghi lại giao dịch
+          // Ghi lại giao dịch với mã GD là mã vé và loại là thắng cược
           await Transaction.create({
             user: user._id,
-            type: 'deposit',
+            type: 'win',
+            txId: order.orderId,
             amount: finalPrize,
-            status: 'approved'
+            status: 'approved',
+            balanceBefore,
+            balanceAfter,
+            note: `Thắng cược vé ${order.orderId}`
           });
 
           // Tạo thông báo
           await Notification.create({
             user: user._id,
             title: '🎉 CHÚC MỪNG TRÚNG THƯỞNG 🎉',
-            body: `Quý khách đã trúng thưởng vé thuộc kỳ quay ${draw.drawCode} (${game.name}). Tổng giá trị giải thưởng (sau thuế): ${finalPrize.toLocaleString('vi-VN')} đ`,
+            body: `Quý khách đã trúng thưởng vé thuộc kỳ quay ${draw.drawCode} (${game.name}). Tổng giá trị giải thưởng: ${finalPrize.toLocaleString('vi-VN')} đ`,
             type: 'win',
             category: 'important',
             orderId: order._id.toString()
           });
           
-          console.log(`PrizeService: User ${user.phone} TRÚNG THƯỞNG ${finalPrize}đ (Sau thuế)`);
+          console.log(`PrizeService: User ${user.phone} TRÚNG THƯỞNG ${finalPrize}đ`);
         }
       } else {
         order.isWinner = false;

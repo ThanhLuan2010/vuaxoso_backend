@@ -12,7 +12,8 @@
     "reset:max4d": "ts-node src/scripts/resetMax4DDraws.ts",
     "reset:kienthiet": "ts-node src/scripts/resetKienThietDraws.ts",
     "seed:lode": "ts-node src/scripts/seedLodeGame.ts",
-    "test:email": "ts-node src/scripts/testEmail.ts"
+    "test:email": "ts-node src/scripts/testEmail.ts",
+    "migrate:winning-tx": "ts-node src/scripts/migrateWinningTransactions.ts"
   },
   "keywords": [],
   "author": "",

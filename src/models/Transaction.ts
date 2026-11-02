@@ -3,7 +3,7 @@ import { IUser } from './User';
 
 export interface ITransaction extends Document {
   user: mongoose.Types.ObjectId | IUser;
-  type: 'deposit' | 'withdraw';
+  type: 'deposit' | 'withdraw' | 'win';
   amount: number;
   status: 'pending' | 'approved' | 'rejected';
   txId?: string;
@@ -20,7 +20,7 @@ export interface ITransaction extends Document {
 const transactionSchema = new Schema<ITransaction>(
   {
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    type: { type: String, enum: ['deposit', 'withdraw'], required: true },
+    type: { type: String, enum: ['deposit', 'withdraw', 'win'], required: true },
     amount: { type: Number, required: true },
     status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
     txId: { type: String, sparse: true, unique: true },
