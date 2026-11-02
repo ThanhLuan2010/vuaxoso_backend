@@ -368,19 +368,99 @@ export const updateUser = async (req: AuthRequest, res: Response) => {
   }
 };
 
-export const getUserHistory = async (req: Request, res: Response) => {
+export const getUserOrders = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit as string) || 10));
+    const skip = (page - 1) * limit;
 
-    const orders = await Order.find({ user: id }).sort({ createdAt: -1 }).lean();
-    const transactions = await Transaction.find({ user: id }).sort({ createdAt: -1 }).lean();
+    const [orders, total] = await Promise.all([
+      Order.find({ user: id })
+        .populate('game', 'name code')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Order.countDocuments({ user: id })
+    ]);
 
     res.json({
       orders,
-      transactions
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit)
     });
-  } catch (error) {
-    res.status(500).json({ message: 'Error fetching user history' });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message || 'Error fetching user orders' });
+  }
+};
+
+export const getUserTransactions = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit as string) || 10));
+    const skip = (page - 1) * limit;
+
+    const [transactions, total] = await Promise.all([
+      Transaction.find({ user: id })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Transaction.countDocuments({ user: id })
+    ]);
+
+    res.json({
+      transactions,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit)
+    });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message || 'Error fetching user transactions' });
+  }
+};
+
+export const getUserHistory = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const ordersPage = Math.max(1, parseInt(req.query.ordersPage as string) || 1);
+    const ordersLimit = Math.max(1, Math.min(100, parseInt(req.query.ordersLimit as string) || 10));
+    const txPage = Math.max(1, parseInt(req.query.transactionsPage as string) || 1);
+    const txLimit = Math.max(1, Math.min(100, parseInt(req.query.transactionsLimit as string) || 10));
+
+    const [orders, totalOrders, transactions, totalTransactions] = await Promise.all([
+      Order.find({ user: id })
+        .populate('game', 'name code')
+        .sort({ createdAt: -1 })
+        .skip((ordersPage - 1) * ordersLimit)
+        .limit(ordersLimit)
+        .lean(),
+      Order.countDocuments({ user: id }),
+      Transaction.find({ user: id })
+        .sort({ createdAt: -1 })
+        .skip((txPage - 1) * txLimit)
+        .limit(txLimit)
+        .lean(),
+      Transaction.countDocuments({ user: id })
+    ]);
+
+    res.json({
+      orders,
+      transactions,
+      totalOrders,
+      totalTransactions,
+      ordersPage,
+      ordersLimit,
+      transactionsPage: txPage,
+      transactionsLimit: txLimit
+    });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message || 'Error fetching user history' });
   }
 };
 
