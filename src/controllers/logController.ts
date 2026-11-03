@@ -4,44 +4,100 @@ import UserLog from '../models/UserLog';
 
 export const getAdminLogs = async (req: Request, res: Response) => {
   try {
-    const { search } = req.query;
-    let filter: any = {};
+    const { search, action, adminName, startDate, endDate, page, limit } = req.query;
+    let andConditions: any[] = [];
 
-    if (search) {
-      const User = require('../models/User').default;
-      const users = await User.find({
-        $or: [
-          { name: { $regex: search, $options: 'i' } },
-          { phone: { $regex: search, $options: 'i' } }
-        ]
-      }).select('_id');
-      const userIds = users.map((u: any) => u._id);
-
-      filter = {
-        $or: [
-          { adminName: { $regex: search, $options: 'i' } },
-          { action: { $regex: search, $options: 'i' } },
-          { details: { $regex: search, $options: 'i' } },
-          { targetUserId: { $in: userIds } }
-        ]
-      };
+    if (action && action !== 'all') {
+      andConditions.push({ action });
     }
 
-    const logs = await AdminLog.find(filter).sort({ createdAt: -1 }).populate('targetUserId', 'name phone').limit(500);
-    
+    if (adminName && adminName !== 'all') {
+      andConditions.push({ adminName });
+    }
+
+    if (startDate || endDate) {
+      const dateFilter: any = {};
+      if (startDate) {
+        const start = new Date(startDate as string);
+        start.setHours(0, 0, 0, 0);
+        dateFilter.$gte = start;
+      }
+      if (endDate) {
+        const end = new Date(endDate as string);
+        end.setHours(23, 59, 59, 999);
+        dateFilter.$lte = end;
+      }
+      andConditions.push({ createdAt: dateFilter });
+    }
+
+    if (search && typeof search === 'string' && search.trim()) {
+      const searchTrim = search.trim();
+      const User = require('../models/User').default;
+      const { EncryptionHelper } = require('../utils/EncryptionHelper');
+
+      const exactEncryptedPhone = EncryptionHelper.encryptDeterministic(searchTrim);
+      const userConditions: any[] = [
+        { name: { $regex: searchTrim, $options: 'i' } }
+      ];
+      if (exactEncryptedPhone) {
+        userConditions.push({ phone: exactEncryptedPhone });
+      }
+
+      const users = await User.find({ $or: userConditions }).select('_id');
+      const userIds = users.map((u: any) => u._id);
+
+      const searchConditions: any[] = [
+        { adminName: { $regex: searchTrim, $options: 'i' } },
+        { action: { $regex: searchTrim, $options: 'i' } },
+        { details: { $regex: searchTrim, $options: 'i' } }
+      ];
+
+      if (userIds.length > 0) {
+        searchConditions.push({ targetUserId: { $in: userIds } });
+      }
+
+      andConditions.push({ $or: searchConditions });
+    }
+
+    const filter = andConditions.length > 0 ? { $and: andConditions } : {};
+
+    const pageNum = page ? Math.max(1, parseInt(page as string) || 1) : 1;
+    const limitNum = limit ? Math.max(1, Math.min(100, parseInt(limit as string) || 20)) : 20;
+    const skip = (pageNum - 1) * limitNum;
+
+    const [logs, total, distinctAdmins] = await Promise.all([
+      AdminLog.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limitNum)
+        .populate('targetUserId', 'name phone')
+        .lean(),
+      AdminLog.countDocuments(filter),
+      AdminLog.distinct('adminName')
+    ]);
+
     const { EncryptionHelper } = require('../utils/EncryptionHelper');
     const decryptedLogs = logs.map((log: any) => {
-      const obj = log.toObject ? log.toObject() : log;
-      if (obj.targetUserId && obj.targetUserId.phone) {
+      if (log.targetUserId && log.targetUserId.phone) {
         try {
-          obj.targetUserId.phone = EncryptionHelper.decryptDeterministic(obj.targetUserId.phone);
+          log.targetUserId.phone = EncryptionHelper.decryptDeterministic(log.targetUserId.phone);
         } catch (e) {}
       }
-      return obj;
+      return log;
     });
 
-    res.json(decryptedLogs);
-  } catch (error) {
+    const adminNames = (distinctAdmins || []).filter(Boolean).sort();
+
+    res.json({
+      logs: decryptedLogs,
+      total,
+      page: pageNum,
+      limit: limitNum,
+      totalPages: Math.ceil(total / limitNum),
+      adminNames
+    });
+  } catch (error: any) {
+    console.error('getAdminLogs error:', error);
     res.status(500).json({ message: 'Error fetching logs' });
   }
 };

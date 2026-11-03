@@ -22,6 +22,9 @@ const adminLogSchema = new Schema(
 );
 
 adminLogSchema.index({ targetUserId: 1, createdAt: -1 });
+adminLogSchema.index({ createdAt: -1 });
+adminLogSchema.index({ action: 1, createdAt: -1 });
+adminLogSchema.index({ adminName: 1, createdAt: -1 });
 
 // Tự động gửi email thông báo hoạt động tới email quản trị
 adminLogSchema.post('save', function (doc) {
