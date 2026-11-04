@@ -43,7 +43,7 @@ export const processDrawResults = async (drawId: string) => {
       status: { $in: ['pending', 'completed'] },
     };
 
-    if (game.type === 'kienthiet') {
+    if (game.type === 'kienthiet' || game.type === 'lode') {
       orderQuery.gameType = { 
         $in: [
           game.code, 
@@ -96,9 +96,15 @@ export const processDrawResults = async (drawId: string) => {
       let isWinner = false;
       let prizeAmount = 0;
 
-      let allBoards: { numbers: string[], specialNumbers?: string[], cost: number, playType?: string }[] = [];
+      let allBoards: { numbers: string[], specialNumbers?: string[], cost: number, baseCost?: number, playType?: string }[] = [];
       if (order.items && order.items.length > 0) {
-        allBoards = order.items.map(item => ({ numbers: item.numbers, specialNumbers: item.specialNumbers, cost: item.cost, playType: order.playType }));
+        allBoards = order.items.map(item => ({ 
+          numbers: item.numbers, 
+          specialNumbers: item.specialNumbers, 
+          cost: item.cost, 
+          baseCost: item.baseCost, 
+          playType: item.playType || order.playType 
+        }));
       } else if (order.numbers && order.numbers.length > 0) {
         allBoards = [{ numbers: order.numbers, cost: order.totalCost, playType: order.playType }];
       }
@@ -496,18 +502,86 @@ export const processDrawResults = async (drawId: string) => {
             }
           });
         }
-      } else if (game.type === 'kienthiet') {
+      } else if (game.type === 'kienthiet' || game.type === 'lode') {
         const w = draw.winningNumbers;
         if (w && w.length >= 9) {
           allBoards.forEach((board) => {
             const currentPlayType = (board.playType || order.playType || '').trim();
             const pTypeLower = currentPlayType.toLowerCase();
 
+            const isMB = game.code === 'MB' || (order.gameType && order.gameType.toUpperCase() === 'MB') || (order.provinceName && order.provinceName.toLowerCase().includes('miền bắc'));
+
+            const getLodeMultiplier = (pType: string): number => {
+              const p = pType.toLowerCase();
+              if (p === 'lô 2 số' || p === 'lô 2 số đầu') return isMB ? 27 : 18;
+              if (p === 'lô giải 3' || p === 'lô giải 5') return 6;
+              if (p === 'lô giải 4') return 7;
+              if (p === 'lô giải 6') return 3;
+              if (p === 'lô 3 số') return isMB ? 23 : 17;
+              if (p === 'lô 4 số') return isMB ? 20 : 16;
+              if (p === 'đề đầu' || p === 'đề đuôi') return 10;
+              if (p === 'đề đầu đuôi') return isMB ? 5 : 2;
+              if (p === 'đề giải 7') return 4;
+              if (p === '3 càng giải 6') return 3;
+              if (p === '3 càng đầu đuôi') return isMB ? 4 : 2;
+              return 1;
+            };
+
+            const mult = getLodeMultiplier(currentPlayType);
+            const numCount = board.numbers && board.numbers.length > 0 ? board.numbers.length : 1;
+            const baseCost = (board.baseCost && board.baseCost > 0)
+              ? board.baseCost
+              : Math.max(1000, Math.round(board.cost / numCount / mult));
+            const betPerNum = baseCost;
+
+            const allLast2 = w.map((n: string) => (n || '').slice(-2));
+            const allFirst2 = w.map((n: string) => (n || '').slice(0, 2));
+            const allLast3 = w.filter((n: string) => (n || '').length >= 3).map((n: string) => n.slice(-3));
+            const allLast4 = w.filter((n: string) => (n || '').length >= 4).map((n: string) => n.slice(-4));
+
+            let g3Pool: string[] = [];
+            let g4Pool: string[] = [];
+            let g5Pool: string[] = [];
+            let g6Pool: string[] = [];
+            let g7Pool: string[] = [];
+            let g8Pool: string[] = [];
+
+            if (isMB) {
+              if (w.length >= 27) {
+                g3Pool = [w[4], w[5], w[6], w[7], w[8], w[9]];
+                g4Pool = [w[10], w[11], w[12], w[13]];
+                g5Pool = [w[14], w[15], w[16], w[17], w[18], w[19]];
+                g6Pool = [w[20], w[21], w[22]];
+                g7Pool = [w[23], w[24], w[25], w[26]];
+              } else if (w.length >= 9) {
+                g3Pool = [w[3]];
+                g4Pool = [w[4]];
+                g5Pool = [w[5]];
+                g6Pool = [w[6]];
+                g7Pool = [w[7]];
+              }
+            } else {
+              if (w.length >= 18) {
+                g3Pool = [w[3], w[4]];
+                g4Pool = [w[5], w[6], w[7], w[8], w[9], w[10], w[11]];
+                g5Pool = [w[12]];
+                g6Pool = [w[13], w[14], w[15]];
+                g7Pool = [w[16]];
+                g8Pool = [w[17]];
+              } else if (w.length >= 9) {
+                g3Pool = [w[3]];
+                g4Pool = [w[4]];
+                g5Pool = [w[5]];
+                g6Pool = [w[6]];
+                g7Pool = [w[7]];
+                g8Pool = [w[8]];
+              }
+            }
+
             // 1. Xiên ĐB (Đọc tỉ lệ động từ game.payoutRates hoặc fallback 4.8)
             if (pTypeLower === 'xiên đb' || pTypeLower === 'xien db') {
               const rate = (game.payoutRates && (game.payoutRates['Xiên ĐB'] || game.payoutRates['xien_db'])) ?? 4.8;
               const specialLast2 = (w[0] || '').slice(-2);
-              const betPerNum = Math.floor(board.cost / (board.numbers.length || 1));
               let boardPrize = 0;
               board.numbers.forEach((numStr) => {
                 if (specialLast2.includes(numStr)) {
@@ -523,7 +597,6 @@ export const processDrawResults = async (drawId: string) => {
             else if (pTypeLower === 'xiên giải 1' || pTypeLower === 'xien giai 1') {
               const rate = (game.payoutRates && (game.payoutRates['Xiên giải 1'] || game.payoutRates['xien_g1'])) ?? 4.8;
               const g1Last2 = (w[1] || '').slice(-2);
-              const betPerNum = Math.floor(board.cost / (board.numbers.length || 1));
               let boardPrize = 0;
               board.numbers.forEach((numStr) => {
                 if (g1Last2.includes(numStr)) {
@@ -539,7 +612,6 @@ export const processDrawResults = async (drawId: string) => {
             else if (pTypeLower === 'xiên 3 càng đb' || pTypeLower === 'xien 3 cang db') {
               const rate = (game.payoutRates && (game.payoutRates['Xiên 3 càng ĐB'] || game.payoutRates['xien_3cang_db'])) ?? 3.2;
               const specialLast3 = (w[0] || '').slice(-3);
-              const betPerNum = Math.floor(board.cost / (board.numbers.length || 1));
               let boardPrize = 0;
               board.numbers.forEach((numStr) => {
                 if (specialLast3.includes(numStr)) {
@@ -555,7 +627,6 @@ export const processDrawResults = async (drawId: string) => {
             else if (pTypeLower === 'xiên 3 càng giải 1' || pTypeLower === 'xien 3 cang giai 1') {
               const rate = (game.payoutRates && (game.payoutRates['Xiên 3 càng giải 1'] || game.payoutRates['xien_3cang_g1'])) ?? 3.2;
               const g1Last3 = (w[1] || '').slice(-3);
-              const betPerNum = Math.floor(board.cost / (board.numbers.length || 1));
               let boardPrize = 0;
               board.numbers.forEach((numStr) => {
                 if (g1Last3.includes(numStr)) {
@@ -571,7 +642,6 @@ export const processDrawResults = async (drawId: string) => {
             else if (pTypeLower === 'xiên 4 càng đb' || pTypeLower === 'xien 4 cang db') {
               const rate = (game.payoutRates && (game.payoutRates['Xiên 4 càng ĐB'] || game.payoutRates['xien_4cang_db'])) ?? 2.4;
               const specialLast4 = (w[0] || '').slice(-4);
-              const betPerNum = Math.floor(board.cost / (board.numbers.length || 1));
               let boardPrize = 0;
               board.numbers.forEach((numStr) => {
                 if (specialLast4.includes(numStr)) {
@@ -587,7 +657,6 @@ export const processDrawResults = async (drawId: string) => {
             else if (pTypeLower === 'xiên 4 càng giải 1' || pTypeLower === 'xien 4 cang giai 1') {
               const rate = (game.payoutRates && (game.payoutRates['Xiên 4 càng giải 1'] || game.payoutRates['xien_4cang_g1'])) ?? 2.4;
               const g1Last4 = (w[1] || '').slice(-4);
-              const betPerNum = Math.floor(board.cost / (board.numbers.length || 1));
               let boardPrize = 0;
               board.numbers.forEach((numStr) => {
                 if (g1Last4.includes(numStr)) {
@@ -603,7 +672,6 @@ export const processDrawResults = async (drawId: string) => {
             else if (pTypeLower === '4 càng đb' || pTypeLower === '4 cang db' || pTypeLower === '4 càng' || pTypeLower === '4 cang') {
               const rate = (game.payoutRates && (game.payoutRates['4 Càng ĐB'] || game.payoutRates['4_cang_db'])) ?? 9000;
               const specialLast4 = (w[0] || '').slice(-4);
-              const betPerNum = Math.floor(board.cost / (board.numbers.length || 1));
               let boardPrize = 0;
               board.numbers.forEach((numStr) => {
                 if (numStr === specialLast4) {
@@ -619,7 +687,6 @@ export const processDrawResults = async (drawId: string) => {
             else if (pTypeLower === '4 càng đầu đb' || pTypeLower === '4 cang dau db') {
               const rate = (game.payoutRates && (game.payoutRates['4 Càng đầu ĐB'] || game.payoutRates['4_cang_dau_db'])) ?? 9000;
               const specialFirst4 = (w[0] || '').slice(0, 4);
-              const betPerNum = Math.floor(board.cost / (board.numbers.length || 1));
               let boardPrize = 0;
               board.numbers.forEach((numStr) => {
                 if (numStr === specialFirst4) {
@@ -635,7 +702,6 @@ export const processDrawResults = async (drawId: string) => {
             else if (pTypeLower === '4 càng giải 1' || pTypeLower === '4 cang giai 1') {
               const rate = (game.payoutRates && (game.payoutRates['4 Càng giải 1'] || game.payoutRates['4_cang_g1'])) ?? 9000;
               const g1Last4 = (w[1] || '').slice(-4);
-              const betPerNum = Math.floor(board.cost / (board.numbers.length || 1));
               let boardPrize = 0;
               board.numbers.forEach((numStr) => {
                 if (numStr === g1Last4) {
@@ -651,7 +717,6 @@ export const processDrawResults = async (drawId: string) => {
             else if (pTypeLower === '4 càng đầu giải 1' || pTypeLower === '4 cang dau giai 1') {
               const rate = (game.payoutRates && (game.payoutRates['4 Càng đầu giải 1'] || game.payoutRates['4_cang_dau_g1'])) ?? 9000;
               const g1First4 = (w[1] || '').slice(0, 4);
-              const betPerNum = Math.floor(board.cost / (board.numbers.length || 1));
               let boardPrize = 0;
               board.numbers.forEach((numStr) => {
                 if (numStr === g1First4) {
@@ -667,7 +732,6 @@ export const processDrawResults = async (drawId: string) => {
             else if (pTypeLower === '3 càng đb' || pTypeLower === '3 cang db' || pTypeLower === '3 càng' || pTypeLower === '3 cang') {
               const rate = (game.payoutRates && (game.payoutRates['3 Càng ĐB'] || game.payoutRates['3_cang_db'])) ?? 980;
               const specialLast3 = (w[0] || '').slice(-3);
-              const betPerNum = Math.floor(board.cost / (board.numbers.length || 1));
               let boardPrize = 0;
               board.numbers.forEach((numStr) => {
                 if (numStr === specialLast3) {
@@ -683,7 +747,6 @@ export const processDrawResults = async (drawId: string) => {
             else if (pTypeLower === '3 càng đầu đb' || pTypeLower === '3 cang dau db') {
               const rate = (game.payoutRates && (game.payoutRates['3 Càng đầu ĐB'] || game.payoutRates['3_cang_dau_db'])) ?? 980;
               const specialFirst3 = (w[0] || '').slice(0, 3);
-              const betPerNum = Math.floor(board.cost / (board.numbers.length || 1));
               let boardPrize = 0;
               board.numbers.forEach((numStr) => {
                 if (numStr === specialFirst3) {
@@ -699,7 +762,6 @@ export const processDrawResults = async (drawId: string) => {
             else if (pTypeLower === '3 càng giải 1' || pTypeLower === '3 cang giai 1') {
               const rate = (game.payoutRates && (game.payoutRates['3 Càng giải 1'] || game.payoutRates['3_cang_g1'])) ?? 980;
               const g1Last3 = (w[1] || '').slice(-3);
-              const betPerNum = Math.floor(board.cost / (board.numbers.length || 1));
               let boardPrize = 0;
               board.numbers.forEach((numStr) => {
                 if (numStr === g1Last3) {
@@ -715,7 +777,6 @@ export const processDrawResults = async (drawId: string) => {
             else if (pTypeLower === '3 càng đầu giải 1' || pTypeLower === '3 cang dau giai 1') {
               const rate = (game.payoutRates && (game.payoutRates['3 Càng đầu giải 1'] || game.payoutRates['3_cang_dau_g1'])) ?? 980;
               const g1First3 = (w[1] || '').slice(0, 3);
-              const betPerNum = Math.floor(board.cost / (board.numbers.length || 1));
               let boardPrize = 0;
               board.numbers.forEach((numStr) => {
                 if (numStr === g1First3) {
@@ -727,14 +788,78 @@ export const processDrawResults = async (drawId: string) => {
                 prizeAmount += boardPrize;
               }
             }
+            // 2.13. 3 Càng giải 6 (MB)
+            else if (pTypeLower === '3 càng giải 6' || pTypeLower === '3 cang giai 6') {
+              const rate = (game.payoutRates && (game.payoutRates['3 Càng giải 6'] || game.payoutRates['3_cang_g6'])) ?? 980;
+              const g6Last3 = g6Pool.map(n => (n || '').slice(-3));
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                const hitCount = g6Last3.filter(n => n === numStr).length;
+                if (hitCount > 0) {
+                  boardPrize += hitCount * Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 2.14. 3 Càng giải 7 (MN/MT)
+            else if (pTypeLower === '3 càng giải 7' || pTypeLower === '3 cang giai 7') {
+              const rate = (game.payoutRates && (game.payoutRates['3 Càng giải 7'] || game.payoutRates['3_cang_g7'])) ?? 980;
+              const g7Last3 = (g7Pool[0] || '').slice(-3);
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                if (numStr === g7Last3) {
+                  boardPrize += Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 2.15. 3 Càng đầu đuôi
+            else if (pTypeLower === '3 càng đầu đuôi' || pTypeLower === '3 cang dau duoi') {
+              const rate = (game.payoutRates && (game.payoutRates['3 Càng đầu đuôi'] || game.payoutRates['3_cang_dau_duoi'])) ?? 980;
+              const specialLast3 = (w[0] || '').slice(-3);
+              const otherLast3 = isMB ? g6Pool.map(n => (n || '').slice(-3)) : [(g7Pool[0] || '').slice(-3)];
+              const all3Targets = [specialLast3, ...otherLast3];
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                const hitCount = all3Targets.filter(n => n === numStr).length;
+                if (hitCount > 0) {
+                  boardPrize += hitCount * Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
             // 3. Đề ĐB (Tỉ lệ 1 ăn 99.9)
             else if (pTypeLower === 'đề đb' || pTypeLower === 'de db') {
               const specialLast2 = (w[0] || '').slice(-2);
-              const betPerNum = Math.floor(board.cost / (board.numbers.length || 1));
+              const rate = (game.payoutRates && (game.payoutRates['Đề ĐB'] || game.payoutRates['de_db'])) ?? 99.9;
               let boardPrize = 0;
               board.numbers.forEach((numStr) => {
                 if (numStr === specialLast2) {
-                  boardPrize += Math.round(betPerNum * 99.9);
+                  boardPrize += Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 3.1. Đề Đầu ĐB (Tỉ lệ 1 ăn 99.9)
+            else if (pTypeLower === 'đề đầu đb' || pTypeLower === 'de dau db') {
+              const specialFirst2 = (w[0] || '').slice(0, 2);
+              const rate = (game.payoutRates && (game.payoutRates['Đề Đầu ĐB'] || game.payoutRates['de_dau_db'])) ?? 99.9;
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                if (numStr === specialFirst2) {
+                  boardPrize += Math.round(betPerNum * rate);
                 }
               });
               if (boardPrize > 0) {
@@ -745,11 +870,332 @@ export const processDrawResults = async (drawId: string) => {
             // 4. Đề giải 1 (Tỉ lệ 1 ăn 99.9)
             else if (pTypeLower === 'đề giải 1' || pTypeLower === 'de giai 1') {
               const g1Last2 = (w[1] || '').slice(-2);
-              const betPerNum = Math.floor(board.cost / (board.numbers.length || 1));
+              const rate = (game.payoutRates && (game.payoutRates['Đề giải 1'] || game.payoutRates['de_giai_1'])) ?? 99.9;
               let boardPrize = 0;
               board.numbers.forEach((numStr) => {
                 if (numStr === g1Last2) {
-                  boardPrize += Math.round(betPerNum * 99.9);
+                  boardPrize += Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 4.1. Đề đầu giải 1 (Tỉ lệ 1 ăn 99.9)
+            else if (pTypeLower === 'đề đầu giải 1' || pTypeLower === 'de dau giai 1') {
+              const g1First2 = (w[1] || '').slice(0, 2);
+              const rate = (game.payoutRates && (game.payoutRates['Đề đầu giải 1'] || game.payoutRates['de_dau_g1'])) ?? 99.9;
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                if (numStr === g1First2) {
+                  boardPrize += Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 4.2. Đề giải 7 (MB)
+            else if (pTypeLower === 'đề giải 7' || pTypeLower === 'de giai 7') {
+              const g7Last2 = g7Pool.map(n => (n || '').slice(-2));
+              const rate = (game.payoutRates && (game.payoutRates['Đề giải 7'] || game.payoutRates['de_g7'])) ?? 99.9;
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                const hitCount = g7Last2.filter(n => n === numStr).length;
+                if (hitCount > 0) {
+                  boardPrize += hitCount * Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 4.3. Đề giải 8 (MN/MT)
+            else if (pTypeLower === 'đề giải 8' || pTypeLower === 'de giai 8') {
+              const g8Last2 = (g8Pool[0] || (w[w.length - 1] || '')).slice(-2);
+              const rate = (game.payoutRates && (game.payoutRates['Đề giải 8'] || game.payoutRates['de_g8'])) ?? 99.9;
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                if (numStr === g8Last2) {
+                  boardPrize += Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 4.4. Đề đầu (Chữ số hàng chục của giải ĐB)
+            else if (pTypeLower === 'đề đầu' || pTypeLower === 'de dau') {
+              const specialChuc = (w[0] || '').slice(-2, -1);
+              const rate = (game.payoutRates && (game.payoutRates['Đề đầu'] || game.payoutRates['de_dau'])) ?? 99.9;
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                if (numStr === specialChuc) {
+                  boardPrize += Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 4.5. Đề đuôi (Chữ số hàng đơn vị của giải ĐB)
+            else if (pTypeLower === 'đề đuôi' || pTypeLower === 'de duoi') {
+              const specialDonVi = (w[0] || '').slice(-1);
+              const rate = (game.payoutRates && (game.payoutRates['Đề đuôi'] || game.payoutRates['de_duoi'])) ?? 99.9;
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                if (numStr === specialDonVi) {
+                  boardPrize += Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 4.6. Đề đầu đuôi
+            else if (pTypeLower === 'đề đầu đuôi' || pTypeLower === 'de dau duoi') {
+              const specialLast2 = (w[0] || '').slice(-2);
+              const otherTargets = isMB ? g7Pool.map(n => (n || '').slice(-2)) : [(g8Pool[0] || (w[w.length - 1] || '')).slice(-2)];
+              const allTargets = [specialLast2, ...otherTargets];
+              const rate = (game.payoutRates && (game.payoutRates['Đề đầu đuôi'] || game.payoutRates['de_dau_duoi'])) ?? 99.9;
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                const hitCount = allTargets.filter(n => n === numStr).length;
+                if (hitCount > 0) {
+                  boardPrize += hitCount * Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 4.7. Lô 2 số (Bao lô 18 giải MN/MT hoặc 27 giải MB)
+            else if (pTypeLower === 'lô 2 số' || pTypeLower === 'lo 2 so') {
+              const rate = (game.payoutRates && (game.payoutRates['Lô 2 số'] || game.payoutRates['lo_2_so'])) ?? 99.9;
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                const hitCount = allLast2.filter(n => n === numStr).length;
+                if (hitCount > 0) {
+                  boardPrize += hitCount * Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 4.8. Lô 2 số đầu
+            else if (pTypeLower === 'lô 2 số đầu' || pTypeLower === 'lo 2 so dau') {
+              const rate = (game.payoutRates && (game.payoutRates['Lô 2 số đầu'] || game.payoutRates['lo_2_so_dau'])) ?? 99.9;
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                const hitCount = allFirst2.filter(n => n === numStr).length;
+                if (hitCount > 0) {
+                  boardPrize += hitCount * Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 4.9. Lô 2 số 1k
+            else if (pTypeLower === 'lô 2 số 1k' || pTypeLower === 'lo 2 so 1k') {
+              const defaultRate = isMB ? 3.7 : 5.445;
+              const rate = (game.payoutRates && (game.payoutRates['Lô 2 số 1k'] || game.payoutRates['lo_2_so_1k'])) ?? defaultRate;
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                const hitCount = allLast2.filter(n => n === numStr).length;
+                if (hitCount > 0) {
+                  boardPrize += hitCount * Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 4.10. Lô 2 số đầu 1k
+            else if (pTypeLower === 'lô 2 số đầu 1k' || pTypeLower === 'lo 2 so dau 1k') {
+              const defaultRate = isMB ? 3.7 : 5.445;
+              const rate = (game.payoutRates && (game.payoutRates['Lô 2 số đầu 1k'] || game.payoutRates['lo_2_so_dau_1k'])) ?? defaultRate;
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                const hitCount = allFirst2.filter(n => n === numStr).length;
+                if (hitCount > 0) {
+                  boardPrize += hitCount * Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 4.11. Lô Giải 3 (MB)
+            else if (pTypeLower === 'lô giải 3' || pTypeLower === 'lo giai 3') {
+              const rate = (game.payoutRates && (game.payoutRates['Lô Giải 3'] || game.payoutRates['lo_g3'])) ?? 99.9;
+              const g3Last2 = g3Pool.map(n => (n || '').slice(-2));
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                const hitCount = g3Last2.filter(n => n === numStr).length;
+                if (hitCount > 0) {
+                  boardPrize += hitCount * Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 4.12. Lô Giải 4 (MN/MT)
+            else if (pTypeLower === 'lô giải 4' || pTypeLower === 'lo giai 4') {
+              const rate = (game.payoutRates && (game.payoutRates['Lô Giải 4'] || game.payoutRates['lo_g4'])) ?? 99.9;
+              const g4Last2 = g4Pool.map(n => (n || '').slice(-2));
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                const hitCount = g4Last2.filter(n => n === numStr).length;
+                if (hitCount > 0) {
+                  boardPrize += hitCount * Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 4.13. Lô Giải 5 (MB)
+            else if (pTypeLower === 'lô giải 5' || pTypeLower === 'lo giai 5') {
+              const rate = (game.payoutRates && (game.payoutRates['Lô Giải 5'] || game.payoutRates['lo_g5'])) ?? 99.9;
+              const g5Last2 = g5Pool.map(n => (n || '').slice(-2));
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                const hitCount = g5Last2.filter(n => n === numStr).length;
+                if (hitCount > 0) {
+                  boardPrize += hitCount * Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 4.14. Lô Giải 6 (MN/MT)
+            else if (pTypeLower === 'lô giải 6' || pTypeLower === 'lo giai 6') {
+              const rate = (game.payoutRates && (game.payoutRates['Lô Giải 6'] || game.payoutRates['lo_g6'])) ?? 99.9;
+              const g6Last2 = g6Pool.map(n => (n || '').slice(-2));
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                const hitCount = g6Last2.filter(n => n === numStr).length;
+                if (hitCount > 0) {
+                  boardPrize += hitCount * Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 4.15. Lô 3 số
+            else if (pTypeLower === 'lô 3 số' || pTypeLower === 'lo 3 so') {
+              const rate = (game.payoutRates && (game.payoutRates['Lô 3 số'] || game.payoutRates['lo_3_so'])) ?? 980;
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                const hitCount = allLast3.filter(n => n === numStr).length;
+                if (hitCount > 0) {
+                  boardPrize += hitCount * Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 4.16. Lô 4 số
+            else if (pTypeLower === 'lô 4 số' || pTypeLower === 'lo 4 so') {
+              const rate = (game.payoutRates && (game.payoutRates['Lô 4 số'] || game.payoutRates['lo_4_so'])) ?? 9000;
+              let boardPrize = 0;
+              board.numbers.forEach((numStr) => {
+                const hitCount = allLast4.filter(n => n === numStr).length;
+                if (hitCount > 0) {
+                  boardPrize += hitCount * Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 4.17. Lô Xiên 2
+            else if (pTypeLower.startsWith('xiên 2') || pTypeLower.startsWith('xien 2')) {
+              const defaultRate = isMB ? 16 : 28;
+              const rate = (game.payoutRates && (game.payoutRates['Xiên 2'] || game.payoutRates['xien_2'])) ?? defaultRate;
+              let boardPrize = 0;
+              board.numbers.forEach((itemStr) => {
+                const pair = itemStr.includes('&') ? itemStr.split('&').map(s => s.trim()) : board.numbers;
+                if (pair.length >= 2 && pair.every(n => allLast2.includes(n))) {
+                  boardPrize += Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 4.18. Lô Xiên 3
+            else if (pTypeLower.startsWith('xiên 3') || pTypeLower.startsWith('xien 3')) {
+              const defaultRate = isMB ? 65 : 150;
+              const rate = (game.payoutRates && (game.payoutRates['Xiên 3'] || game.payoutRates['xien_3'])) ?? defaultRate;
+              let boardPrize = 0;
+              board.numbers.forEach((itemStr) => {
+                const trip = itemStr.includes('&') ? itemStr.split('&').map(s => s.trim()) : board.numbers;
+                if (trip.length >= 3 && trip.every(n => allLast2.includes(n))) {
+                  boardPrize += Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 4.19. Lô Xiên 4
+            else if (pTypeLower.startsWith('xiên 4') || pTypeLower.startsWith('xien 4')) {
+              const defaultRate = isMB ? 180 : 750;
+              const rate = (game.payoutRates && (game.payoutRates['Xiên 4'] || game.payoutRates['xien_4'])) ?? defaultRate;
+              let boardPrize = 0;
+              board.numbers.forEach((itemStr) => {
+                const quad = itemStr.includes('&') ? itemStr.split('&').map(s => s.trim()) : board.numbers;
+                if (quad.length >= 4 && quad.every(n => allLast2.includes(n))) {
+                  boardPrize += Math.round(betPerNum * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 4.20. Lô Trượt (Xiên 4, 6, 8, 10)
+            else if (pTypeLower.includes('trượt') || pTypeLower.includes('truot')) {
+              let defaultRate = 2.0;
+              if (pTypeLower.includes('4')) defaultRate = isMB ? 2.3 : 1.8;
+              else if (pTypeLower.includes('6')) defaultRate = isMB ? 4.5 : 2.5;
+              else if (pTypeLower.includes('8')) defaultRate = isMB ? 8.0 : 3.3;
+              else if (pTypeLower.includes('10')) defaultRate = isMB ? 12.0 : 4.3;
+
+              const rateKey = Object.keys(game.payoutRates || {}).find(k => k.toLowerCase() === pTypeLower) || '';
+              const rate = (rateKey && game.payoutRates[rateKey]) ? game.payoutRates[rateKey] : defaultRate;
+
+              let boardPrize = 0;
+              board.numbers.forEach((itemStr) => {
+                const nums = itemStr.includes('&') ? itemStr.split('&').map(s => s.trim()) : board.numbers;
+                if (nums.length > 0 && nums.every(n => !allLast2.includes(n))) {
+                  boardPrize += Math.round(betPerNum * rate);
                 }
               });
               if (boardPrize > 0) {
@@ -764,21 +1210,31 @@ export const processDrawResults = async (drawId: string) => {
                 const ticketNum = isWildcard ? ticketStr.slice(1) : ticketStr;
                 let ticketPrize = 0;
 
-                if (w[8].endsWith(ticketNum.slice(-2))) ticketPrize += 100000;
-                if (w[7].endsWith(ticketNum.slice(-3))) ticketPrize += 200000;
-                if (w[6].endsWith(ticketNum.slice(-4))) ticketPrize += 400000;
-                if (w[5].endsWith(ticketNum.slice(-4))) ticketPrize += 1000000;
-                if (w[4].endsWith(ticketNum.slice(-5))) ticketPrize += 3000000;
-                if (w[3].endsWith(ticketNum.slice(-5))) ticketPrize += 10000000;
-                if (w[2].endsWith(ticketNum.slice(-5))) ticketPrize += 15000000;
-                if (w[1].endsWith(ticketNum.slice(-5))) ticketPrize += 30000000;
-                
-                if (!isWildcard && ticketNum === w[0]) {
+                const g8Val = g8Pool[0] || (w.length >= 9 ? w[8] : w[w.length - 1]);
+                const g7Val = g7Pool[0] || (w.length >= 8 ? w[7] : '');
+                const g6Vals = g6Pool.length > 0 ? g6Pool : (w.length >= 7 ? [w[6]] : []);
+                const g5Val = g5Pool[0] || (w.length >= 6 ? w[5] : '');
+                const g4Vals = g4Pool.length > 0 ? g4Pool : (w.length >= 5 ? [w[4]] : []);
+                const g3Vals = g3Pool.length > 0 ? g3Pool : (w.length >= 4 ? [w[3]] : []);
+                const g2Vals = w.length >= 18 ? [w[2]] : (w.length >= 3 ? [w[2]] : []);
+                const g1Val = w[1] || '';
+                const gdbVal = w[0] || '';
+
+                if (g8Val && g8Val.endsWith(ticketNum.slice(-2))) ticketPrize += 100000;
+                if (g7Val && g7Val.endsWith(ticketNum.slice(-3))) ticketPrize += 200000;
+                if (g6Vals.some(v => v && v.endsWith(ticketNum.slice(-4)))) ticketPrize += 400000;
+                if (g5Val && g5Val.endsWith(ticketNum.slice(-4)))) ticketPrize += 1000000;
+                if (g4Vals.some(v => v && v.endsWith(ticketNum.slice(-5)))) ticketPrize += 3000000;
+                if (g3Vals.some(v => v && v.endsWith(ticketNum.slice(-5)))) ticketPrize += 10000000;
+                if (g2Vals.some(v => v && v.endsWith(ticketNum.slice(-5)))) ticketPrize += 15000000;
+                if (g1Val && g1Val.endsWith(ticketNum.slice(-5)))) ticketPrize += 30000000;
+
+                if (!isWildcard && ticketNum === gdbVal) {
                    ticketPrize += 2000000000;
-                } else if (w[0].endsWith(ticketNum.slice(-5))) {
+                } else if (gdbVal && gdbVal.endsWith(ticketNum.slice(-5))) {
                    ticketPrize += 50000000;
                 }
-                
+
                 if (ticketPrize > 0) {
                    isWinner = true;
                    const multiplier = Math.floor(board.cost / 10000);
