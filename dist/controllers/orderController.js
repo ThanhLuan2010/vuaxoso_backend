@@ -642,7 +642,23 @@ const getMyOrders = async (req, res) => {
                 filter.gameType = { $in: gameType };
             }
             else if (typeof gameType === "string" && gameType.includes(",")) {
-                filter.gameType = { $in: gameType.split(",") };
+                const types = gameType.split(",").map((t) => t.trim());
+                const hasKienThiet = types.includes("kienthiet");
+                if (hasKienThiet) {
+                    filter.$or = [
+                        { gameType: { $in: types } },
+                        { gameType: { $regex: "^kienthiet", $options: "i" } }
+                    ];
+                }
+                else {
+                    filter.gameType = { $in: types };
+                }
+            }
+            else if (gameType === "kienthiet") {
+                filter.gameType = { $regex: "^kienthiet", $options: "i" };
+            }
+            else if (gameType === "lode" || gameType === "xoso_3mien") {
+                filter.gameType = { $in: ["MB", "MT", "MN", "mb", "mt", "mn", "xoso_3mien", "lode"] };
             }
             else {
                 filter.gameType = gameType;

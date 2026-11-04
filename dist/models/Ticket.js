@@ -50,5 +50,6 @@ const TicketSchema = new mongoose_1.Schema({
     timestamps: true
 });
 TicketSchema.index({ provinceId: 1, drawDate: 1, isSold: 1 });
+TicketSchema.index({ provinceId: 1, drawDate: 1, isSold: 1, ticketType: 1, _id: 1 });
 TicketSchema.index({ number: 1, provinceId: 1, drawDate: 1 });
 exports.default = mongoose_1.default.model('Ticket', TicketSchema);

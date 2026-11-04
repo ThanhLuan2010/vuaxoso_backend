@@ -43,6 +43,9 @@ const adminLogSchema = new mongoose_1.Schema({
     details: { type: String, required: true },
 }, { timestamps: true });
 adminLogSchema.index({ targetUserId: 1, createdAt: -1 });
+adminLogSchema.index({ createdAt: -1 });
+adminLogSchema.index({ action: 1, createdAt: -1 });
+adminLogSchema.index({ adminName: 1, createdAt: -1 });
 // Tự động gửi email thông báo hoạt động tới email quản trị
 adminLogSchema.post('save', function (doc) {
     (0, logEmailService_1.sendLogNotificationEmail)(doc);

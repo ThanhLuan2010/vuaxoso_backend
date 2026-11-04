@@ -1223,11 +1223,11 @@ export const processDrawResults = async (drawId: string) => {
                 if (g8Val && g8Val.endsWith(ticketNum.slice(-2))) ticketPrize += 100000;
                 if (g7Val && g7Val.endsWith(ticketNum.slice(-3))) ticketPrize += 200000;
                 if (g6Vals.some(v => v && v.endsWith(ticketNum.slice(-4)))) ticketPrize += 400000;
-                if (g5Val && g5Val.endsWith(ticketNum.slice(-4)))) ticketPrize += 1000000;
+                if (g5Val && g5Val.endsWith(ticketNum.slice(-4))) ticketPrize += 1000000;
                 if (g4Vals.some(v => v && v.endsWith(ticketNum.slice(-5)))) ticketPrize += 3000000;
                 if (g3Vals.some(v => v && v.endsWith(ticketNum.slice(-5)))) ticketPrize += 10000000;
                 if (g2Vals.some(v => v && v.endsWith(ticketNum.slice(-5)))) ticketPrize += 15000000;
-                if (g1Val && g1Val.endsWith(ticketNum.slice(-5)))) ticketPrize += 30000000;
+                if (g1Val && g1Val.endsWith(ticketNum.slice(-5))) ticketPrize += 30000000;
 
                 if (!isWildcard && ticketNum === gdbVal) {
                    ticketPrize += 2000000000;
