@@ -44,11 +44,11 @@ export const getDrawStats = async (req: Request, res: Response) => {
       if (endDate) drawQuery.closeTime.$lte = new Date(endDate as string);
     }
     
-    let drawsQueryObj = Draw.find(drawQuery).sort({ closeTime: -1 });
+    let drawsQueryObj = Draw.find(drawQuery).sort({ closeTime: -1 }).lean();
     if (limit > 0 && !startDate && !endDate) {
       drawsQueryObj = drawsQueryObj.limit(limit);
     }
-    const draws = await drawsQueryObj.populate('game');
+    const draws = await drawsQueryObj;
 
     // Stats Logic based on type
     if (type === 'vietlott' || type === 'keno') {

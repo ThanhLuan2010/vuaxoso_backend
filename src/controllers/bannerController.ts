@@ -5,7 +5,7 @@ import Banner from '../models/Banner';
 // Public: Lấy danh sách banner đang active
 export const getActiveBanners = async (req: any, res: Response) => {
   try {
-    const banners = await Banner.find({ isActive: true }).sort({ order: 1, createdAt: -1 });
+    const banners = await Banner.find({ isActive: true }).sort({ order: 1, createdAt: -1 }).lean();
     res.json(banners);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -15,7 +15,7 @@ export const getActiveBanners = async (req: any, res: Response) => {
 // Admin: Lấy tất cả banner
 export const getAllBanners = async (req: any, res: Response) => {
   try {
-    const banners = await Banner.find().sort({ order: 1, createdAt: -1 });
+    const banners = await Banner.find().sort({ order: 1, createdAt: -1 }).lean();
     res.json(banners);
   } catch (error: any) {
     res.status(500).json({ message: error.message });

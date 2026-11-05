@@ -4,7 +4,7 @@ import Province from '../models/Province';
 
 export const getAllProvinces = async (req: any, res: Response) => {
   try {
-    const provinces = await Province.find().sort({ region: 1, name: 1 });
+    const provinces = await Province.find().sort({ region: 1, name: 1 }).lean();
     res.json(provinces);
   } catch (error: any) {
     res.status(500).json({ message: error.message });

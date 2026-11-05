@@ -31,6 +31,7 @@ const notificationSchema = new Schema(
 );
 
 notificationSchema.index({ user: 1, isRead: 1 });
+notificationSchema.index({ user: 1, isHidden: 1, createdAt: -1 });
 notificationSchema.index({ readBy: 1 });
 notificationSchema.index({ createdAt: -1 });
 

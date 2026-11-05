@@ -3,17 +3,27 @@ import User from '../models/User';
 
 export const getDuplicateIPsAndDevices = async (req: Request, res: Response) => {
   try {
+    const userProjection = {
+      _id: '$_id',
+      phone: '$phone',
+      name: '$name',
+      role: '$role',
+      balance: '$balance',
+      isInfoUpdated: '$isInfoUpdated',
+      createdAt: '$createdAt'
+    };
+
     // Find duplicate IPs
     const ipAggregation = await User.aggregate([
       { $match: { loginIp: { $exists: true, $nin: [null, ''] } } },
-      { $group: { _id: '$loginIp', count: { $sum: 1 }, users: { $push: '$$ROOT' } } },
+      { $group: { _id: '$loginIp', count: { $sum: 1 }, users: { $push: userProjection } } },
       { $match: { count: { $gt: 1 } } }
     ]);
 
     // Find duplicate Devices
     const deviceAggregation = await User.aggregate([
       { $match: { loginDevice: { $exists: true, $nin: [null, ''] } } },
-      { $group: { _id: '$loginDevice', count: { $sum: 1 }, users: { $push: '$$ROOT' } } },
+      { $group: { _id: '$loginDevice', count: { $sum: 1 }, users: { $push: userProjection } } },
       { $match: { count: { $gt: 1 } } }
     ]);
 

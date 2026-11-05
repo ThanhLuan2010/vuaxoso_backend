@@ -255,7 +255,7 @@ export const getHistory = async (req: any, res: Response) => {
       filter.type = type;
     }
 
-    let query = Transaction.find(filter).sort({ createdAt: -1 });
+    let query = Transaction.find(filter).sort({ createdAt: -1 }).lean();
     if (page) {
       query = query.skip((page - 1) * limit).limit(limit);
     }
@@ -373,15 +373,17 @@ export const getAllTransactions = async (req: any, res: Response) => {
     const limitNum = limit ? parseInt(limit as string) : 20;
 
     const filter = andConditions.length > 0 ? { $and: andConditions } : {};
-    const total = await Transaction.countDocuments(filter);
 
-    let dbQuery = Transaction.find(filter).populate("user", "name phone").sort({ createdAt: -1 });
+    let dbQuery = Transaction.find(filter).populate("user", "name phone").sort({ createdAt: -1 }).lean();
 
     if (pageNum) {
       dbQuery = dbQuery.skip((pageNum - 1) * limitNum).limit(limitNum);
     }
 
-    const transactions = await dbQuery;
+    const [total, transactions] = await Promise.all([
+      Transaction.countDocuments(filter),
+      dbQuery
+    ]);
 
     if (pageNum) {
       res.json({
@@ -581,7 +583,8 @@ export const getMyBalanceHistory = async (req: any, res: Response) => {
     const history = await BalanceHistory.find({ user: req.user.id })
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
-      .limit(limit);
+      .limit(limit)
+      .lean();
       
     res.json(history);
   } catch (error: any) {

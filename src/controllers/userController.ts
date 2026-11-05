@@ -123,7 +123,12 @@ export const getUsers = async (req: AuthRequest, res: Response) => {
       pipeline.push({ $match: extraMatch });
     }
 
-    pipeline.push(
+    pipeline.push({ $sort: { createdAt: -1 } });
+
+    const pageNum = page ? parseInt(page as string) : undefined;
+    const limitNum = limit ? parseInt(limit as string) : 10;
+
+    const txLookupStages = [
       {
         $lookup: {
           from: 'transactions',
@@ -170,11 +175,8 @@ export const getUsers = async (req: AuthRequest, res: Response) => {
         $project: {
           txs: 0
         }
-      },
-      { $sort: { createdAt: -1 } }
-    );
-    const pageNum = page ? parseInt(page as string) : undefined;
-    const limitNum = limit ? parseInt(limit as string) : 10;
+      }
+    ];
 
     let rawUsers: any[] = [];
     let totalUsers = 0;
@@ -184,13 +186,18 @@ export const getUsers = async (req: AuthRequest, res: Response) => {
       pipeline.push({
         $facet: {
           metadata: [{ $count: "total" }],
-          data: [{ $skip: skipCount }, { $limit: limitNum }]
+          data: [
+            { $skip: skipCount },
+            { $limit: limitNum },
+            ...txLookupStages
+          ]
         }
       });
       const facetResult = await User.aggregate(pipeline);
       totalUsers = facetResult[0]?.metadata[0]?.total || 0;
       rawUsers = facetResult[0]?.data || [];
     } else {
+      pipeline.push(...txLookupStages);
       rawUsers = await User.aggregate(pipeline);
       totalUsers = rawUsers.length;
     }
@@ -636,12 +643,14 @@ export const getUserBalanceHistory = async (req: any, res: any) => {
     // We import here to avoid circular dependencies if any, or just require it
     const BalanceHistory = require('../models/BalanceHistory').default;
     
-    const history = await BalanceHistory.find({ user: id })
-      .sort({ createdAt: -1 })
-      .skip((Number(page) - 1) * Number(limit))
-      .limit(Number(limit));
-      
-    const total = await BalanceHistory.countDocuments({ user: id });
+    const [history, total] = await Promise.all([
+      BalanceHistory.find({ user: id })
+        .sort({ createdAt: -1 })
+        .skip((Number(page) - 1) * Number(limit))
+        .limit(Number(limit))
+        .lean(),
+      BalanceHistory.countDocuments({ user: id })
+    ]);
     
     res.json({
       history,
