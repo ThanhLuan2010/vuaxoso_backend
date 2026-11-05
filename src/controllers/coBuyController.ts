@@ -18,7 +18,7 @@ export const getRooms = async (req: any, res: Response) => {
       filter.gameType = gameType;
     }
 
-    let query = CoBuyRoom.find(filter).sort({ createdAt: -1 });
+    let query = CoBuyRoom.find(filter).sort({ createdAt: -1 }).lean();
     if (page) {
       query = query.skip((page - 1) * limit).limit(limit);
     }
@@ -43,7 +43,7 @@ export const getMyCoBuyHistory = async (req: any, res: Response) => {
       filter.status = "cancelled";
     }
 
-    let query = CoBuyRoom.find(filter).sort({ createdAt: -1 });
+    let query = CoBuyRoom.find(filter).sort({ createdAt: -1 }).lean();
     if (page) {
       query = query.skip((page - 1) * limit).limit(limit);
     }

@@ -9,10 +9,10 @@ export const getAdminAccounts = async (req: AuthRequest, res: Response) => {
   try {
     const admins = await User.find({ role: { $in: ["admin", "staff"] } })
       .select("-passwordHash -withdrawPasswordHash")
-      .sort({ isMasterAdmin: -1, createdAt: -1 });
+      .sort({ isMasterAdmin: -1, createdAt: -1 })
+      .lean();
     
-    const result = admins.map(admin => {
-      const obj = admin.toObject();
+    const result = admins.map((obj: any) => {
       return {
         _id: obj._id,
         name: obj.name,

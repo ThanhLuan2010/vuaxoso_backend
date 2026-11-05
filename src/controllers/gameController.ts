@@ -16,7 +16,7 @@ export const getGames = async (req: any, res: Response) => {
         { code: { $regex: normalizedSearch, $options: 'i' } }
       ];
     }
-    const games = await Game.find(query);
+    const games = await Game.find(query).lean();
     res.json(games);
   } catch (error: any) {
     res.status(500).json({ message: error.message });

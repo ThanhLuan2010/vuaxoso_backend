@@ -700,10 +700,14 @@ export const getMyOrders = async (req: any, res: Response) => {
     }
 
     const orders = await query;
-    for (const order of orders) {
-      if (order.drawId && mongoose.Types.ObjectId.isValid(order.drawId)) {
-        const draw = await Draw.findById(order.drawId).lean();
-        if (draw) order.drawId = draw.drawCode;
+    const drawIds = Array.from(new Set(orders.map((o: any) => o.drawId).filter((id: any) => id && mongoose.Types.ObjectId.isValid(id))));
+    if (drawIds.length > 0) {
+      const draws = await Draw.find({ _id: { $in: drawIds } }).select("_id drawCode").lean();
+      const drawMap = new Map(draws.map((d: any) => [d._id.toString(), d.drawCode]));
+      for (const order of orders) {
+        if (order.drawId && drawMap.has(order.drawId.toString())) {
+          order.drawId = drawMap.get(order.drawId.toString());
+        }
       }
     }
     res.json(orders);
@@ -830,6 +834,13 @@ export const getAllOrders = async (req: any, res: Response) => {
 
     const orders = await dbQuery;
 
+    const drawIds = Array.from(new Set(orders.map((o: any) => o.drawId).filter((id: any) => id && mongoose.Types.ObjectId.isValid(id))));
+    const drawMap = new Map();
+    if (drawIds.length > 0) {
+      const draws = await Draw.find({ _id: { $in: drawIds } }).select("_id drawCode drawTime closeTime").lean();
+      draws.forEach((d: any) => drawMap.set(d._id.toString(), d));
+    }
+
     for (const order of orders) {
       if (order.user && typeof (order.user as any).phone === "string") {
         (order.user as any).phone = EncryptionHelper.decryptDeterministic((order.user as any).phone);
@@ -841,14 +852,12 @@ export const getAllOrders = async (req: any, res: Response) => {
         order.loginDevice = (order.user as any)?.loginDevice || "";
       }
       
-      if (order.drawId && mongoose.Types.ObjectId.isValid(order.drawId)) {
-        const draw = await Draw.findById(order.drawId).lean();
-        if (draw) {
-          order.drawId = draw.drawCode;
-          if (!order.drawDate && (draw.drawTime || draw.closeTime)) {
-            const timeToDisplay = draw.drawTime || draw.closeTime;
-            order.drawDate = new Date(timeToDisplay).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
-          }
+      if (order.drawId && drawMap.has(order.drawId.toString())) {
+        const draw = drawMap.get(order.drawId.toString());
+        order.drawId = draw.drawCode;
+        if (!order.drawDate && (draw.drawTime || draw.closeTime)) {
+          const timeToDisplay = draw.drawTime || draw.closeTime;
+          order.drawDate = new Date(timeToDisplay).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
         }
       }
     }
@@ -955,42 +964,108 @@ export const getOrderSummary = async (req: any, res: Response) => {
 
     const query = andConditions.length > 0 ? { $and: andConditions } : {};
 
-    const allOrders = await Order.find(query).select("status isWinner prizeAmount winningNumbers totalCost user").lean();
-
-    let totalTickets = 0;
-    let totalSales = 0;
-    let totalPrize = 0;
-    let winCount = 0;
-    let loseCount = 0;
-    let pendingCount = 0;
-    let cancelledCount = 0;
-
-    allOrders.forEach(order => {
-      if (order.status === "cancelled") {
-        cancelledCount++;
-        return;
+    const stats = await Order.aggregate([
+      { $match: query },
+      {
+        $group: {
+          _id: null,
+          totalTickets: { $sum: { $cond: [{ $eq: ["$status", "cancelled"] }, 0, 1] } },
+          cancelledCount: { $sum: { $cond: [{ $eq: ["$status", "cancelled"] }, 1, 0] } },
+          totalSales: { $sum: { $cond: [{ $eq: ["$status", "cancelled"] }, 0, { $ifNull: ["$totalCost", 0] }] } },
+          totalPrize: {
+            $sum: {
+              $cond: [
+                { $eq: ["$status", "cancelled"] },
+                0,
+                {
+                  $cond: [
+                    { $or: [{ $eq: ["$isWinner", true] }, { $gt: ["$prizeAmount", 0] }] },
+                    { $ifNull: ["$prizeAmount", 0] },
+                    0
+                  ]
+                }
+              ]
+            }
+          },
+          winCount: {
+            $sum: {
+              $cond: [
+                { $eq: ["$status", "cancelled"] },
+                0,
+                { $cond: [{ $or: [{ $eq: ["$isWinner", true] }, { $gt: ["$prizeAmount", 0] }] }, 1, 0] }
+              ]
+            }
+          },
+          pendingCount: {
+            $sum: {
+              $cond: [
+                { $eq: ["$status", "cancelled"] },
+                0,
+                {
+                  $cond: [
+                    {
+                      $and: [
+                        { $ne: ["$isWinner", true] },
+                        { $or: [{ $eq: ["$prizeAmount", 0] }, { $eq: [{ $ifNull: ["$prizeAmount", null] }, null] }] },
+                        {
+                          $or: [
+                            { $eq: [{ $ifNull: ["$winningNumbers", null] }, null] },
+                            { $eq: [{ $size: { $ifNull: ["$winningNumbers", []] } }, 0] }
+                          ]
+                        }
+                      ]
+                    },
+                    1,
+                    0
+                  ]
+                }
+              ]
+            }
+          },
+          loseCount: {
+            $sum: {
+              $cond: [
+                { $eq: ["$status", "cancelled"] },
+                0,
+                {
+                  $cond: [
+                    {
+                      $and: [
+                        { $ne: ["$isWinner", true] },
+                        { $or: [{ $eq: ["$prizeAmount", 0] }, { $eq: [{ $ifNull: ["$prizeAmount", null] }, null] }] },
+                        { $gt: [{ $size: { $ifNull: ["$winningNumbers", []] } }, 0] }
+                      ]
+                    },
+                    1,
+                    0
+                  ]
+                }
+              ]
+            }
+          }
+        }
       }
-      totalTickets++;
-      totalSales += order.totalCost || 0;
-      if (order.isWinner || (order.prizeAmount && order.prizeAmount > 0)) {
-        totalPrize += order.prizeAmount || 0;
-        winCount++;
-      } else if (!order.winningNumbers || order.winningNumbers.length === 0) {
-        pendingCount++;
-      } else {
-        loseCount++;
-      }
-    });
+    ]);
+
+    const s = stats[0] || {
+      totalTickets: 0,
+      totalSales: 0,
+      totalPrize: 0,
+      winCount: 0,
+      loseCount: 0,
+      pendingCount: 0,
+      cancelledCount: 0
+    };
 
     res.json({
-      totalTickets,
-      totalSales,
-      totalPrize,
-      totalLoss: totalSales - totalPrize,
-      winCount,
-      loseCount,
-      pendingCount,
-      cancelledCount
+      totalTickets: s.totalTickets || 0,
+      totalSales: s.totalSales || 0,
+      totalPrize: s.totalPrize || 0,
+      totalLoss: (s.totalSales || 0) - (s.totalPrize || 0),
+      winCount: s.winCount || 0,
+      loseCount: s.loseCount || 0,
+      pendingCount: s.pendingCount || 0,
+      cancelledCount: s.cancelledCount || 0
     });
   } catch (error: any) {
     res.status(500).json({ message: error.message });

@@ -25,4 +25,8 @@ const balanceHistorySchema = new Schema<IBalanceHistory>(
   { timestamps: true }
 );
 
+balanceHistorySchema.index({ user: 1, createdAt: -1 });
+balanceHistorySchema.index({ createdAt: -1 });
+balanceHistorySchema.index({ type: 1, createdAt: -1 });
+
 export default mongoose.model<IBalanceHistory>('BalanceHistory', balanceHistorySchema);

@@ -4,7 +4,7 @@ import Cart, { ICartItem } from '../models/Cart';
 export const getCart = async (req: any, res: Response) => {
   try {
     const userId = req.user._id || req.user.id;
-    const cart = await Cart.findOne({ user: userId });
+    const cart = await Cart.findOne({ user: userId }).lean();
     return res.json({
       success: true,
       items: cart?.items || []

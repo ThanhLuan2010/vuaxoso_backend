@@ -47,7 +47,7 @@ export const getAllTickets = async (req: any, res: Response) => {
     const skip = (page - 1) * limit;
 
     const [tickets, total] = await Promise.all([
-      Ticket.find(query).sort({ drawDate: -1, createdAt: -1 }).skip(skip).limit(limit),
+      Ticket.find(query).sort({ drawDate: -1, createdAt: -1 }).skip(skip).limit(limit).lean(),
       Ticket.countDocuments(query)
     ]);
 

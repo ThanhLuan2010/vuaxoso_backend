@@ -132,4 +132,9 @@ const userSchema = new Schema<IUser>(
   }
 );
 
+userSchema.index({ role: 1, createdAt: -1 });
+userSchema.index({ status: 1, createdAt: -1 });
+userSchema.index({ createdAt: -1 });
+userSchema.index({ name: 1 });
+
 export default mongoose.model<IUser>('User', userSchema);

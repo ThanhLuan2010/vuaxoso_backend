@@ -204,11 +204,27 @@ export const ensureKienThietDraws = async () => {
   }
 };
 
+let lastActiveSyncTime = 0;
+let cachedProvinceMap = new Map();
+let cachedProvincesTime = 0;
+
 export const getActiveDraws = async (req: any, res: Response) => {
   try {
+    const now = new Date();
+    const nowMs = Date.now();
+
+    // Fast-path: Nếu vừa đồng bộ các kỳ quay trong vòng 20 giây qua, trả về kết quả ngay lập tức
+    if (nowMs - lastActiveSyncTime < 20 * 1000) {
+      const draws = await Draw.find({ status: 'open', closeTime: { $gt: now } })
+        .populate('game')
+        .sort({ closeTime: 1 })
+        .lean();
+      return res.json(draws);
+    }
+    lastActiveSyncTime = nowMs;
+
     const Game = require('../models/Game').default;
     const games = await Game.find({ isActive: true });
-    const now = new Date();
 
     // Auto-close any expired non-Keno open draws
     await Draw.updateMany(
@@ -482,7 +498,7 @@ export const getActiveDraws = async (req: any, res: Response) => {
       }
     }
 
-    const draws = await Draw.find({ status: 'open', closeTime: { $gt: now } }).populate('game').sort({ closeTime: 1 });
+    const draws = await Draw.find({ status: 'open', closeTime: { $gt: now } }).populate('game').sort({ closeTime: 1 }).lean();
     res.json(draws);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -535,15 +551,18 @@ export const getDrawResults = async (req: any, res: Response) => {
       .limit(limit)
       .lean();
 
-    // Attach province details if available
-    const Province = require('../models/Province').default;
-    const provinces = await Province.find().lean();
-    const provinceMap = new Map();
-    provinces.forEach((p: any) => provinceMap.set(p.provinceId, p));
+    // Attach province details if available (using 5-minute memory cache)
+    if (cachedProvinceMap.size === 0 || Date.now() - cachedProvincesTime > 5 * 60 * 1000) {
+      const Province = require('../models/Province').default;
+      const provinces = await Province.find().lean();
+      cachedProvinceMap = new Map();
+      provinces.forEach((p: any) => cachedProvinceMap.set(p.provinceId, p));
+      cachedProvincesTime = Date.now();
+    }
 
     const enrichedDraws = draws.map((d: any) => {
-      if (d.provinceId && provinceMap.has(d.provinceId)) {
-        d.province = provinceMap.get(d.provinceId);
+      if (d.provinceId && cachedProvinceMap.has(d.provinceId)) {
+        d.province = cachedProvinceMap.get(d.provinceId);
       }
       return d;
     });
