@@ -78,6 +78,9 @@ export const checkoutOrders = async (req: any, res: Response) => {
           const gameDoc = gameCache[searchGameCode];
 
           let draw: any = null;
+          const isLodeOrRegion = ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn"].includes(searchGameCode);
+          const isScheduledDate = (typeof drawId === "string" && (drawId.startsWith("sched_") || /^\d{2}\/\d{2}\/\d{4}/.test(drawId))) || (drawDate && /^\d{2}\/\d{2}\/\d{4}/.test(drawDate));
+
           if (drawId === "DUMMY_DRAW_ID") {
             if (gameDoc) {
               draw = await Draw.findOne({ game: gameDoc._id, status: "open", closeTime: { $gt: now } }).sort({ closeTime: 1 });
@@ -85,16 +88,28 @@ export const checkoutOrders = async (req: any, res: Response) => {
           } else if (mongoose.Types.ObjectId.isValid(drawId)) {
             draw = await Draw.findById(drawId);
           } else if (typeof drawId === "string" && drawId.trim().length > 0) {
-            if (gameDoc) {
-              const cleanCode = drawId.startsWith("#") ? drawId : `#${drawId}`;
+            const cleanCode = drawId.startsWith("#") ? drawId : `#${drawId}`;
+            if (isLodeOrRegion) {
+              const relatedGames = await Game.find({ code: { $in: ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn"] } }).select("_id");
+              const relatedGameIds = relatedGames.map(g => g._id);
+              draw = await Draw.findOne({ game: { $in: relatedGameIds }, drawCode: { $in: [drawId, cleanCode] } });
+            } else if (gameDoc) {
               draw = await Draw.findOne({ game: gameDoc._id, drawCode: { $in: [drawId, cleanCode] } });
+            }
+            if (!draw) {
+              draw = await Draw.findOne({ drawCode: { $in: [drawId, cleanCode] } });
             }
           }
 
-          if (!draw || draw.status !== "open" || now > draw.closeTime) {
-            if (gameDoc) {
-              const fallbackDraw = await Draw.findOne({ game: gameDoc._id, status: "open", closeTime: { $gt: now } }).sort({ closeTime: 1 });
-              if (fallbackDraw) draw = fallbackDraw;
+          if (isLodeOrRegion && isScheduledDate && !draw) {
+            // Đối với vé lô đề đặt trước theo ngày tương lai không có kỳ CMS, giữ nguyên ngày/drawId
+            drawId = drawDate || (typeof drawId === "string" ? drawId.replace("sched_", "") : drawId);
+          } else {
+            if (!draw || draw.status !== "open" || now > draw.closeTime) {
+              if (gameDoc) {
+                const fallbackDraw = await Draw.findOne({ game: gameDoc._id, status: "open", closeTime: { $gt: now } }).sort({ closeTime: 1 });
+                if (fallbackDraw) draw = fallbackDraw;
+              }
             }
           }
 
@@ -415,6 +430,8 @@ export const createOrder = async (req: any, res: Response) => {
       let draw;
       const searchGameCode = gameType.includes('max_3d') ? 'max_3d' : ((gameType === 'bao_keno' || gameType === 'clln_keno') ? 'keno' : gameType);
       const gameDoc = await Game.findOne({ code: searchGameCode });
+      const isLodeOrRegion = ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn"].includes(searchGameCode);
+      const isScheduledDate = (typeof drawId === "string" && (drawId.startsWith("sched_") || /^\d{2}\/\d{2}\/\d{4}/.test(drawId))) || (drawDate && /^\d{2}\/\d{2}\/\d{4}/.test(drawDate));
 
       if (drawId === 'DUMMY_DRAW_ID') {
         if (!gameDoc) {
@@ -424,28 +441,39 @@ export const createOrder = async (req: any, res: Response) => {
       } else if (mongoose.Types.ObjectId.isValid(drawId)) {
         draw = await Draw.findById(drawId);
       } else if (typeof drawId === 'string' && drawId.trim().length > 0) {
-        if (gameDoc) {
-          const cleanCode = drawId.startsWith('#') ? drawId : `#${drawId}`;
+        const cleanCode = drawId.startsWith('#') ? drawId : `#${drawId}`;
+        if (isLodeOrRegion) {
+          const relatedGames = await Game.find({ code: { $in: ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn"] } }).select("_id");
+          const relatedGameIds = relatedGames.map(g => g._id);
+          draw = await Draw.findOne({ game: { $in: relatedGameIds }, drawCode: { $in: [drawId, cleanCode] } });
+        } else if (gameDoc) {
           draw = await Draw.findOne({ game: gameDoc._id, drawCode: { $in: [drawId, cleanCode] } });
         }
-      }
-
-      // If draw not found or specified draw is closed/expired, fallback to current active open draw for this game
-      if (!draw || draw.status !== 'open' || now > draw.closeTime) {
-        if (gameDoc) {
-          const fallbackDraw = await Draw.findOne({ game: gameDoc._id, status: 'open', closeTime: { $gt: now } }).sort({ closeTime: 1 });
-          if (fallbackDraw) {
-            draw = fallbackDraw;
-          }
+        if (!draw) {
+          draw = await Draw.findOne({ drawCode: { $in: [drawId, cleanCode] } });
         }
       }
 
-      if (!draw) {
-        return res.status(400).json({ message: 'Không tìm thấy kỳ quay khả dụng' });
-      }
+      if (isLodeOrRegion && isScheduledDate && !draw) {
+        drawId = drawDate || (typeof drawId === "string" ? drawId.replace("sched_", "") : drawId);
+      } else {
+        // If draw not found or specified draw is closed/expired, fallback to current active open draw for this game
+        if (!draw || draw.status !== 'open' || now > draw.closeTime) {
+          if (gameDoc) {
+            const fallbackDraw = await Draw.findOne({ game: gameDoc._id, status: 'open', closeTime: { $gt: now } }).sort({ closeTime: 1 });
+            if (fallbackDraw) {
+              draw = fallbackDraw;
+            }
+          }
+        }
 
-      // Update drawId for order creation
-      drawId = draw._id;
+        if (!draw) {
+          return res.status(400).json({ message: 'Không tìm thấy kỳ quay khả dụng' });
+        }
+
+        // Update drawId for order creation
+        drawId = draw._id;
+      }
     }
     // --- END CHECK TIME LIMIT ---
 
