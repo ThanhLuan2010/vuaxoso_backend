@@ -1226,8 +1226,10 @@ export const processDrawResults = async (drawId: string) => {
               const defaultRate = isMB ? 16 : 28;
               const rate = (game.payoutRates && (game.payoutRates['Xiên 2'] || game.payoutRates['xien_2'])) ?? defaultRate;
               let boardPrize = 0;
-              board.numbers.forEach((itemStr) => {
-                const pair = itemStr.includes('&') ? itemStr.split('&').map(s => s.trim()) : board.numbers;
+              const combos = (board.numbers || []).some(n => n.includes('&'))
+                ? (board.numbers || []).map(s => s.split('&').map(x => x.trim()))
+                : [(board.numbers || []).map(x => x.trim())];
+              combos.forEach((pair) => {
                 if (pair.length >= 2 && pair.every(n => allLast2.includes(n))) {
                   boardPrize += Math.round(betPerNum * rate);
                 }
@@ -1242,8 +1244,10 @@ export const processDrawResults = async (drawId: string) => {
               const defaultRate = isMB ? 65 : 150;
               const rate = (game.payoutRates && (game.payoutRates['Xiên 3'] || game.payoutRates['xien_3'])) ?? defaultRate;
               let boardPrize = 0;
-              board.numbers.forEach((itemStr) => {
-                const trip = itemStr.includes('&') ? itemStr.split('&').map(s => s.trim()) : board.numbers;
+              const combos = (board.numbers || []).some(n => n.includes('&'))
+                ? (board.numbers || []).map(s => s.split('&').map(x => x.trim()))
+                : [(board.numbers || []).map(x => x.trim())];
+              combos.forEach((trip) => {
                 if (trip.length >= 3 && trip.every(n => allLast2.includes(n))) {
                   boardPrize += Math.round(betPerNum * rate);
                 }
@@ -1258,8 +1262,10 @@ export const processDrawResults = async (drawId: string) => {
               const defaultRate = isMB ? 180 : 750;
               const rate = (game.payoutRates && (game.payoutRates['Xiên 4'] || game.payoutRates['xien_4'])) ?? defaultRate;
               let boardPrize = 0;
-              board.numbers.forEach((itemStr) => {
-                const quad = itemStr.includes('&') ? itemStr.split('&').map(s => s.trim()) : board.numbers;
+              const combos = (board.numbers || []).some(n => n.includes('&'))
+                ? (board.numbers || []).map(s => s.split('&').map(x => x.trim()))
+                : [(board.numbers || []).map(x => x.trim())];
+              combos.forEach((quad) => {
                 if (quad.length >= 4 && quad.every(n => allLast2.includes(n))) {
                   boardPrize += Math.round(betPerNum * rate);
                 }
@@ -1281,8 +1287,10 @@ export const processDrawResults = async (drawId: string) => {
               const rate = (rateKey && game.payoutRates[rateKey]) ? game.payoutRates[rateKey] : defaultRate;
 
               let boardPrize = 0;
-              board.numbers.forEach((itemStr) => {
-                const nums = itemStr.includes('&') ? itemStr.split('&').map(s => s.trim()) : board.numbers;
+              const combos = (board.numbers || []).some(n => n.includes('&'))
+                ? (board.numbers || []).map(s => s.split('&').map(x => x.trim()))
+                : [(board.numbers || []).map(x => x.trim())];
+              combos.forEach((nums) => {
                 if (nums.length > 0 && nums.every(n => !allLast2.includes(n))) {
                   boardPrize += Math.round(betPerNum * rate);
                 }
