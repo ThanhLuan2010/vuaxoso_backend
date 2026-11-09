@@ -47,11 +47,11 @@ const getDrawStats = async (req, res) => {
             if (endDate)
                 drawQuery.closeTime.$lte = new Date(endDate);
         }
-        let drawsQueryObj = Draw_1.default.find(drawQuery).sort({ closeTime: -1 });
+        let drawsQueryObj = Draw_1.default.find(drawQuery).sort({ closeTime: -1 }).lean();
         if (limit > 0 && !startDate && !endDate) {
             drawsQueryObj = drawsQueryObj.limit(limit);
         }
-        const draws = await drawsQueryObj.populate('game');
+        const draws = await drawsQueryObj;
         // Stats Logic based on type
         if (type === 'vietlott' || type === 'keno') {
             let maxNum = 80;

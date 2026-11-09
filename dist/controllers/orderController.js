@@ -70,7 +70,7 @@ const checkoutOrders = async (req, res) => {
                 }
             }
             else {
-                const cacheKey = `${gameType}_${drawId}`;
+                const cacheKey = `${gameType}_${drawId}_${provinceName || ""}_${drawDate || ""}`;
                 if (!drawCache[cacheKey]) {
                     const searchGameCode = gameType.includes("max_3d") ? "max_3d" : ((gameType === "bao_keno" || gameType === "clln_keno") ? "keno" : gameType);
                     if (!gameCache[searchGameCode]) {
@@ -78,6 +78,8 @@ const checkoutOrders = async (req, res) => {
                     }
                     const gameDoc = gameCache[searchGameCode];
                     let draw = null;
+                    const isLodeOrRegion = ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn"].includes(searchGameCode);
+                    const isScheduledDate = (typeof drawId === "string" && (drawId.startsWith("sched_") || /^\d{2}\/\d{2}\/\d{4}/.test(drawId))) || (drawDate && /^\d{2}\/\d{2}\/\d{4}/.test(drawDate));
                     if (drawId === "DUMMY_DRAW_ID") {
                         if (gameDoc) {
                             draw = await Draw_1.default.findOne({ game: gameDoc._id, status: "open", closeTime: { $gt: now } }).sort({ closeTime: 1 });
@@ -87,16 +89,71 @@ const checkoutOrders = async (req, res) => {
                         draw = await Draw_1.default.findById(drawId);
                     }
                     else if (typeof drawId === "string" && drawId.trim().length > 0) {
-                        if (gameDoc) {
-                            const cleanCode = drawId.startsWith("#") ? drawId : `#${drawId}`;
+                        const cleanCode = drawId.startsWith("#") ? drawId : `#${drawId}`;
+                        if (isLodeOrRegion) {
+                            const relatedGames = await Game_1.default.find({ code: { $in: ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn"] } }).select("_id");
+                            const relatedGameIds = relatedGames.map(g => g._id);
+                            draw = await Draw_1.default.findOne({ game: { $in: relatedGameIds }, drawCode: { $in: [drawId, cleanCode] } });
+                        }
+                        else if (gameDoc) {
                             draw = await Draw_1.default.findOne({ game: gameDoc._id, drawCode: { $in: [drawId, cleanCode] } });
                         }
+                        if (!draw) {
+                            draw = await Draw_1.default.findOne({ drawCode: { $in: [drawId, cleanCode] } });
+                        }
                     }
-                    if (!draw || draw.status !== "open" || now > draw.closeTime) {
-                        if (gameDoc) {
-                            const fallbackDraw = await Draw_1.default.findOne({ game: gameDoc._id, status: "open", closeTime: { $gt: now } }).sort({ closeTime: 1 });
-                            if (fallbackDraw)
-                                draw = fallbackDraw;
+                    // Khớp kỳ quay theo ngày và đài đối với Lô Đề / XSKT nếu chưa tìm thấy draw theo drawId
+                    if (!draw && isLodeOrRegion) {
+                        const targetDateStr = drawDate || (typeof drawId === "string" && /^\d{2}\/\d{2}\/\d{4}/.test(drawId) ? drawId : null);
+                        if (targetDateStr) {
+                            const dateParts = targetDateStr.split('/');
+                            if (dateParts.length === 3) {
+                                const day = parseInt(dateParts[0], 10);
+                                const month = parseInt(dateParts[1], 10);
+                                const year = parseInt(dateParts[2], 10);
+                                const startOfDay = new Date(Date.UTC(year, month - 1, day, 0 - 7, 0, 0));
+                                const endOfDay = new Date(Date.UTC(year, month - 1, day, 23 - 7, 59, 59, 999));
+                                const relatedGames = await Game_1.default.find({ code: { $in: ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn"] } }).select("_id");
+                                const relatedGameIds = relatedGames.map(g => g._id);
+                                let provCode = null;
+                                if (provinceName) {
+                                    const prov = await Province_1.default.findOne({
+                                        $or: [
+                                            { name: new RegExp(`^${provinceName.trim()}$`, "i") },
+                                            { provinceId: new RegExp(`^${provinceName.trim()}$`, "i") },
+                                            { code: new RegExp(`^${provinceName.trim()}$`, "i") }
+                                        ]
+                                    }).lean();
+                                    if (prov)
+                                        provCode = prov.provinceId;
+                                }
+                                if (provCode) {
+                                    draw = await Draw_1.default.findOne({
+                                        game: { $in: relatedGameIds },
+                                        provinceId: { $in: [provCode, provinceName] },
+                                        closeTime: { $gte: startOfDay, $lte: endOfDay }
+                                    }).sort({ closeTime: 1 });
+                                }
+                                if (!draw) {
+                                    draw = await Draw_1.default.findOne({
+                                        game: { $in: relatedGameIds },
+                                        closeTime: { $gte: startOfDay, $lte: endOfDay }
+                                    }).sort({ closeTime: 1 });
+                                }
+                            }
+                        }
+                    }
+                    if (isLodeOrRegion && isScheduledDate && !draw) {
+                        // Đối với vé lô đề đặt trước theo ngày tương lai không có kỳ CMS, giữ nguyên ngày/drawId
+                        drawId = (typeof drawId === "string" && drawId.startsWith("#")) ? drawId : (drawDate || (typeof drawId === "string" ? drawId.replace("sched_", "") : drawId));
+                    }
+                    else {
+                        if (!draw || draw.status !== "open" || now > draw.closeTime) {
+                            if (gameDoc) {
+                                const fallbackDraw = await Draw_1.default.findOne({ game: gameDoc._id, status: "open", closeTime: { $gt: now } }).sort({ closeTime: 1 });
+                                if (fallbackDraw)
+                                    draw = fallbackDraw;
+                            }
                         }
                     }
                     drawCache[cacheKey] = draw ? draw._id : drawId;
@@ -395,6 +452,8 @@ const createOrder = async (req, res) => {
             let draw;
             const searchGameCode = gameType.includes('max_3d') ? 'max_3d' : ((gameType === 'bao_keno' || gameType === 'clln_keno') ? 'keno' : gameType);
             const gameDoc = await Game_1.default.findOne({ code: searchGameCode });
+            const isLodeOrRegion = ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn"].includes(searchGameCode);
+            const isScheduledDate = (typeof drawId === "string" && (drawId.startsWith("sched_") || /^\d{2}\/\d{2}\/\d{4}/.test(drawId))) || (drawDate && /^\d{2}\/\d{2}\/\d{4}/.test(drawDate));
             if (drawId === 'DUMMY_DRAW_ID') {
                 if (!gameDoc) {
                     return res.status(400).json({ message: 'Không tìm thấy loại hình vé số này' });
@@ -405,25 +464,80 @@ const createOrder = async (req, res) => {
                 draw = await Draw_1.default.findById(drawId);
             }
             else if (typeof drawId === 'string' && drawId.trim().length > 0) {
-                if (gameDoc) {
-                    const cleanCode = drawId.startsWith('#') ? drawId : `#${drawId}`;
+                const cleanCode = drawId.startsWith('#') ? drawId : `#${drawId}`;
+                if (isLodeOrRegion) {
+                    const relatedGames = await Game_1.default.find({ code: { $in: ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn"] } }).select("_id");
+                    const relatedGameIds = relatedGames.map(g => g._id);
+                    draw = await Draw_1.default.findOne({ game: { $in: relatedGameIds }, drawCode: { $in: [drawId, cleanCode] } });
+                }
+                else if (gameDoc) {
                     draw = await Draw_1.default.findOne({ game: gameDoc._id, drawCode: { $in: [drawId, cleanCode] } });
                 }
+                if (!draw) {
+                    draw = await Draw_1.default.findOne({ drawCode: { $in: [drawId, cleanCode] } });
+                }
             }
-            // If draw not found or specified draw is closed/expired, fallback to current active open draw for this game
-            if (!draw || draw.status !== 'open' || now > draw.closeTime) {
-                if (gameDoc) {
-                    const fallbackDraw = await Draw_1.default.findOne({ game: gameDoc._id, status: 'open', closeTime: { $gt: now } }).sort({ closeTime: 1 });
-                    if (fallbackDraw) {
-                        draw = fallbackDraw;
+            // Khớp kỳ quay theo ngày và đài đối với Lô Đề / XSKT nếu chưa tìm thấy draw theo drawId
+            if (!draw && isLodeOrRegion) {
+                const targetDateStr = drawDate || (typeof drawId === 'string' && /^\d{2}\/\d{2}\/\d{4}/.test(drawId) ? drawId : null);
+                if (targetDateStr) {
+                    const dateParts = targetDateStr.split('/');
+                    if (dateParts.length === 3) {
+                        const day = parseInt(dateParts[0], 10);
+                        const month = parseInt(dateParts[1], 10);
+                        const year = parseInt(dateParts[2], 10);
+                        const startOfDay = new Date(Date.UTC(year, month - 1, day, 0 - 7, 0, 0));
+                        const endOfDay = new Date(Date.UTC(year, month - 1, day, 23 - 7, 59, 59, 999));
+                        const relatedGames = await Game_1.default.find({ code: { $in: ['xoso_3mien', 'lode', 'MB', 'MT', 'MN', 'mb', 'mt', 'mn'] } }).select('_id');
+                        const relatedGameIds = relatedGames.map(g => g._id);
+                        let provCode = null;
+                        if (provinceName) {
+                            const prov = await Province_1.default.findOne({
+                                $or: [
+                                    { name: new RegExp(`^${provinceName.trim()}$`, 'i') },
+                                    { provinceId: new RegExp(`^${provinceName.trim()}$`, 'i') },
+                                    { code: new RegExp(`^${provinceName.trim()}$`, 'i') }
+                                ]
+                            }).lean();
+                            if (prov)
+                                provCode = prov.provinceId;
+                        }
+                        if (provCode) {
+                            draw = await Draw_1.default.findOne({
+                                game: { $in: relatedGameIds },
+                                provinceId: { $in: [provCode, provinceName] },
+                                closeTime: { $gte: startOfDay, $lte: endOfDay }
+                            }).sort({ closeTime: 1 });
+                        }
+                        if (!draw) {
+                            draw = await Draw_1.default.findOne({
+                                game: { $in: relatedGameIds },
+                                closeTime: { $gte: startOfDay, $lte: endOfDay }
+                            }).sort({ closeTime: 1 });
+                        }
                     }
                 }
             }
-            if (!draw) {
-                return res.status(400).json({ message: 'Không tìm thấy kỳ quay khả dụng' });
+            if (isLodeOrRegion && isScheduledDate && !draw) {
+                // Đối với vé lô đề đặt trước theo ngày tương lai không có kỳ CMS, giữ nguyên ngày/drawId
+                drawId = (typeof drawId === 'string' && drawId.startsWith('#')) ? drawId : (drawDate || (typeof drawId === 'string' ? drawId.replace('sched_', '') : drawId));
             }
-            // Update drawId for order creation
-            drawId = draw._id;
+            else {
+                // If draw not found or specified draw is closed/expired, fallback to current active open draw for this game
+                if (!draw || draw.status !== 'open' || now > draw.closeTime) {
+                    if (gameDoc) {
+                        const fallbackDraw = await Draw_1.default.findOne({ game: gameDoc._id, status: 'open', closeTime: { $gt: now } }).sort({ closeTime: 1 });
+                        if (fallbackDraw) {
+                            draw = fallbackDraw;
+                        }
+                    }
+                }
+                if (!draw) {
+                    return res.status(400).json({ message: 'Không tìm thấy kỳ quay khả dụng' });
+                }
+                // Update drawId for order creation
+                drawId = draw._id;
+            }
         }
         // --- END CHECK TIME LIMIT ---
         // --- CHECK BET LIMITS ---
@@ -669,11 +783,63 @@ const getMyOrders = async (req, res) => {
             query = query.skip((page - 1) * limit).limit(limit);
         }
         const orders = await query;
-        for (const order of orders) {
-            if (order.drawId && mongoose_1.default.Types.ObjectId.isValid(order.drawId)) {
-                const draw = await Draw_1.default.findById(order.drawId).lean();
-                if (draw)
-                    order.drawId = draw.drawCode;
+        const drawIds = Array.from(new Set(orders.map((o) => o.drawId).filter((id) => id && mongoose_1.default.Types.ObjectId.isValid(id))));
+        if (drawIds.length > 0) {
+            const draws = await Draw_1.default.find({ _id: { $in: drawIds } }).select("_id drawCode").lean();
+            const drawMap = new Map(draws.map((d) => [d._id.toString(), d.drawCode]));
+            for (const order of orders) {
+                if (order.drawId && drawMap.has(order.drawId.toString())) {
+                    order.drawId = drawMap.get(order.drawId.toString());
+                }
+            }
+        }
+        // Tự động khôi phục số kỳ quay (#number) cho các đơn vé đang bị thiếu hoặc chỉ lưu ngày
+        const unresolvedOrders = orders.filter((o) => !o.drawId || !String(o.drawId).startsWith("#"));
+        if (unresolvedOrders.length > 0) {
+            const relatedGames = await Game_1.default.find({ code: { $in: ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn"] } }).select("_id").lean();
+            const relatedGameIds = relatedGames.map(g => g._id);
+            const provinces = await Province_1.default.find({}).lean();
+            const provMap = new Map();
+            provinces.forEach((p) => {
+                if (p.name)
+                    provMap.set(p.name.toLowerCase().trim(), p.provinceId);
+                if (p.code)
+                    provMap.set(p.code.toLowerCase().trim(), p.provinceId);
+                if (p.provinceId)
+                    provMap.set(p.provinceId.toLowerCase().trim(), p.provinceId);
+            });
+            for (const order of unresolvedOrders) {
+                const targetDateStr = order.drawDate || (typeof order.drawId === "string" && /^\d{2}\/\d{2}\/\d{4}/.test(order.drawId) ? order.drawId : null);
+                if (targetDateStr) {
+                    const dateParts = targetDateStr.split('/');
+                    if (dateParts.length === 3) {
+                        const day = parseInt(dateParts[0], 10);
+                        const month = parseInt(dateParts[1], 10);
+                        const year = parseInt(dateParts[2], 10);
+                        const startOfDay = new Date(Date.UTC(year, month - 1, day, 0 - 7, 0, 0));
+                        const endOfDay = new Date(Date.UTC(year, month - 1, day, 23 - 7, 59, 59, 999));
+                        const provKey = order.provinceName ? order.provinceName.toLowerCase().trim() : '';
+                        const provId = provMap.get(provKey);
+                        let matchedDraw = null;
+                        if (provId) {
+                            matchedDraw = await Draw_1.default.findOne({
+                                game: { $in: relatedGameIds },
+                                provinceId: { $in: [provId, order.provinceName].filter(Boolean) },
+                                closeTime: { $gte: startOfDay, $lte: endOfDay }
+                            }).select("_id drawCode").lean();
+                        }
+                        if (!matchedDraw) {
+                            matchedDraw = await Draw_1.default.findOne({
+                                game: { $in: relatedGameIds },
+                                closeTime: { $gte: startOfDay, $lte: endOfDay }
+                            }).select("_id drawCode").lean();
+                        }
+                        if (matchedDraw && matchedDraw.drawCode) {
+                            order.drawId = matchedDraw.drawCode;
+                            Order_1.default.updateOne({ _id: order._id }, { $set: { drawId: matchedDraw.drawCode } }).catch(() => { });
+                        }
+                    }
+                }
             }
         }
         res.json(orders);
@@ -685,7 +851,14 @@ const getMyOrders = async (req, res) => {
 exports.getMyOrders = getMyOrders;
 const getOrderById = async (req, res) => {
     try {
-        const order = await Order_1.default.findById(req.params.id).lean();
+        const idOrCode = req.params.id;
+        let order = null;
+        if (mongoose_1.default.Types.ObjectId.isValid(idOrCode)) {
+            order = await Order_1.default.findById(idOrCode).lean();
+        }
+        if (!order) {
+            order = await Order_1.default.findOne({ orderId: idOrCode }).lean();
+        }
         if (!order) {
             return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
         }
@@ -697,6 +870,51 @@ const getOrderById = async (req, res) => {
             const draw = await Draw_1.default.findById(order.drawId).lean();
             if (draw)
                 order.drawId = draw.drawCode;
+        }
+        if (!order.drawId || !String(order.drawId).startsWith('#')) {
+            const targetDateStr = order.drawDate || (typeof order.drawId === 'string' && /^\d{2}\/\d{2}\/\d{4}/.test(order.drawId) ? order.drawId : null);
+            if (targetDateStr) {
+                const dateParts = targetDateStr.split('/');
+                if (dateParts.length === 3) {
+                    const day = parseInt(dateParts[0], 10);
+                    const month = parseInt(dateParts[1], 10);
+                    const year = parseInt(dateParts[2], 10);
+                    const startOfDay = new Date(Date.UTC(year, month - 1, day, 0 - 7, 0, 0));
+                    const endOfDay = new Date(Date.UTC(year, month - 1, day, 23 - 7, 59, 59, 999));
+                    const relatedGames = await Game_1.default.find({ code: { $in: ['xoso_3mien', 'lode', 'MB', 'MT', 'MN', 'mb', 'mt', 'mn'] } }).select('_id').lean();
+                    const relatedGameIds = relatedGames.map(g => g._id);
+                    let provId = null;
+                    if (order.provinceName) {
+                        const p = await Province_1.default.findOne({
+                            $or: [
+                                { name: new RegExp(`^${order.provinceName.trim()}$`, 'i') },
+                                { provinceId: new RegExp(`^${order.provinceName.trim()}$`, 'i') },
+                                { code: new RegExp(`^${order.provinceName.trim()}$`, 'i') }
+                            ]
+                        }).lean();
+                        if (p)
+                            provId = p.provinceId;
+                    }
+                    let matchedDraw = null;
+                    if (provId) {
+                        matchedDraw = await Draw_1.default.findOne({
+                            game: { $in: relatedGameIds },
+                            provinceId: { $in: [provId, order.provinceName].filter(Boolean) },
+                            closeTime: { $gte: startOfDay, $lte: endOfDay }
+                        }).select('_id drawCode').lean();
+                    }
+                    if (!matchedDraw) {
+                        matchedDraw = await Draw_1.default.findOne({
+                            game: { $in: relatedGameIds },
+                            closeTime: { $gte: startOfDay, $lte: endOfDay }
+                        }).select('_id drawCode').lean();
+                    }
+                    if (matchedDraw && matchedDraw.drawCode) {
+                        order.drawId = matchedDraw.drawCode;
+                        Order_1.default.updateOne({ _id: order._id }, { $set: { drawId: matchedDraw.drawCode } }).catch(() => { });
+                    }
+                }
+            }
         }
         res.json(order);
     }
@@ -790,6 +1008,12 @@ const getAllOrders = async (req, res) => {
             dbQuery = dbQuery.skip((pageNum - 1) * limitNum).limit(limitNum);
         }
         const orders = await dbQuery;
+        const drawIds = Array.from(new Set(orders.map((o) => o.drawId).filter((id) => id && mongoose_1.default.Types.ObjectId.isValid(id))));
+        const drawMap = new Map();
+        if (drawIds.length > 0) {
+            const draws = await Draw_1.default.find({ _id: { $in: drawIds } }).select("_id drawCode drawTime closeTime").lean();
+            draws.forEach((d) => drawMap.set(d._id.toString(), d));
+        }
         for (const order of orders) {
             if (order.user && typeof order.user.phone === "string") {
                 order.user.phone = EncryptionHelper_1.EncryptionHelper.decryptDeterministic(order.user.phone);
@@ -800,14 +1024,12 @@ const getAllOrders = async (req, res) => {
             if (!order.loginDevice) {
                 order.loginDevice = order.user?.loginDevice || "";
             }
-            if (order.drawId && mongoose_1.default.Types.ObjectId.isValid(order.drawId)) {
-                const draw = await Draw_1.default.findById(order.drawId).lean();
-                if (draw) {
-                    order.drawId = draw.drawCode;
-                    if (!order.drawDate && (draw.drawTime || draw.closeTime)) {
-                        const timeToDisplay = draw.drawTime || draw.closeTime;
-                        order.drawDate = new Date(timeToDisplay).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
-                    }
+            if (order.drawId && drawMap.has(order.drawId.toString())) {
+                const draw = drawMap.get(order.drawId.toString());
+                order.drawId = draw.drawCode;
+                if (!order.drawDate && (draw.drawTime || draw.closeTime)) {
+                    const timeToDisplay = draw.drawTime || draw.closeTime;
+                    order.drawDate = new Date(timeToDisplay).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
                 }
             }
         }
@@ -908,41 +1130,106 @@ const getOrderSummary = async (req, res) => {
             andConditions.push({ prizeAmount: { $gte: Number(minWin) } });
         }
         const query = andConditions.length > 0 ? { $and: andConditions } : {};
-        const allOrders = await Order_1.default.find(query).select("status isWinner prizeAmount winningNumbers totalCost user").lean();
-        let totalTickets = 0;
-        let totalSales = 0;
-        let totalPrize = 0;
-        let winCount = 0;
-        let loseCount = 0;
-        let pendingCount = 0;
-        let cancelledCount = 0;
-        allOrders.forEach(order => {
-            if (order.status === "cancelled") {
-                cancelledCount++;
-                return;
+        const stats = await Order_1.default.aggregate([
+            { $match: query },
+            {
+                $group: {
+                    _id: null,
+                    totalTickets: { $sum: { $cond: [{ $eq: ["$status", "cancelled"] }, 0, 1] } },
+                    cancelledCount: { $sum: { $cond: [{ $eq: ["$status", "cancelled"] }, 1, 0] } },
+                    totalSales: { $sum: { $cond: [{ $eq: ["$status", "cancelled"] }, 0, { $ifNull: ["$totalCost", 0] }] } },
+                    totalPrize: {
+                        $sum: {
+                            $cond: [
+                                { $eq: ["$status", "cancelled"] },
+                                0,
+                                {
+                                    $cond: [
+                                        { $or: [{ $eq: ["$isWinner", true] }, { $gt: ["$prizeAmount", 0] }] },
+                                        { $ifNull: ["$prizeAmount", 0] },
+                                        0
+                                    ]
+                                }
+                            ]
+                        }
+                    },
+                    winCount: {
+                        $sum: {
+                            $cond: [
+                                { $eq: ["$status", "cancelled"] },
+                                0,
+                                { $cond: [{ $or: [{ $eq: ["$isWinner", true] }, { $gt: ["$prizeAmount", 0] }] }, 1, 0] }
+                            ]
+                        }
+                    },
+                    pendingCount: {
+                        $sum: {
+                            $cond: [
+                                { $eq: ["$status", "cancelled"] },
+                                0,
+                                {
+                                    $cond: [
+                                        {
+                                            $and: [
+                                                { $ne: ["$isWinner", true] },
+                                                { $or: [{ $eq: ["$prizeAmount", 0] }, { $eq: [{ $ifNull: ["$prizeAmount", null] }, null] }] },
+                                                {
+                                                    $or: [
+                                                        { $eq: [{ $ifNull: ["$winningNumbers", null] }, null] },
+                                                        { $eq: [{ $size: { $ifNull: ["$winningNumbers", []] } }, 0] }
+                                                    ]
+                                                }
+                                            ]
+                                        },
+                                        1,
+                                        0
+                                    ]
+                                }
+                            ]
+                        }
+                    },
+                    loseCount: {
+                        $sum: {
+                            $cond: [
+                                { $eq: ["$status", "cancelled"] },
+                                0,
+                                {
+                                    $cond: [
+                                        {
+                                            $and: [
+                                                { $ne: ["$isWinner", true] },
+                                                { $or: [{ $eq: ["$prizeAmount", 0] }, { $eq: [{ $ifNull: ["$prizeAmount", null] }, null] }] },
+                                                { $gt: [{ $size: { $ifNull: ["$winningNumbers", []] } }, 0] }
+                                            ]
+                                        },
+                                        1,
+                                        0
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                }
             }
-            totalTickets++;
-            totalSales += order.totalCost || 0;
-            if (order.isWinner || (order.prizeAmount && order.prizeAmount > 0)) {
-                totalPrize += order.prizeAmount || 0;
-                winCount++;
-            }
-            else if (!order.winningNumbers || order.winningNumbers.length === 0) {
-                pendingCount++;
-            }
-            else {
-                loseCount++;
-            }
-        });
+        ]);
+        const s = stats[0] || {
+            totalTickets: 0,
+            totalSales: 0,
+            totalPrize: 0,
+            winCount: 0,
+            loseCount: 0,
+            pendingCount: 0,
+            cancelledCount: 0
+        };
         res.json({
-            totalTickets,
-            totalSales,
-            totalPrize,
-            totalLoss: totalSales - totalPrize,
-            winCount,
-            loseCount,
-            pendingCount,
-            cancelledCount
+            totalTickets: s.totalTickets || 0,
+            totalSales: s.totalSales || 0,
+            totalPrize: s.totalPrize || 0,
+            totalLoss: (s.totalSales || 0) - (s.totalPrize || 0),
+            winCount: s.winCount || 0,
+            loseCount: s.loseCount || 0,
+            pendingCount: s.pendingCount || 0,
+            cancelledCount: s.cancelledCount || 0
         });
     }
     catch (error) {

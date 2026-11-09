@@ -124,53 +124,58 @@ const getUsers = async (req, res) => {
         if (Object.keys(extraMatch).length > 0) {
             pipeline.push({ $match: extraMatch });
         }
-        pipeline.push({
-            $lookup: {
-                from: 'transactions',
-                localField: '_id',
-                foreignField: 'user',
-                as: 'txs'
-            }
-        }, {
-            $addFields: {
-                totalDeposit: {
-                    $sum: {
-                        $map: {
-                            input: {
-                                $filter: {
-                                    input: '$txs',
-                                    as: 'tx',
-                                    cond: { $and: [{ $eq: ['$$tx.type', 'deposit'] }, { $eq: ['$$tx.status', 'approved'] }] }
-                                }
-                            },
-                            as: 'tx',
-                            in: '$$tx.amount'
+        pipeline.push({ $sort: { createdAt: -1 } });
+        const pageNum = page ? parseInt(page) : undefined;
+        const limitNum = limit ? parseInt(limit) : 10;
+        const txLookupStages = [
+            {
+                $lookup: {
+                    from: 'transactions',
+                    localField: '_id',
+                    foreignField: 'user',
+                    as: 'txs'
+                }
+            },
+            {
+                $addFields: {
+                    totalDeposit: {
+                        $sum: {
+                            $map: {
+                                input: {
+                                    $filter: {
+                                        input: '$txs',
+                                        as: 'tx',
+                                        cond: { $and: [{ $eq: ['$$tx.type', 'deposit'] }, { $eq: ['$$tx.status', 'approved'] }] }
+                                    }
+                                },
+                                as: 'tx',
+                                in: '$$tx.amount'
+                            }
                         }
-                    }
-                },
-                totalWithdraw: {
-                    $sum: {
-                        $map: {
-                            input: {
-                                $filter: {
-                                    input: '$txs',
-                                    as: 'tx',
-                                    cond: { $and: [{ $eq: ['$$tx.type', 'withdraw'] }, { $eq: ['$$tx.status', 'approved'] }] }
-                                }
-                            },
-                            as: 'tx',
-                            in: '$$tx.amount'
+                    },
+                    totalWithdraw: {
+                        $sum: {
+                            $map: {
+                                input: {
+                                    $filter: {
+                                        input: '$txs',
+                                        as: 'tx',
+                                        cond: { $and: [{ $eq: ['$$tx.type', 'withdraw'] }, { $eq: ['$$tx.status', 'approved'] }] }
+                                    }
+                                },
+                                as: 'tx',
+                                in: '$$tx.amount'
+                            }
                         }
                     }
                 }
+            },
+            {
+                $project: {
+                    txs: 0
+                }
             }
-        }, {
-            $project: {
-                txs: 0
-            }
-        }, { $sort: { createdAt: -1 } });
-        const pageNum = page ? parseInt(page) : undefined;
-        const limitNum = limit ? parseInt(limit) : 10;
+        ];
         let rawUsers = [];
         let totalUsers = 0;
         if (pageNum) {
@@ -178,7 +183,11 @@ const getUsers = async (req, res) => {
             pipeline.push({
                 $facet: {
                     metadata: [{ $count: "total" }],
-                    data: [{ $skip: skipCount }, { $limit: limitNum }]
+                    data: [
+                        { $skip: skipCount },
+                        { $limit: limitNum },
+                        ...txLookupStages
+                    ]
                 }
             });
             const facetResult = await User_1.default.aggregate(pipeline);
@@ -186,6 +195,7 @@ const getUsers = async (req, res) => {
             rawUsers = facetResult[0]?.data || [];
         }
         else {
+            pipeline.push(...txLookupStages);
             rawUsers = await User_1.default.aggregate(pipeline);
             totalUsers = rawUsers.length;
         }
@@ -620,11 +630,14 @@ const getUserBalanceHistory = async (req, res) => {
         const { page = 1, limit = 20 } = req.query;
         // We import here to avoid circular dependencies if any, or just require it
         const BalanceHistory = require('../models/BalanceHistory').default;
-        const history = await BalanceHistory.find({ user: id })
-            .sort({ createdAt: -1 })
-            .skip((Number(page) - 1) * Number(limit))
-            .limit(Number(limit));
-        const total = await BalanceHistory.countDocuments({ user: id });
+        const [history, total] = await Promise.all([
+            BalanceHistory.find({ user: id })
+                .sort({ createdAt: -1 })
+                .skip((Number(page) - 1) * Number(limit))
+                .limit(Number(limit))
+                .lean(),
+            BalanceHistory.countDocuments({ user: id })
+        ]);
         res.json({
             history,
             totalPages: Math.ceil(total / Number(limit)),

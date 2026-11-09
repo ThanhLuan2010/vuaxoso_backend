@@ -102,6 +102,8 @@ const ensureKienThietDraws = async () => {
             return;
         // Auto-close any expired open draws
         await Draw_1.default.updateMany({ status: "open", closeTime: { $lte: now } }, { $set: { status: "closed" } });
+        // Đảm bảo Thừa Thiên Huế luôn có lịch quay Chủ Nhật (0) và Thứ Hai (1)
+        await Province_1.default.updateOne({ provinceId: 'TTH', drawDays: { $nin: [0] } }, { $addToSet: { drawDays: 0 } });
         // Load tất cả đài tỉnh miền Trung & Nam 1 lần duy nhất thay vì query lặp
         const allProvinces = await Province_1.default.find({ region: { $in: ["MT", "MN"] } }).lean();
         for (const game of ktGames) {
@@ -116,11 +118,11 @@ const ensureKienThietDraws = async () => {
                 if (match)
                     lastDrawNum = Math.max(lastDrawNum, parseInt(match[1]));
             }
-            // Lấy khoảng thời gian 6 ngày tới
+            // Lấy khoảng thời gian 14 ngày tới để luôn đủ kỳ quay cho khách đặt trước
             const minCutoff = getVNCutoffDate(now, cutoffHour, cutoffMin);
-            const maxCheckDate = new Date(now.getTime() + 6 * 24 * 3600 * 1000);
+            const maxCheckDate = new Date(now.getTime() + 15 * 24 * 3600 * 1000);
             const maxCutoff = getVNCutoffDate(maxCheckDate, cutoffHour, cutoffMin);
-            // Query toàn bộ kỳ quay đã tồn tại trong khoảng 6 ngày tới trong 1 query duy nhất
+            // Query toàn bộ kỳ quay đã tồn tại trong khoảng 14 ngày tới trong 1 query duy nhất
             const existingDraws = await Draw_1.default.find({
                 game: game._id,
                 closeTime: {
@@ -130,7 +132,7 @@ const ensureKienThietDraws = async () => {
             }).select("provinceId closeTime").lean();
             const existingSet = new Set(existingDraws.map(d => `${d.provinceId || "MB"}_${new Date(d.closeTime).getTime()}`));
             const newDraws = [];
-            for (let dayOffset = 0; dayOffset <= 5; dayOffset++) {
+            for (let dayOffset = 0; dayOffset <= 14; dayOffset++) {
                 const checkDate = new Date(now.getTime() + dayOffset * 24 * 3600 * 1000);
                 const dayOfWeek = getVNDayOfWeek(checkDate);
                 const cutoff = getVNCutoffDate(checkDate, cutoffHour, cutoffMin);
@@ -185,11 +187,24 @@ const ensureKienThietDraws = async () => {
     }
 };
 exports.ensureKienThietDraws = ensureKienThietDraws;
+let lastActiveSyncTime = 0;
+let cachedProvinceMap = new Map();
+let cachedProvincesTime = 0;
 const getActiveDraws = async (req, res) => {
     try {
+        const now = new Date();
+        const nowMs = Date.now();
+        // Fast-path: Nếu vừa đồng bộ các kỳ quay trong vòng 20 giây qua, trả về kết quả ngay lập tức
+        if (nowMs - lastActiveSyncTime < 20 * 1000) {
+            const draws = await Draw_1.default.find({ status: 'open', closeTime: { $gt: now } })
+                .populate('game')
+                .sort({ closeTime: 1 })
+                .lean();
+            return res.json(draws);
+        }
+        lastActiveSyncTime = nowMs;
         const Game = require('../models/Game').default;
         const games = await Game.find({ isActive: true });
-        const now = new Date();
         // Auto-close any expired non-Keno open draws
         await Draw_1.default.updateMany({ status: 'open', closeTime: { $lte: now } }, { $set: { status: 'closed' } });
         for (const game of games) {
@@ -458,7 +473,9 @@ const getActiveDraws = async (req, res) => {
                 }
             }
         }
-        const draws = await Draw_1.default.find({ status: 'open', closeTime: { $gt: now } }).populate('game').sort({ closeTime: 1 });
+        // Đảm bảo luôn có đầy đủ các kỳ quay 14 ngày tới cho Lô Đề / XSKT 3 Miền
+        await (0, exports.ensureKienThietDraws)();
+        const draws = await Draw_1.default.find({ status: 'open', closeTime: { $gt: now } }).populate('game').sort({ closeTime: 1 }).lean();
         res.json(draws);
     }
     catch (error) {
@@ -510,14 +527,17 @@ const getDrawResults = async (req, res) => {
             .skip(skip)
             .limit(limit)
             .lean();
-        // Attach province details if available
-        const Province = require('../models/Province').default;
-        const provinces = await Province.find().lean();
-        const provinceMap = new Map();
-        provinces.forEach((p) => provinceMap.set(p.provinceId, p));
+        // Attach province details if available (using 5-minute memory cache)
+        if (cachedProvinceMap.size === 0 || Date.now() - cachedProvincesTime > 5 * 60 * 1000) {
+            const Province = require('../models/Province').default;
+            const provinces = await Province.find().lean();
+            cachedProvinceMap = new Map();
+            provinces.forEach((p) => cachedProvinceMap.set(p.provinceId, p));
+            cachedProvincesTime = Date.now();
+        }
         const enrichedDraws = draws.map((d) => {
-            if (d.provinceId && provinceMap.has(d.provinceId)) {
-                d.province = provinceMap.get(d.provinceId);
+            if (d.provinceId && cachedProvinceMap.has(d.provinceId)) {
+                d.province = cachedProvinceMap.get(d.provinceId);
             }
             return d;
         });

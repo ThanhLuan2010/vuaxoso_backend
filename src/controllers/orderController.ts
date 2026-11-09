@@ -69,7 +69,7 @@ export const checkoutOrders = async (req: any, res: Response) => {
           }
         }
       } else {
-        const cacheKey = `${gameType}_${drawId}`;
+        const cacheKey = `${gameType}_${drawId}_${provinceName || ""}_${drawDate || ""}`;
         if (!drawCache[cacheKey]) {
           const searchGameCode = gameType.includes("max_3d") ? "max_3d" : ((gameType === "bao_keno" || gameType === "clln_keno") ? "keno" : gameType);
           if (!gameCache[searchGameCode]) {
@@ -101,9 +101,53 @@ export const checkoutOrders = async (req: any, res: Response) => {
             }
           }
 
+          // Khớp kỳ quay theo ngày và đài đối với Lô Đề / XSKT nếu chưa tìm thấy draw theo drawId
+          if (!draw && isLodeOrRegion) {
+            const targetDateStr = drawDate || (typeof drawId === "string" && /^\d{2}\/\d{2}\/\d{4}/.test(drawId) ? drawId : null);
+            if (targetDateStr) {
+              const dateParts = targetDateStr.split('/');
+              if (dateParts.length === 3) {
+                const day = parseInt(dateParts[0], 10);
+                const month = parseInt(dateParts[1], 10);
+                const year = parseInt(dateParts[2], 10);
+                const startOfDay = new Date(Date.UTC(year, month - 1, day, 0 - 7, 0, 0));
+                const endOfDay = new Date(Date.UTC(year, month - 1, day, 23 - 7, 59, 59, 999));
+
+                const relatedGames = await Game.find({ code: { $in: ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn"] } }).select("_id");
+                const relatedGameIds = relatedGames.map(g => g._id);
+
+                let provCode: string | null = null;
+                if (provinceName) {
+                  const prov = await Province.findOne({
+                    $or: [
+                      { name: new RegExp(`^${provinceName.trim()}$`, "i") },
+                      { provinceId: new RegExp(`^${provinceName.trim()}$`, "i") },
+                      { code: new RegExp(`^${provinceName.trim()}$`, "i") }
+                    ]
+                  }).lean();
+                  if (prov) provCode = prov.provinceId;
+                }
+
+                if (provCode) {
+                  draw = await Draw.findOne({
+                    game: { $in: relatedGameIds },
+                    provinceId: { $in: [provCode, provinceName] },
+                    closeTime: { $gte: startOfDay, $lte: endOfDay }
+                  }).sort({ closeTime: 1 });
+                }
+                if (!draw) {
+                  draw = await Draw.findOne({
+                    game: { $in: relatedGameIds },
+                    closeTime: { $gte: startOfDay, $lte: endOfDay }
+                  }).sort({ closeTime: 1 });
+                }
+              }
+            }
+          }
+
           if (isLodeOrRegion && isScheduledDate && !draw) {
             // Đối với vé lô đề đặt trước theo ngày tương lai không có kỳ CMS, giữ nguyên ngày/drawId
-            drawId = drawDate || (typeof drawId === "string" ? drawId.replace("sched_", "") : drawId);
+            drawId = (typeof drawId === "string" && drawId.startsWith("#")) ? drawId : (drawDate || (typeof drawId === "string" ? drawId.replace("sched_", "") : drawId));
           } else {
             if (!draw || draw.status !== "open" || now > draw.closeTime) {
               if (gameDoc) {
@@ -454,8 +498,53 @@ export const createOrder = async (req: any, res: Response) => {
         }
       }
 
+      // Khớp kỳ quay theo ngày và đài đối với Lô Đề / XSKT nếu chưa tìm thấy draw theo drawId
+      if (!draw && isLodeOrRegion) {
+        const targetDateStr = drawDate || (typeof drawId === 'string' && /^\d{2}\/\d{2}\/\d{4}/.test(drawId) ? drawId : null);
+        if (targetDateStr) {
+          const dateParts = targetDateStr.split('/');
+          if (dateParts.length === 3) {
+            const day = parseInt(dateParts[0], 10);
+            const month = parseInt(dateParts[1], 10);
+            const year = parseInt(dateParts[2], 10);
+            const startOfDay = new Date(Date.UTC(year, month - 1, day, 0 - 7, 0, 0));
+            const endOfDay = new Date(Date.UTC(year, month - 1, day, 23 - 7, 59, 59, 999));
+
+            const relatedGames = await Game.find({ code: { $in: ['xoso_3mien', 'lode', 'MB', 'MT', 'MN', 'mb', 'mt', 'mn'] } }).select('_id');
+            const relatedGameIds = relatedGames.map(g => g._id);
+
+            let provCode: string | null = null;
+            if (provinceName) {
+              const prov = await Province.findOne({
+                $or: [
+                  { name: new RegExp(`^${provinceName.trim()}$`, 'i') },
+                  { provinceId: new RegExp(`^${provinceName.trim()}$`, 'i') },
+                  { code: new RegExp(`^${provinceName.trim()}$`, 'i') }
+                ]
+              }).lean();
+              if (prov) provCode = prov.provinceId;
+            }
+
+            if (provCode) {
+              draw = await Draw.findOne({
+                game: { $in: relatedGameIds },
+                provinceId: { $in: [provCode, provinceName] },
+                closeTime: { $gte: startOfDay, $lte: endOfDay }
+              }).sort({ closeTime: 1 });
+            }
+            if (!draw) {
+              draw = await Draw.findOne({
+                game: { $in: relatedGameIds },
+                closeTime: { $gte: startOfDay, $lte: endOfDay }
+              }).sort({ closeTime: 1 });
+            }
+          }
+        }
+      }
+
       if (isLodeOrRegion && isScheduledDate && !draw) {
-        drawId = drawDate || (typeof drawId === "string" ? drawId.replace("sched_", "") : drawId);
+        // Đối với vé lô đề đặt trước theo ngày tương lai không có kỳ CMS, giữ nguyên ngày/drawId
+        drawId = (typeof drawId === 'string' && drawId.startsWith('#')) ? drawId : (drawDate || (typeof drawId === 'string' ? drawId.replace('sched_', '') : drawId));
       } else {
         // If draw not found or specified draw is closed/expired, fallback to current active open draw for this game
         if (!draw || draw.status !== 'open' || now > draw.closeTime) {
@@ -738,6 +827,57 @@ export const getMyOrders = async (req: any, res: Response) => {
         }
       }
     }
+
+    // Tự động khôi phục số kỳ quay (#number) cho các đơn vé đang bị thiếu hoặc chỉ lưu ngày
+    const unresolvedOrders = orders.filter((o: any) => !o.drawId || !String(o.drawId).startsWith("#"));
+    if (unresolvedOrders.length > 0) {
+      const relatedGames = await Game.find({ code: { $in: ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn"] } }).select("_id").lean();
+      const relatedGameIds = relatedGames.map(g => g._id);
+      const provinces = await Province.find({}).lean();
+      const provMap = new Map<string, string>();
+      provinces.forEach((p: any) => {
+        if (p.name) provMap.set(p.name.toLowerCase().trim(), p.provinceId);
+        if (p.code) provMap.set(p.code.toLowerCase().trim(), p.provinceId);
+        if (p.provinceId) provMap.set(p.provinceId.toLowerCase().trim(), p.provinceId);
+      });
+
+      for (const order of unresolvedOrders) {
+        const targetDateStr = order.drawDate || (typeof order.drawId === "string" && /^\d{2}\/\d{2}\/\d{4}/.test(order.drawId) ? order.drawId : null);
+        if (targetDateStr) {
+          const dateParts = targetDateStr.split('/');
+          if (dateParts.length === 3) {
+            const day = parseInt(dateParts[0], 10);
+            const month = parseInt(dateParts[1], 10);
+            const year = parseInt(dateParts[2], 10);
+            const startOfDay = new Date(Date.UTC(year, month - 1, day, 0 - 7, 0, 0));
+            const endOfDay = new Date(Date.UTC(year, month - 1, day, 23 - 7, 59, 59, 999));
+
+            const provKey = order.provinceName ? order.provinceName.toLowerCase().trim() : '';
+            const provId = provMap.get(provKey);
+
+            let matchedDraw = null;
+            if (provId) {
+              matchedDraw = await Draw.findOne({
+                game: { $in: relatedGameIds },
+                provinceId: { $in: [provId, order.provinceName].filter(Boolean) as string[] },
+                closeTime: { $gte: startOfDay, $lte: endOfDay }
+              }).select("_id drawCode").lean();
+            }
+            if (!matchedDraw) {
+              matchedDraw = await Draw.findOne({
+                game: { $in: relatedGameIds },
+                closeTime: { $gte: startOfDay, $lte: endOfDay }
+              }).select("_id drawCode").lean();
+            }
+
+            if (matchedDraw && matchedDraw.drawCode) {
+              order.drawId = matchedDraw.drawCode;
+              Order.updateOne({ _id: order._id }, { $set: { drawId: matchedDraw.drawCode } }).catch(() => {});
+            }
+          }
+        }
+      }
+    }
     res.json(orders);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -746,7 +886,14 @@ export const getMyOrders = async (req: any, res: Response) => {
 
 export const getOrderById = async (req: any, res: Response) => {
   try {
-    const order = await Order.findById(req.params.id).lean();
+    const idOrCode = req.params.id;
+    let order: any = null;
+    if (mongoose.Types.ObjectId.isValid(idOrCode)) {
+      order = await Order.findById(idOrCode).lean();
+    }
+    if (!order) {
+      order = await Order.findOne({ orderId: idOrCode }).lean();
+    }
     if (!order) {
       return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
     }
@@ -759,6 +906,55 @@ export const getOrderById = async (req: any, res: Response) => {
     if (order.drawId && mongoose.Types.ObjectId.isValid(order.drawId)) {
       const draw = await Draw.findById(order.drawId).lean();
       if (draw) order.drawId = draw.drawCode;
+    }
+
+    if (!order.drawId || !String(order.drawId).startsWith('#')) {
+      const targetDateStr = order.drawDate || (typeof order.drawId === 'string' && /^\d{2}\/\d{2}\/\d{4}/.test(order.drawId) ? order.drawId : null);
+      if (targetDateStr) {
+        const dateParts = targetDateStr.split('/');
+        if (dateParts.length === 3) {
+          const day = parseInt(dateParts[0], 10);
+          const month = parseInt(dateParts[1], 10);
+          const year = parseInt(dateParts[2], 10);
+          const startOfDay = new Date(Date.UTC(year, month - 1, day, 0 - 7, 0, 0));
+          const endOfDay = new Date(Date.UTC(year, month - 1, day, 23 - 7, 59, 59, 999));
+
+          const relatedGames = await Game.find({ code: { $in: ['xoso_3mien', 'lode', 'MB', 'MT', 'MN', 'mb', 'mt', 'mn'] } }).select('_id').lean();
+          const relatedGameIds = relatedGames.map(g => g._id);
+
+          let provId = null;
+          if (order.provinceName) {
+            const p = await Province.findOne({
+              $or: [
+                { name: new RegExp(`^${order.provinceName.trim()}$`, 'i') },
+                { provinceId: new RegExp(`^${order.provinceName.trim()}$`, 'i') },
+                { code: new RegExp(`^${order.provinceName.trim()}$`, 'i') }
+              ]
+            }).lean();
+            if (p) provId = p.provinceId;
+          }
+
+          let matchedDraw = null;
+          if (provId) {
+            matchedDraw = await Draw.findOne({
+              game: { $in: relatedGameIds },
+              provinceId: { $in: [provId, order.provinceName].filter(Boolean) as string[] },
+              closeTime: { $gte: startOfDay, $lte: endOfDay }
+            }).select('_id drawCode').lean();
+          }
+          if (!matchedDraw) {
+            matchedDraw = await Draw.findOne({
+              game: { $in: relatedGameIds },
+              closeTime: { $gte: startOfDay, $lte: endOfDay }
+            }).select('_id drawCode').lean();
+          }
+
+          if (matchedDraw && matchedDraw.drawCode) {
+            order.drawId = matchedDraw.drawCode;
+            Order.updateOne({ _id: order._id }, { $set: { drawId: matchedDraw.drawCode } }).catch(() => {});
+          }
+        }
+      }
     }
 
     res.json(order);

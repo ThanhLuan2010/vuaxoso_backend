@@ -114,6 +114,12 @@ export const ensureKienThietDraws = async () => {
     // Auto-close any expired open draws
     await Draw.updateMany({ status: "open", closeTime: { $lte: now } }, { $set: { status: "closed" } });
 
+    // Đảm bảo Thừa Thiên Huế luôn có lịch quay Chủ Nhật (0) và Thứ Hai (1)
+    await Province.updateOne(
+      { provinceId: 'TTH', drawDays: { $nin: [0] } },
+      { $addToSet: { drawDays: 0 } }
+    );
+
     // Load tất cả đài tỉnh miền Trung & Nam 1 lần duy nhất thay vì query lặp
     const allProvinces = await Province.find({ region: { $in: ["MT", "MN"] } }).lean();
 
@@ -130,12 +136,12 @@ export const ensureKienThietDraws = async () => {
         if (match) lastDrawNum = Math.max(lastDrawNum, parseInt(match[1]));
       }
 
-      // Lấy khoảng thời gian 6 ngày tới
+      // Lấy khoảng thời gian 14 ngày tới để luôn đủ kỳ quay cho khách đặt trước
       const minCutoff = getVNCutoffDate(now, cutoffHour, cutoffMin);
-      const maxCheckDate = new Date(now.getTime() + 6 * 24 * 3600 * 1000);
+      const maxCheckDate = new Date(now.getTime() + 15 * 24 * 3600 * 1000);
       const maxCutoff = getVNCutoffDate(maxCheckDate, cutoffHour, cutoffMin);
 
-      // Query toàn bộ kỳ quay đã tồn tại trong khoảng 6 ngày tới trong 1 query duy nhất
+      // Query toàn bộ kỳ quay đã tồn tại trong khoảng 14 ngày tới trong 1 query duy nhất
       const existingDraws = await Draw.find({
         game: game._id,
         closeTime: {
@@ -150,7 +156,7 @@ export const ensureKienThietDraws = async () => {
 
       const newDraws: any[] = [];
 
-      for (let dayOffset = 0; dayOffset <= 5; dayOffset++) {
+      for (let dayOffset = 0; dayOffset <= 14; dayOffset++) {
         const checkDate = new Date(now.getTime() + dayOffset * 24 * 3600 * 1000);
         const dayOfWeek = getVNDayOfWeek(checkDate);
         const cutoff = getVNCutoffDate(checkDate, cutoffHour, cutoffMin);
@@ -497,6 +503,9 @@ export const getActiveDraws = async (req: any, res: Response) => {
         }
       }
     }
+
+    // Đảm bảo luôn có đầy đủ các kỳ quay 14 ngày tới cho Lô Đề / XSKT 3 Miền
+    await ensureKienThietDraws();
 
     const draws = await Draw.find({ status: 'open', closeTime: { $gt: now } }).populate('game').sort({ closeTime: 1 }).lean();
     res.json(draws);

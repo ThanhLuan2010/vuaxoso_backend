@@ -47,6 +47,7 @@ const notificationSchema = new mongoose_1.Schema({
     readBy: [{ type: mongoose_1.Schema.Types.ObjectId, ref: 'User' }],
 }, { timestamps: true });
 notificationSchema.index({ user: 1, isRead: 1 });
+notificationSchema.index({ user: 1, isHidden: 1, createdAt: -1 });
 notificationSchema.index({ readBy: 1 });
 notificationSchema.index({ createdAt: -1 });
 exports.default = mongoose_1.default.model('Notification', notificationSchema);

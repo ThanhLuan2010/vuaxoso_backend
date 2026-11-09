@@ -49,7 +49,7 @@ const getAllTickets = async (req, res) => {
             query.number = { $regex: search, $options: 'i' };
         const skip = (page - 1) * limit;
         const [tickets, total] = await Promise.all([
-            Ticket_1.default.find(query).sort({ drawDate: -1, createdAt: -1 }).skip(skip).limit(limit),
+            Ticket_1.default.find(query).sort({ drawDate: -1, createdAt: -1 }).skip(skip).limit(limit).lean(),
             Ticket_1.default.countDocuments(query)
         ]);
         res.json({ data: tickets, total, page, limit });

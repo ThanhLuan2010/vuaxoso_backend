@@ -21,13 +21,12 @@ const getMyNotifications = async (req, res) => {
                 { user: { $exists: false }, type: "promo" },
                 { user: null, type: "promo" }
             ]
-        }).sort({ createdAt: -1 });
+        }).sort({ createdAt: -1 }).lean();
         if (page) {
             query = query.skip((page - 1) * limit).limit(limit);
         }
         const notifications = await query;
-        const formatted = notifications.map((n) => {
-            const obj = n.toObject ? n.toObject() : { ...n };
+        const formatted = notifications.map((obj) => {
             const isReadForUser = obj.user
                 ? Boolean(obj.isRead || (obj.readBy && obj.readBy.some((id) => id.toString() === userId)))
                 : Boolean(obj.readBy && obj.readBy.some((id) => id.toString() === userId));

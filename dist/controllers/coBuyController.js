@@ -20,7 +20,7 @@ const getRooms = async (req, res) => {
         if (gameType) {
             filter.gameType = gameType;
         }
-        let query = CoBuyRoom_1.default.find(filter).sort({ createdAt: -1 });
+        let query = CoBuyRoom_1.default.find(filter).sort({ createdAt: -1 }).lean();
         if (page) {
             query = query.skip((page - 1) * limit).limit(limit);
         }
@@ -43,7 +43,7 @@ const getMyCoBuyHistory = async (req, res) => {
         if (status === "cancelled") {
             filter.status = "cancelled";
         }
-        let query = CoBuyRoom_1.default.find(filter).sort({ createdAt: -1 });
+        let query = CoBuyRoom_1.default.find(filter).sort({ createdAt: -1 }).lean();
         if (page) {
             query = query.skip((page - 1) * limit).limit(limit);
         }

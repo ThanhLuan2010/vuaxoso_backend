@@ -8,7 +8,7 @@ const Cart_1 = __importDefault(require("../models/Cart"));
 const getCart = async (req, res) => {
     try {
         const userId = req.user._id || req.user.id;
-        const cart = await Cart_1.default.findOne({ user: userId });
+        const cart = await Cart_1.default.findOne({ user: userId }).lean();
         return res.json({
             success: true,
             items: cart?.items || []

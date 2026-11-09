@@ -114,4 +114,8 @@ const userSchema = new mongoose_1.Schema({
     toJSON: { getters: true },
     toObject: { getters: true }
 });
+userSchema.index({ role: 1, createdAt: -1 });
+userSchema.index({ status: 1, createdAt: -1 });
+userSchema.index({ createdAt: -1 });
+userSchema.index({ name: 1 });
 exports.default = mongoose_1.default.model('User', userSchema);

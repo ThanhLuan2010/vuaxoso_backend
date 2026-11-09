@@ -7,16 +7,25 @@ exports.getDuplicateIPsAndDevices = void 0;
 const User_1 = __importDefault(require("../models/User"));
 const getDuplicateIPsAndDevices = async (req, res) => {
     try {
+        const userProjection = {
+            _id: '$_id',
+            phone: '$phone',
+            name: '$name',
+            role: '$role',
+            balance: '$balance',
+            isInfoUpdated: '$isInfoUpdated',
+            createdAt: '$createdAt'
+        };
         // Find duplicate IPs
         const ipAggregation = await User_1.default.aggregate([
             { $match: { loginIp: { $exists: true, $nin: [null, ''] } } },
-            { $group: { _id: '$loginIp', count: { $sum: 1 }, users: { $push: '$$ROOT' } } },
+            { $group: { _id: '$loginIp', count: { $sum: 1 }, users: { $push: userProjection } } },
             { $match: { count: { $gt: 1 } } }
         ]);
         // Find duplicate Devices
         const deviceAggregation = await User_1.default.aggregate([
             { $match: { loginDevice: { $exists: true, $nin: [null, ''] } } },
-            { $group: { _id: '$loginDevice', count: { $sum: 1 }, users: { $push: '$$ROOT' } } },
+            { $group: { _id: '$loginDevice', count: { $sum: 1 }, users: { $push: userProjection } } },
             { $match: { count: { $gt: 1 } } }
         ]);
         const duplicateIps = ipAggregation.map(item => ({

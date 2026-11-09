@@ -8,7 +8,9 @@ const AdminLog_1 = __importDefault(require("../models/AdminLog"));
 const Province_1 = __importDefault(require("../models/Province"));
 const getAllProvinces = async (req, res) => {
     try {
-        const provinces = await Province_1.default.find().sort({ region: 1, name: 1 });
+        // Đảm bảo Thừa Thiên Huế luôn có lịch quay vào Thứ Hai (1) và Chủ Nhật (0)
+        await Province_1.default.updateOne({ provinceId: 'TTH', drawDays: { $nin: [0] } }, { $addToSet: { drawDays: 0 } });
+        const provinces = await Province_1.default.find().sort({ region: 1, name: 1 }).lean();
         res.json(provinces);
     }
     catch (error) {

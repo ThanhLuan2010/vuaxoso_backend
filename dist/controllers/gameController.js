@@ -20,7 +20,7 @@ const getGames = async (req, res) => {
                 { code: { $regex: normalizedSearch, $options: 'i' } }
             ];
         }
-        const games = await Game_1.default.find(query);
+        const games = await Game_1.default.find(query).lean();
         res.json(games);
     }
     catch (error) {

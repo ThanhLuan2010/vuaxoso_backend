@@ -69,4 +69,9 @@ const orderSchema = new mongoose_1.Schema({
     adminNote: { type: String },
 }, { timestamps: true });
 orderSchema.index({ user: 1, createdAt: -1 });
+orderSchema.index({ user: 1, status: 1, createdAt: -1 });
+orderSchema.index({ drawId: 1, status: 1 });
+orderSchema.index({ status: 1, createdAt: -1 });
+orderSchema.index({ gameType: 1, createdAt: -1 });
+orderSchema.index({ createdAt: -1 });
 exports.default = mongoose_1.default.model('Order', orderSchema);

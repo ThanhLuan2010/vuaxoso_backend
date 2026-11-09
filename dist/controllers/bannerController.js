@@ -9,7 +9,7 @@ const Banner_1 = __importDefault(require("../models/Banner"));
 // Public: Lấy danh sách banner đang active
 const getActiveBanners = async (req, res) => {
     try {
-        const banners = await Banner_1.default.find({ isActive: true }).sort({ order: 1, createdAt: -1 });
+        const banners = await Banner_1.default.find({ isActive: true }).sort({ order: 1, createdAt: -1 }).lean();
         res.json(banners);
     }
     catch (error) {
@@ -20,7 +20,7 @@ exports.getActiveBanners = getActiveBanners;
 // Admin: Lấy tất cả banner
 const getAllBanners = async (req, res) => {
     try {
-        const banners = await Banner_1.default.find().sort({ order: 1, createdAt: -1 });
+        const banners = await Banner_1.default.find().sort({ order: 1, createdAt: -1 }).lean();
         res.json(banners);
     }
     catch (error) {

@@ -4,6 +4,11 @@ import Province from '../models/Province';
 
 export const getAllProvinces = async (req: any, res: Response) => {
   try {
+    // Đảm bảo Thừa Thiên Huế luôn có lịch quay vào Thứ Hai (1) và Chủ Nhật (0)
+    await Province.updateOne(
+      { provinceId: 'TTH', drawDays: { $nin: [0] } },
+      { $addToSet: { drawDays: 0 } }
+    );
     const provinces = await Province.find().sort({ region: 1, name: 1 }).lean();
     res.json(provinces);
   } catch (error: any) {

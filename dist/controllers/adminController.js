@@ -12,9 +12,9 @@ const getAdminAccounts = async (req, res) => {
     try {
         const admins = await User_1.default.find({ role: { $in: ["admin", "staff"] } })
             .select("-passwordHash -withdrawPasswordHash")
-            .sort({ isMasterAdmin: -1, createdAt: -1 });
-        const result = admins.map(admin => {
-            const obj = admin.toObject();
+            .sort({ isMasterAdmin: -1, createdAt: -1 })
+            .lean();
+        const result = admins.map((obj) => {
             return {
                 _id: obj._id,
                 name: obj.name,

@@ -43,4 +43,7 @@ const balanceHistorySchema = new mongoose_1.Schema({
     description: { type: String },
     reference: { type: String },
 }, { timestamps: true });
+balanceHistorySchema.index({ user: 1, createdAt: -1 });
+balanceHistorySchema.index({ createdAt: -1 });
+balanceHistorySchema.index({ type: 1, createdAt: -1 });
 exports.default = mongoose_1.default.model('BalanceHistory', balanceHistorySchema);
