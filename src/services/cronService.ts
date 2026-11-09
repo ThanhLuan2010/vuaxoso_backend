@@ -24,9 +24,18 @@ export const ensureUpcomingDraws = async () => {
   try {
     const now = new Date();
 
+    // Tự động dọn dẹp các kỳ quay thừa của game phái sinh lô đề (dùng chung kết quả XSKT 3 Miền)
+    const derivedGames = await Game.find({ code: { $in: ['xoso_3mien', 'lode'] } }).select('_id');
+    if (derivedGames.length > 0) {
+      await Draw.deleteMany({
+        game: { $in: derivedGames.map(g => g._id) },
+        status: 'open'
+      });
+    }
+
     // 1. Vietlott / Điện Toán: Đảm bảo luôn có sẵn 10 kỳ quay
     const scheduledGames = await Game.find({
-      code: { $nin: ['keno', 'bao_keno', 'clln_keno', 'bingo18', 'MB', 'MT', 'MN'] }
+      code: { $nin: ['keno', 'bao_keno', 'clln_keno', 'bingo18', 'MB', 'MT', 'MN', 'xoso_3mien', 'lode'] }
     });
 
     for (const game of scheduledGames) {
