@@ -38,18 +38,103 @@ export const processDrawResults = async (drawId: string) => {
 
     // Lấy các đơn hàng có drawId là ObjectId hoặc drawCode VÀ phải đúng gameType
     // Lấy cả 'pending' (chưa in) và 'completed' (đã in trên CMS) để dò vé
+    const cleanDrawCode = draw.drawCode ? (draw.drawCode.startsWith('#') ? draw.drawCode : `#${draw.drawCode}`) : '';
+    const rawDrawCode = draw.drawCode ? draw.drawCode.replace(/^#/, '') : '';
+
+    const possibleDrawIds: any[] = [
+      draw._id,
+      draw._id.toString(),
+      draw.drawCode,
+      cleanDrawCode,
+      rawDrawCode
+    ].filter(Boolean);
+
+    // Tính ngày xổ theo múi giờ Việt Nam (Asia/Ho_Chi_Minh)
+    const closeTimeDate = new Date(draw.closeTime || draw.drawTime || draw.createdAt);
+    const vnDayStr = closeTimeDate.toLocaleDateString('en-GB', { timeZone: 'Asia/Ho_Chi_Minh' }); // "10/11/2026"
+    const vnIsoDate = closeTimeDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }); // "2026-11-10"
+    const schedDate = `sched_${vnIsoDate}`;
+    const dateList = [vnDayStr, vnIsoDate, schedDate];
+
+    const is3MienOrLode = game.type === 'kienthiet' || game.type === 'lode' || ['MB', 'MT', 'MN', 'xoso_3mien', 'lode'].includes(game.code);
+
+    if (is3MienOrLode) {
+      // Tìm các kỳ quay anh em (cùng ngày) như xoso_3mien để gộp vào dò vé và đồng bộ kết quả
+      const siblingDraws = await Draw.find({
+        _id: { $ne: draw._id },
+        closeTime: {
+          $gte: new Date(closeTimeDate.getTime() - 12 * 3600 * 1000),
+          $lte: new Date(closeTimeDate.getTime() + 12 * 3600 * 1000)
+        }
+      }).select('_id drawCode').lean();
+
+      siblingDraws.forEach(sd => {
+        possibleDrawIds.push(sd._id);
+        possibleDrawIds.push(sd._id.toString());
+        if (sd.drawCode) {
+          possibleDrawIds.push(sd.drawCode);
+          possibleDrawIds.push(sd.drawCode.replace(/^#/, ''));
+        }
+      });
+
+      // Đồng bộ kết quả trúng thưởng cho các kỳ quay phái sinh (xoso_3mien) cùng ngày
+      if (siblingDraws.length > 0) {
+        await Draw.updateMany(
+          { _id: { $in: siblingDraws.map(s => s._id) } },
+          { $set: { winningNumbers: draw.winningNumbers, status: 'completed' } }
+        );
+      }
+    }
+
+    let orderConditions: any[] = [
+      { drawId: { $in: possibleDrawIds } }
+    ];
+
+    if (is3MienOrLode) {
+      const isMB = game.code === 'MB' || draw.provinceId === 'MB';
+      const isMT = game.code === 'MT';
+      const isMN = game.code === 'MN';
+
+      let regionGameTypes: any[] = [game.code, 'xoso_3mien', 'lode', game.code.toLowerCase()];
+      let regionProvinceRegex: RegExp | null = null;
+
+      if (isMB) {
+        regionGameTypes.push('MB', 'mb');
+        regionProvinceRegex = /miền bắc|hà nội|mb/i;
+      } else if (isMN) {
+        regionGameTypes.push('MN', 'mn');
+        regionProvinceRegex = /miền nam|mn/i;
+      } else if (isMT) {
+        regionGameTypes.push('MT', 'mt');
+        regionProvinceRegex = /miền trung|mt/i;
+      }
+
+      orderConditions.push({
+        $and: [
+          { $or: [{ drawDate: { $in: dateList } }, { drawId: { $in: dateList } }] },
+          {
+            $or: [
+              { gameType: { $in: regionGameTypes } },
+              ...(regionProvinceRegex ? [{ provinceName: { $regex: regionProvinceRegex } }] : [])
+            ]
+          }
+        ]
+      });
+    }
+
     let orderQuery: any = {
-      $or: [{ drawId: draw._id.toString() }, { drawId: draw.drawCode }],
+      $or: orderConditions,
       status: { $in: ['pending', 'completed'] },
     };
 
-    if (game.type === 'kienthiet' || game.type === 'lode') {
+    if (is3MienOrLode) {
       orderQuery.gameType = { 
         $in: [
           game.code, 
           `kienthiet_${game.code.toLowerCase()}`, 
           'MB', 'MT', 'MN', 
           'xoso_3mien', 
+          'lode',
           /^kienthiet_/i
         ] 
       };
@@ -507,9 +592,13 @@ export const processDrawResults = async (drawId: string) => {
         if (w && w.length >= 9) {
           allBoards.forEach((board) => {
             const currentPlayType = (board.playType || order.playType || '').trim();
-            const pTypeLower = currentPlayType.toLowerCase();
+            // Chuẩn hóa tên loại cược (bỏ các chú thích trong ngoặc như "(Miền Bắc)", "(An Giang)")
+            const cleanPlayType = currentPlayType.replace(/\s*\(.*?\)\s*/g, '').trim();
+            const pTypeLower = cleanPlayType.toLowerCase();
 
-            const isMB = game.code === 'MB' || (order.gameType && order.gameType.toUpperCase() === 'MB') || (order.provinceName && order.provinceName.toLowerCase().includes('miền bắc'));
+            const isMB = game.code === 'MB' || 
+                         (order.gameType && order.gameType.toUpperCase() === 'MB') || 
+                         (order.provinceName && /miền bắc|hà nội|mb/i.test(order.provinceName));
 
             const getLodeMultiplier = (pType: string): number => {
               const p = pType.toLowerCase();
@@ -527,7 +616,7 @@ export const processDrawResults = async (drawId: string) => {
               return 1;
             };
 
-            const mult = getLodeMultiplier(currentPlayType);
+            const mult = getLodeMultiplier(cleanPlayType);
             const numCount = board.numbers && board.numbers.length > 0 ? board.numbers.length : 1;
             const baseCost = (board.baseCost && board.baseCost > 0)
               ? board.baseCost
