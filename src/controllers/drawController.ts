@@ -249,32 +249,11 @@ export const getActiveDraws = async (req: any, res: Response) => {
             closeTime: { $gt: maxAllowedCloseTime }
           });
         }
-        const expiredDraws = await Draw.find({
-          game: game._id,
-          status: 'open',
-          closeTime: { $lte: now }
-        });
-
-        for (const d of expiredDraws) {
-          if (game.autoRandomResult) {
-            const winningNumbers: string[] = [];
-            const nums = new Set<string>();
-            while (nums.size < (game.code === 'bingo18' ? 3 : 20)) {
-              const rnd = Math.floor(Math.random() * (game.code === 'bingo18' ? 6 : 80)) + 1;
-              nums.add(rnd.toString().padStart(2, '0'));
-            }
-            d.winningNumbers = Array.from(nums);
-            d.status = 'completed';
-          } else {
-            d.status = 'closed';
-          }
-          await d.save();
-          if (game.autoRandomResult) {
-            try {
-              processDrawResults(d._id.toString());
-            } catch (err) {}
-          }
-        }
+        // Tự động chốt cược các kỳ quay đã hết giờ (chờ Admin nhập kết quả)
+        await Draw.updateMany(
+          { game: game._id, status: 'open', closeTime: { $lte: now } },
+          { $set: { status: 'closed' } }
+        );
 
         const durationMinutes = game.code === 'bingo18' ? 8 : (game.drawDurationMinutes || 8);
         const openDraws = await Draw.find({

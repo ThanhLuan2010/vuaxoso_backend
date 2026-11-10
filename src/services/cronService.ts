@@ -241,10 +241,13 @@ const GAME_CONFIGS = [
 
 export const ensureGameConfigs = async () => {
   try {
+    // Đảm bảo tắt hoàn toàn chức năng tự động sinh kết quả trên tất cả game
+    await Game.updateMany({}, { $set: { autoRandomResult: false } });
+
     for (const cfg of GAME_CONFIGS) {
       await Game.updateOne(
         { code: cfg.code },
-        { $set: { cronExpression: cfg.cronExpression, drawDurationMinutes: cfg.drawDurationMinutes } }
+        { $set: { cronExpression: cfg.cronExpression, drawDurationMinutes: cfg.drawDurationMinutes, autoRandomResult: false } }
       );
     }
 
@@ -280,9 +283,9 @@ export const startCronJobs = () => {
       await ensureUpcomingDraws();
       const now = new Date();
       
-      // 1. Đóng các kỳ quay đã hết giờ & xổ số các kỳ quay đến giờ quay
+      // 1. Đóng các kỳ quay đã hết giờ (chuyển sang 'closed', chờ Admin nhập kết quả)
       const drawsToClose = await Draw.find({ 
-        status: { $in: ['open', 'closed'] }, 
+        status: 'open', 
         closeTime: { $lte: now } 
       }).populate('game');
 
@@ -290,137 +293,12 @@ export const startCronJobs = () => {
         const game = draw.game as any;
         if (!game) continue;
 
-        // Nếu draw có drawTime cụ thể và hiện tại chưa đến giờ mở thưởng (ví dụ chốt vé 17:00, mở thưởng 17:20):
-        if (draw.drawTime && now < draw.drawTime) {
-          if (draw.status !== 'closed') {
-            draw.status = 'closed';
-            await draw.save();
-            console.log(`CronService: Đã chốt nhận vé kỳ quay ${draw.drawCode} của game ${game.name} (Chờ xổ số lúc ${draw.drawTime.toLocaleTimeString('vi-VN')})`);
-          }
-          continue;
-        }
-
-        const vnHourStr = now.toLocaleTimeString('en-US', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false, hour: '2-digit' });
-        const vnHour = parseInt(vnHourStr);
-        const isScheduledGame = !game.code.includes('keno') && game.code !== 'bingo18';
-
-        // Đối với các game chưa có drawTime cụ thể mà thuộc loại có giờ xổ cố định sau 18h:
-        // Chốt vé lúc 17h20 (chuyển sang 'closed'), chờ đến 18h00/18h15 mới xổ số
-        if (!draw.drawTime && isScheduledGame && vnHour < 18 && game.code !== 'lotto_570' && game.code !== 'lotto_535') {
-          if (draw.status !== 'closed') {
-            draw.status = 'closed';
-            await draw.save();
-            console.log(`CronService: Đã chốt nhận vé kỳ quay ${draw.drawCode} của game ${game.name} (Chờ xổ số lúc 18h00)`);
-          }
-          continue;
-        }
-        
-        if (game.autoRandomResult) {
-          if (game.riggedResult) {
-            draw.winningNumbers = game.riggedResult.split(',').map((n: string) => n.trim()).filter(Boolean);
-            draw.status = 'completed';
-            console.log(`CronService: Đã áp dụng KẾT QUẢ THAO TÚNG cho kỳ quay ${draw.drawCode} của game ${game.name}`);
-            
-            // Xóa kết quả thao túng sau khi đã dùng
-            game.riggedResult = '';
-            await game.save();
-          } else {
-            if (game.code === 'than_tai_4') {
-              const winningNumbers: string[] = [];
-              const lengths = [4, 1, 2, 3];
-              lengths.forEach(len => {
-                let numStr = '';
-                for (let d = 0; d < len; d++) {
-                  numStr += Math.floor(Math.random() * 10).toString();
-                }
-                winningNumbers.push(numStr);
-              });
-              draw.winningNumbers = winningNumbers;
-            } else if (game.code === 'bingo18') {
-              const winningNumbers: string[] = [];
-              for (let d = 0; d < 3; d++) {
-                winningNumbers.push((Math.floor(Math.random() * 6) + 1).toString());
-              }
-              draw.winningNumbers = winningNumbers;
-            } else if (game.code === 'max_3d' || game.code === 'max_3d_pro' || game.code === 'max_4d') {
-              const winningNumbers: string[] = [];
-              const len = game.code === 'max_4d' ? 4 : 3;
-              // Max 4D có 6 giải (1 Nhất, 2 Nhì, 3 Ba); Max 3D có 4 giải
-              const count = game.code === 'max_4d' ? 6 : 4;
-              for (let i = 0; i < count; i++) {
-                let numStr = '';
-                for (let d = 0; d < len; d++) {
-                  numStr += Math.floor(Math.random() * 10).toString();
-                }
-                winningNumbers.push(numStr);
-              }
-              draw.winningNumbers = winningNumbers;
-            } else if (game.type === 'kienthiet' || (game.type === 'dientoan' && game.code !== 'dientoan_636')) {
-              const winningNumbers: string[] = [];
-              for (let p = 0; p < 9; p++) {
-                let length = 5;
-                // For loto/thantai, prize 0 is 5 digits or 4 digits. Kienthiet is 6 digits usually.
-                if (p === 0) {
-                  length = game.type === 'dientoan' ? 5 : 6;
-                  if (game.code === 'MB') length = 5;
-                }
-                else if (p >= 5 && p <= 6) length = 4;
-                else if (p === 7) length = 3;
-                else if (p === 8) length = 2;
-                
-                let numStr = '';
-                for (let d = 0; d < length; d++) {
-                  numStr += Math.floor(Math.random() * 10).toString();
-                }
-                winningNumbers.push(numStr);
-              }
-              draw.winningNumbers = winningNumbers;
-            } else {
-              let drawCount = 6;
-              let maxBall = 45;
-              
-              if (game.code === 'keno' || game.code === 'bao_keno') {
-                drawCount = 20;
-                maxBall = 80;
-              } else if (game.code === 'power_655') {
-                drawCount = 7;
-                maxBall = 55;
-              } else if (game.code === 'dientoan_636') {
-                drawCount = 6;
-                maxBall = 36;
-              } else if (game.code === 'lotto_535') {
-                drawCount = 5;
-                maxBall = 35;
-              } else if (game.code === 'lotto_570') {
-                drawCount = 5;
-                maxBall = 70;
-              }
-
-              const nums = new Set<string>();
-              while (nums.size < drawCount) {
-                const rnd = Math.floor(Math.random() * maxBall) + 1;
-                nums.add(rnd.toString().padStart(2, '0'));
-              }
-              draw.winningNumbers = Array.from(nums);
-            }
-            draw.status = 'completed';
-            console.log(`CronService: Đã tự động sinh kết quả ngẫu nhiên cho kỳ quay ${draw.drawCode}`);
-            
-            // Lịch trình trả thưởng không cần await để không block vòng lặp (hoặc await cũng được)
-          }
-        } else {
-          draw.status = 'closed';
-          console.log(`CronService: Đã đóng kỳ quay ${draw.drawCode} của game ${game.name} (Chờ nhập kết quả)`);
-        }
+        draw.status = 'closed';
         try {
           await draw.save();
+          console.log(`CronService: Đã chốt nhận vé kỳ quay ${draw.drawCode} của game ${game.name} (Chờ Admin nhập kết quả)`);
         } catch (err) {
-          console.error(`CronService: Lỗi lưu kỳ quay ${draw.drawCode} (VersionError)`, err);
-        }
-        
-        // Trả thưởng tự động nếu kỳ quay có kết quả (tự sinh hoặc thao túng)
-        if (game.autoRandomResult) {
-           processDrawResults(draw._id.toString());
+          console.error(`CronService: Lỗi lưu kỳ quay ${draw.drawCode}`, err);
         }
       }
 
