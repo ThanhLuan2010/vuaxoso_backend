@@ -192,8 +192,10 @@ export const checkoutOrders = async (req: any, res: Response) => {
     const ipAddress = Array.isArray(rawIp) ? rawIp[0] : (typeof rawIp === "string" ? rawIp.split(",")[0].trim() : rawIp);
     const loginDevice = req.headers["user-agent"] || "";
 
-    // Clear cart immediately
-    await Cart.findOneAndUpdate({ user: req.user.id }, { items: [] }).catch(() => {});
+    // Clear cart immediately ONLY if this checkout explicitly requested clearing cart (e.g. from Cart checkout)
+    if (req.body.clearCart === true) {
+      await Cart.findOneAndUpdate({ user: req.user.id }, { items: [] }).catch(() => {});
+    }
 
     // Prepare all order documents
     let runningBalance = balanceBefore;
