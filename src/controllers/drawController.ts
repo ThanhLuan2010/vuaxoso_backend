@@ -11,9 +11,11 @@ export const getKienThietSchedule = async (req: any, res: Response) => {
 
     const vnTimeStr = today.toLocaleTimeString('en-US', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false, hour: '2-digit', minute: '2-digit' });
     const [hour, min] = vnTimeStr.split(':').map(Number);
+    const currentMinutes = hour * 60 + min;
 
     let baseOffset = 0;
-    if (hour > 18 || (hour === 18 && min >= 30)) {
+    // 18h15 auto chuyển sang ngày bán vé kế tiếp của 3 miền
+    if (hour > 18 || (hour === 18 && min >= 15)) {
       baseOffset = 1;
       today.setDate(today.getDate() + 1); // shift base day to tomorrow
     }
@@ -52,14 +54,22 @@ export const getKienThietSchedule = async (req: any, res: Response) => {
     const getRegionData = (provs: any[], region: string) =>
       provs.filter(p => p.region === region).map(mapProvince);
 
+    // Khi baseOffset === 0 (hàng đầu tiên là hôm nay):
+    // 16h10 auto vé miền nam ngày đó tắt
+    // 17h10 auto vé miền trung tắt
+    // 18h10 auto vé miền bắc tắt
+    const isMNClosedToday = baseOffset === 0 && currentMinutes >= 16 * 60 + 10;
+    const isMTClosedToday = baseOffset === 0 && currentMinutes >= 17 * 60 + 10;
+    const isMBClosedToday = baseOffset === 0 && currentMinutes >= 18 * 60 + 10;
+
     const schedule = [
       {
         dateString: formatDate(today) + (baseOffset === 0 ? " (Hôm nay)" : " (Ngày mai)"),
         isToday: baseOffset === 0, isTomorrow: baseOffset === 1, isDayAfterTomorrow: baseOffset === 2,
         offset: baseOffset,
-        mb: getRegionData(todayProvinces, 'MB'),
-        mt: getRegionData(todayProvinces, 'MT'),
-        mn: getRegionData(todayProvinces, 'MN')
+        mb: isMBClosedToday ? [] : getRegionData(todayProvinces, 'MB'),
+        mt: isMTClosedToday ? [] : getRegionData(todayProvinces, 'MT'),
+        mn: isMNClosedToday ? [] : getRegionData(todayProvinces, 'MN')
       },
       {
         dateString: formatDate(tomorrow) + (baseOffset === 0 ? " (Ngày mai)" : " (Ngày kia)"),
