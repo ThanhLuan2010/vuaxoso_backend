@@ -283,9 +283,12 @@ export const getActiveDraws = async (req: any, res: Response) => {
     const Game = require('../models/Game').default;
     const games = await Game.find({ isActive: true });
 
-    // Auto-close any expired non-Keno open draws
+    // Auto-close các kỳ quay mở đã hết hạn của các game KHÔNG PHẢI Keno / Bingo18 (chờ Admin nhập kết quả)
+    const autoGames = games.filter((g: any) => ['keno', 'bao_keno', 'clln_keno', 'bingo18'].includes(g.code));
+    const autoGameIds = autoGames.map((g: any) => g._id);
+
     await Draw.updateMany(
-      { status: 'open', closeTime: { $lte: now } },
+      { game: { $nin: autoGameIds }, status: 'open', closeTime: { $lte: now } },
       { $set: { status: 'closed' } }
     );
 
@@ -300,11 +303,37 @@ export const getActiveDraws = async (req: any, res: Response) => {
             closeTime: { $gt: maxAllowedCloseTime }
           });
         }
-        // Tự động chốt cược các kỳ quay đã hết giờ (chờ Admin nhập kết quả)
-        await Draw.updateMany(
-          { game: game._id, status: 'open', closeTime: { $lte: now } },
-          { $set: { status: 'closed' } }
-        );
+        
+        // Tự động sinh kết quả và trả thưởng cho Keno và Bingo18 khi hết giờ
+        const expiredDraws = await Draw.find({
+          game: game._id,
+          status: 'open',
+          closeTime: { $lte: now }
+        });
+
+        for (const d of expiredDraws) {
+          let winningNumbers: string[] = [];
+          if (game.code === 'bingo18') {
+            for (let i = 0; i < 3; i++) {
+              winningNumbers.push((Math.floor(Math.random() * 6) + 1).toString());
+            }
+          } else {
+            const nums = new Set<string>();
+            while (nums.size < 20) {
+              const rnd = Math.floor(Math.random() * 80) + 1;
+              nums.add(rnd.toString().padStart(2, '0'));
+            }
+            winningNumbers = Array.from(nums);
+          }
+          d.winningNumbers = winningNumbers;
+          d.status = 'completed';
+          await d.save();
+          try {
+            processDrawResults(d._id.toString());
+          } catch (err) {
+            console.error(`getActiveDraws: Lỗi processDrawResults cho ${d.drawCode}:`, err);
+          }
+        }
 
         const durationMinutes = game.code === 'bingo18' ? 8 : (game.drawDurationMinutes || 8);
         const openDraws = await Draw.find({

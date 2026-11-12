@@ -5,8 +5,8 @@ import Game from './models/Game';
 dotenv.config();
 
 const MOCK_GAMES: any[] = [
-  { code: 'keno', name: 'KENO', type: 'vietlott', brandColor: '#FF4D15', bgColor: '#FFF2EE', badge: '8p-1 kỳ', cronExpression: '*/8 * * * *', drawDurationMinutes: 8, autoRandomResult: false },
-  { code: 'bao_keno', name: 'BAO KENO', type: 'vietlott', brandColor: '#FF4D15', bgColor: '#FFF2EE', badge: '8p-1 kỳ', cronExpression: '*/8 * * * *', drawDurationMinutes: 8, autoRandomResult: false },
+  { code: 'keno', name: 'KENO', type: 'vietlott', brandColor: '#FF4D15', bgColor: '#FFF2EE', badge: '8p-1 kỳ', cronExpression: '*/8 * * * *', drawDurationMinutes: 8, autoRandomResult: true },
+  { code: 'bao_keno', name: 'BAO KENO', type: 'vietlott', brandColor: '#FF4D15', bgColor: '#FFF2EE', badge: '8p-1 kỳ', cronExpression: '*/8 * * * *', drawDurationMinutes: 8, autoRandomResult: true },
   { code: 'mua_chung', name: 'MUA CHUNG', type: 'vietlott', brandColor: '#0095FF', bgColor: '#E6F4FF' },
   { code: 'power_655', name: 'POWER 6/55', type: 'vietlott', brandColor: '#D0021B', bgColor: '#FCE8EA', cronExpression: '0 18 * * 2,4,6', drawDurationMinutes: 60, autoRandomResult: false },
   { code: 'mega_645', name: 'MEGA 6/45', type: 'vietlott', brandColor: '#004F9F', bgColor: '#E6EEF7', badge: 'Hôm nay xổ', cronExpression: '0 18 * * 3,5,0', drawDurationMinutes: 60, autoRandomResult: false },
@@ -22,7 +22,7 @@ const MOCK_GAMES: any[] = [
   { code: 'truot_loto', name: 'TRƯỢT LÔ TÔ (4-8-10 cặp)', type: 'dientoan', brandColor: '#FF4D15', bgColor: '#FFF2EE', cronExpression: '15 18 * * *', drawDurationMinutes: 0 },
   { code: 'than_tai_4', name: 'Thần Tài 4 / ĐT 1-2-3', type: 'dientoan', brandColor: '#FF9A00', bgColor: '#FFF8F0', cronExpression: '0 18 * * *', drawDurationMinutes: 60 },
   { code: 'bao_636', name: 'BAO 6x36', type: 'dientoan', brandColor: '#D0021B', bgColor: '#FCE8EA', cronExpression: '15 18 * * 3,6', drawDurationMinutes: 0 },
-  { code: 'bingo18', name: 'ĐIỆN TOÁN BINGO18 (111-666)', type: 'dientoan', brandColor: '#0055A5', bgColor: '#E6F0FA', badge: '8p-1 kỳ', cronExpression: '*/8 * * * *', drawDurationMinutes: 8, autoRandomResult: false },
+  { code: 'bingo18', name: 'ĐIỆN TOÁN BINGO18 (111-666)', type: 'dientoan', brandColor: '#0055A5', bgColor: '#E6F0FA', badge: '8p-1 kỳ', cronExpression: '*/8 * * * *', drawDurationMinutes: 8, autoRandomResult: true },
 
   { code: 'MB', name: 'Xổ số Miền Bắc', type: 'kienthiet', brandColor: '#E51F27', cronExpression: '15 18 * * *', drawDurationMinutes: 60 },
   { code: 'MT', name: 'Xổ số Miền Trung', type: 'kienthiet', brandColor: '#5C2D91', cronExpression: '15 17 * * *', drawDurationMinutes: 60 },

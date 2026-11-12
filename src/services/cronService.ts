@@ -216,9 +216,9 @@ export const ensureUpcomingDraws = async () => {
 };
 
 const GAME_CONFIGS = [
-  { code: 'keno', cronExpression: '*/8 * * * *', drawDurationMinutes: 8 },
-  { code: 'bao_keno', cronExpression: '*/8 * * * *', drawDurationMinutes: 8 },
-  { code: 'clln_keno', cronExpression: '*/8 * * * *', drawDurationMinutes: 8 },
+  { code: 'keno', cronExpression: '*/8 * * * *', drawDurationMinutes: 8, autoRandomResult: true },
+  { code: 'bao_keno', cronExpression: '*/8 * * * *', drawDurationMinutes: 8, autoRandomResult: true },
+  { code: 'clln_keno', cronExpression: '*/8 * * * *', drawDurationMinutes: 8, autoRandomResult: true },
   { code: 'power_655', cronExpression: '0 18 * * 2,4,6', drawDurationMinutes: 0 },
   { code: 'mega_645', cronExpression: '0 18 * * 3,5,0', drawDurationMinutes: 0 },
   { code: 'max_3d', cronExpression: '0 18 * * 1,3,5', drawDurationMinutes: 0 },
@@ -230,7 +230,7 @@ const GAME_CONFIGS = [
   { code: 'loto_cap', cronExpression: '15 18 * * *', drawDurationMinutes: 0 },
   { code: 'truot_loto', cronExpression: '15 18 * * *', drawDurationMinutes: 0 },
   { code: 'than_tai_4', cronExpression: '0 18 * * *', drawDurationMinutes: 0 },
-  { code: 'bingo18', cronExpression: '*/8 * * * *', drawDurationMinutes: 8 },
+  { code: 'bingo18', cronExpression: '*/8 * * * *', drawDurationMinutes: 8, autoRandomResult: true },
   { code: 'bao_loto_2', cronExpression: '15 18 * * *', drawDurationMinutes: 0 },
   { code: 'lotto_535', cronExpression: '0 13,21 * * *', drawDurationMinutes: 0 },
   { code: 'lotto_570', cronExpression: '20 17 * * *', drawDurationMinutes: 0 },
@@ -241,13 +241,22 @@ const GAME_CONFIGS = [
 
 export const ensureGameConfigs = async () => {
   try {
-    // Đảm bảo tắt hoàn toàn chức năng tự động sinh kết quả trên tất cả game
-    await Game.updateMany({}, { $set: { autoRandomResult: false } });
+    // Bật tự động tạo kết quả cho Keno và Bingo18
+    await Game.updateMany(
+      { code: { $in: ['keno', 'bao_keno', 'clln_keno', 'bingo18'] } },
+      { $set: { autoRandomResult: true } }
+    );
+    // Đảm bảo tắt tự động tạo kết quả cho tất cả các game còn lại
+    await Game.updateMany(
+      { code: { $nin: ['keno', 'bao_keno', 'clln_keno', 'bingo18'] } },
+      { $set: { autoRandomResult: false } }
+    );
 
     for (const cfg of GAME_CONFIGS) {
+      const isAuto = ['keno', 'bao_keno', 'clln_keno', 'bingo18'].includes(cfg.code);
       await Game.updateOne(
         { code: cfg.code },
-        { $set: { cronExpression: cfg.cronExpression, drawDurationMinutes: cfg.drawDurationMinutes, autoRandomResult: false } }
+        { $set: { cronExpression: cfg.cronExpression, drawDurationMinutes: cfg.drawDurationMinutes, autoRandomResult: isAuto } }
       );
     }
 
@@ -283,9 +292,9 @@ export const startCronJobs = () => {
       await ensureUpcomingDraws();
       const now = new Date();
       
-      // 1. Đóng các kỳ quay đã hết giờ (chuyển sang 'closed', chờ Admin nhập kết quả)
+      // 1. Đóng các kỳ quay đã hết giờ & tự động sinh kết quả cho Keno và Bingo18
       const drawsToClose = await Draw.find({ 
-        status: 'open', 
+        status: { $in: ['open', 'closed'] }, 
         closeTime: { $lte: now } 
       }).populate('game');
 
@@ -293,12 +302,55 @@ export const startCronJobs = () => {
         const game = draw.game as any;
         if (!game) continue;
 
-        draw.status = 'closed';
-        try {
-          await draw.save();
-          console.log(`CronService: Đã chốt nhận vé kỳ quay ${draw.drawCode} của game ${game.name} (Chờ Admin nhập kết quả)`);
-        } catch (err) {
-          console.error(`CronService: Lỗi lưu kỳ quay ${draw.drawCode}`, err);
+        const isAutoGame = ['keno', 'bao_keno', 'clln_keno', 'bingo18'].includes(game.code) || game.autoRandomResult === true;
+
+        if (isAutoGame) {
+          // Xổ số tự động cho Keno và Bingo18
+          if (draw.status !== 'completed' || !draw.winningNumbers || draw.winningNumbers.length === 0) {
+            if (game.riggedResult) {
+              draw.winningNumbers = game.riggedResult.split(',').map((n: string) => n.trim()).filter(Boolean);
+              draw.status = 'completed';
+              console.log(`CronService: Đã áp dụng KẾT QUẢ THAO TÚNG cho kỳ quay ${draw.drawCode} của game ${game.name}`);
+              game.riggedResult = '';
+              await game.save();
+            } else {
+              if (game.code === 'bingo18') {
+                const winningNumbers: string[] = [];
+                for (let d = 0; d < 3; d++) {
+                  winningNumbers.push((Math.floor(Math.random() * 6) + 1).toString());
+                }
+                draw.winningNumbers = winningNumbers;
+              } else {
+                // Keno: 20 số ngẫu nhiên từ 01 đến 80
+                const nums = new Set<string>();
+                while (nums.size < 20) {
+                  const rnd = Math.floor(Math.random() * 80) + 1;
+                  nums.add(rnd.toString().padStart(2, '0'));
+                }
+                draw.winningNumbers = Array.from(nums);
+              }
+              draw.status = 'completed';
+              console.log(`CronService: Đã tự động sinh kết quả ngẫu nhiên cho kỳ quay ${draw.drawCode} của game ${game.name}`);
+            }
+
+            try {
+              await draw.save();
+              processDrawResults(draw._id.toString());
+            } catch (err) {
+              console.error(`CronService: Lỗi lưu kỳ quay ${draw.drawCode}`, err);
+            }
+          }
+        } else {
+          // Các game khác: chỉ chốt cược nếu đang open, chờ Admin nhập kết quả
+          if (draw.status === 'open') {
+            draw.status = 'closed';
+            try {
+              await draw.save();
+              console.log(`CronService: Đã chốt nhận vé kỳ quay ${draw.drawCode} của game ${game.name} (Chờ Admin nhập kết quả)`);
+            } catch (err) {
+              console.error(`CronService: Lỗi lưu kỳ quay ${draw.drawCode}`, err);
+            }
+          }
         }
       }
 

@@ -905,12 +905,20 @@ export const getOrderById = async (req: any, res: Response) => {
       return res.status(403).json({ message: 'Không có quyền truy cập' });
     }
 
+    let drawDoc: any = null;
     if (order.drawId && mongoose.Types.ObjectId.isValid(order.drawId)) {
-      const draw = await Draw.findById(order.drawId).lean();
-      if (draw) order.drawId = draw.drawCode;
+      drawDoc = await Draw.findById(order.drawId).populate('province').lean();
     }
 
-    if (!order.drawId || !String(order.drawId).startsWith('#')) {
+    if (!drawDoc && order.drawId && String(order.drawId).startsWith('#')) {
+      const cleanCode = order.drawId.trim();
+      drawDoc = await Draw.findOne({
+        drawCode: cleanCode,
+        status: 'open'
+      }).populate('province').lean();
+    }
+
+    if (!drawDoc) {
       const targetDateStr = order.drawDate || (typeof order.drawId === 'string' && /^\d{2}\/\d{2}\/\d{4}/.test(order.drawId) ? order.drawId : null);
       if (targetDateStr) {
         const dateParts = targetDateStr.split('/');
@@ -936,27 +944,28 @@ export const getOrderById = async (req: any, res: Response) => {
             if (p) provId = p.provinceId;
           }
 
-          let matchedDraw = null;
           if (provId) {
-            matchedDraw = await Draw.findOne({
+            drawDoc = await Draw.findOne({
               game: { $in: relatedGameIds },
               provinceId: { $in: [provId, order.provinceName].filter(Boolean) as string[] },
               closeTime: { $gte: startOfDay, $lte: endOfDay }
-            }).select('_id drawCode').lean();
+            }).populate('province').lean();
           }
-          if (!matchedDraw) {
-            matchedDraw = await Draw.findOne({
+          if (!drawDoc) {
+            drawDoc = await Draw.findOne({
               game: { $in: relatedGameIds },
               closeTime: { $gte: startOfDay, $lte: endOfDay }
-            }).select('_id drawCode').lean();
-          }
-
-          if (matchedDraw && matchedDraw.drawCode) {
-            order.drawId = matchedDraw.drawCode;
-            Order.updateOne({ _id: order._id }, { $set: { drawId: matchedDraw.drawCode } }).catch(() => {});
+            }).populate('province').lean();
           }
         }
       }
+    }
+
+    if (drawDoc) {
+      order.draw = drawDoc;
+      order.drawCode = drawDoc.drawCode;
+      order.drawId = drawDoc.drawCode;
+      Order.updateOne({ _id: order._id }, { $set: { drawId: drawDoc.drawCode } }).catch(() => {});
     }
 
     res.json(order);
