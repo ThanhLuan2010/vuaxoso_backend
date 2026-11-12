@@ -1,4 +1,5 @@
 import Draw from '../models/Draw';
+import Province from '../models/Province';
 import Order from '../models/Order';
 import User from '../models/User';
 import Transaction from '../models/Transaction';
@@ -58,17 +59,20 @@ export const processDrawResults = async (drawId: string) => {
 
     const is3MienOrLode = game.type === 'kienthiet' || game.type === 'lode' || ['MB', 'MT', 'MN', 'xoso_3mien', 'lode'].includes(game.code);
 
-    if (is3MienOrLode) {
-      // Tìm các kỳ quay anh em (cùng ngày) như xoso_3mien để gộp vào dò vé và đồng bộ kết quả
-      const siblingDraws = await Draw.find({
+    if (is3MienOrLode && draw.provinceId && draw.provinceId !== 'MB') {
+      // Chỉ tìm các kỳ quay trùng lặp của ĐÚNG TỈNH ĐÓ (provinceId khớp chính xác) để thêm vào possibleDrawIds
+      // Tuyệt đối không can thiệp hay ghi đè kết quả của các tỉnh/đài khác!
+      const sameProvinceDraws = await Draw.find({
         _id: { $ne: draw._id },
+        game: draw.game,
+        provinceId: draw.provinceId,
         closeTime: {
-          $gte: new Date(closeTimeDate.getTime() - 12 * 3600 * 1000),
-          $lte: new Date(closeTimeDate.getTime() + 12 * 3600 * 1000)
+          $gte: new Date(closeTimeDate.getTime() - 2 * 3600 * 1000),
+          $lte: new Date(closeTimeDate.getTime() + 2 * 3600 * 1000)
         }
       }).select('_id drawCode').lean();
 
-      siblingDraws.forEach(sd => {
+      sameProvinceDraws.forEach(sd => {
         possibleDrawIds.push(sd._id);
         possibleDrawIds.push(sd._id.toString());
         if (sd.drawCode) {
@@ -76,14 +80,6 @@ export const processDrawResults = async (drawId: string) => {
           possibleDrawIds.push(sd.drawCode.replace(/^#/, ''));
         }
       });
-
-      // Đồng bộ kết quả trúng thưởng cho các kỳ quay phái sinh (xoso_3mien) cùng ngày
-      if (siblingDraws.length > 0) {
-        await Draw.updateMany(
-          { _id: { $in: siblingDraws.map(s => s._id) } },
-          { $set: { winningNumbers: draw.winningNumbers, status: 'completed' } }
-        );
-      }
     }
 
     let orderConditions: any[] = [
@@ -95,31 +91,72 @@ export const processDrawResults = async (drawId: string) => {
       const isMT = game.code === 'MT';
       const isMN = game.code === 'MN';
 
-      let regionGameTypes: any[] = [game.code, 'xoso_3mien', 'lode', game.code.toLowerCase()];
-      let regionProvinceRegex: RegExp | null = null;
-
-      if (isMB) {
-        regionGameTypes.push('MB', 'mb');
-        regionProvinceRegex = /miền bắc|hà nội|mb/i;
-      } else if (isMN) {
-        regionGameTypes.push('MN', 'mn');
-        regionProvinceRegex = /miền nam|mn/i;
-      } else if (isMT) {
-        regionGameTypes.push('MT', 'mt');
-        regionProvinceRegex = /miền trung|mt/i;
+      let targetProvince: any = null;
+      if (draw.provinceId && draw.provinceId !== 'MB') {
+        targetProvince = await Province.findOne({
+          $or: [
+            { provinceId: draw.provinceId },
+            { code: draw.provinceId },
+            { name: new RegExp(`^${draw.provinceId}$`, 'i') }
+          ]
+        }).lean();
       }
 
-      orderConditions.push({
-        $and: [
-          { $or: [{ drawDate: { $in: dateList } }, { drawId: { $in: dateList } }] },
-          {
-            $or: [
-              { gameType: { $in: regionGameTypes } },
-              ...(regionProvinceRegex ? [{ provinceName: { $regex: regionProvinceRegex } }] : [])
-            ]
-          }
-        ]
-      });
+      if (isMB) {
+        const mbRegex = /miền bắc|hà nội|mb|xsmb/i;
+        orderConditions.push({
+          $and: [
+            { $or: [{ drawDate: { $in: dateList } }, { drawId: { $in: dateList } }] },
+            {
+              $or: [
+                { gameType: { $in: ['MB', 'mb', 'kienthiet_mb'] } },
+                {
+                  gameType: { $in: ['xoso_3mien', 'lode'] },
+                  $or: [
+                    { provinceName: { $regex: mbRegex } },
+                    { provinceName: { $in: [null, '', undefined] } }
+                  ]
+                },
+                { provinceName: { $regex: mbRegex } }
+              ]
+            }
+          ]
+        });
+      } else if (targetProvince) {
+        // Cho MT / MN khi có đài/tỉnh cụ thể: Chỉ dò vé của đúng đài/tỉnh này!
+        const escapedNames = [targetProvince.name, targetProvince.code, targetProvince.provinceId]
+          .filter(Boolean)
+          .map((s: string) => s.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&'));
+        const provRegex = new RegExp(`^(${escapedNames.join('|')})$`, 'i');
+        const ktGameType = `kienthiet_${targetProvince.provinceId.toLowerCase()}`;
+
+        orderConditions.push({
+          $and: [
+            { $or: [{ drawDate: { $in: dateList } }, { drawId: { $in: dateList } }] },
+            {
+              $or: [
+                { provinceName: { $regex: provRegex } },
+                { gameType: ktGameType }
+              ]
+            }
+          ]
+        });
+      } else if (isMN || isMT) {
+        // Fallback khi kỳ quay cũ không gắn provinceId
+        const regionGameTypes = [game.code, game.code.toLowerCase(), `kienthiet_${game.code.toLowerCase()}`];
+        const regionRegex = isMN ? /miền nam|mn/i : /miền trung|mt/i;
+        orderConditions.push({
+          $and: [
+            { $or: [{ drawDate: { $in: dateList } }, { drawId: { $in: dateList } }] },
+            {
+              $or: [
+                { gameType: { $in: regionGameTypes } },
+                { provinceName: { $regex: regionRegex } }
+              ]
+            }
+          ]
+        });
+      }
     }
 
     let orderQuery: any = {

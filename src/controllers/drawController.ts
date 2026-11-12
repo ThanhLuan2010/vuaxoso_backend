@@ -138,12 +138,41 @@ export const ensureKienThietDraws = async () => {
       const cutoffMin = 10;
       const drawHour = game.code === "MN" ? 16 : (game.code === "MT" ? 17 : 18);
       const drawMin = 15;
-      let lastDrawNum = game.code === "MN" ? 1100 : (game.code === "MT" ? 1200 : 1350);
 
-      const lastDraw = await Draw.findOne({ game: game._id }).sort({ createdAt: -1 }).lean();
-      if (lastDraw) {
-        const match = lastDraw.drawCode.match(/#?(\d+)/);
-        if (match) lastDrawNum = Math.max(lastDrawNum, parseInt(match[1]));
+      // 1. Thu thập tất cả drawCode đã tồn tại của game này để đảm bảo TÍNH DUY NHẤT TUYỆT ĐỐI
+      const allGameDraws = await Draw.find({ game: game._id }).select("drawCode status closeTime").lean();
+      const existingDrawCodes = new Set<string>();
+      let maxDrawNum = game.code === "MN" ? 1100 : (game.code === "MT" ? 1200 : 1350);
+
+      for (const d of allGameDraws) {
+        if (d.drawCode) {
+          existingDrawCodes.add(d.drawCode);
+          const match = d.drawCode.match(/(\d+)/);
+          if (match) {
+            const val = parseInt(match[1], 10);
+            if (!isNaN(val) && val < 9000) {
+              maxDrawNum = Math.max(maxDrawNum, val);
+            }
+          }
+        }
+      }
+
+      // 2. Tự động chuẩn hóa / khử trùng lặp cho các kỳ open hiện tại nếu có kỳ bị trùng mã
+      const openDraws = await Draw.find({ game: game._id, status: "open" }).sort({ closeTime: 1, createdAt: 1 });
+      const seenOpenCodes = new Set<string>();
+      for (const od of openDraws) {
+        if (seenOpenCodes.has(od.drawCode)) {
+          let newUniqueCode = "";
+          do {
+            maxDrawNum += 1;
+            newUniqueCode = "#" + String(maxDrawNum).padStart(4, "0");
+          } while (existingDrawCodes.has(newUniqueCode));
+          existingDrawCodes.add(newUniqueCode);
+          seenOpenCodes.add(newUniqueCode);
+          await Draw.updateOne({ _id: od._id }, { $set: { drawCode: newUniqueCode } });
+        } else {
+          seenOpenCodes.add(od.drawCode);
+        }
       }
 
       // Lấy khoảng thời gian 14 ngày tới để luôn đủ kỳ quay cho khách đặt trước
@@ -177,10 +206,16 @@ export const ensureKienThietDraws = async () => {
           const key = `MB_${cutoff.getTime()}`;
           if (!existingSet.has(key)) {
             existingSet.add(key);
-            lastDrawNum += 1;
+            let uniqueCode = "";
+            do {
+              maxDrawNum += 1;
+              uniqueCode = "#" + String(maxDrawNum).padStart(4, "0");
+            } while (existingDrawCodes.has(uniqueCode));
+            existingDrawCodes.add(uniqueCode);
+
             newDraws.push({
               game: game._id,
-              drawCode: "#" + String(lastDrawNum).padStart(4, "0"),
+              drawCode: uniqueCode,
               provinceId: "MB",
               openTime: new Date(cutoff.getTime() - 24 * 3600 * 1000),
               closeTime: cutoff,
@@ -194,10 +229,16 @@ export const ensureKienThietDraws = async () => {
             const key = `${prov.provinceId}_${cutoff.getTime()}`;
             if (!existingSet.has(key)) {
               existingSet.add(key);
-              lastDrawNum += 1;
+              let uniqueCode = "";
+              do {
+                maxDrawNum += 1;
+                uniqueCode = "#" + String(maxDrawNum).padStart(4, "0");
+              } while (existingDrawCodes.has(uniqueCode));
+              existingDrawCodes.add(uniqueCode);
+
               newDraws.push({
                 game: game._id,
-                drawCode: "#" + String(lastDrawNum).padStart(4, "0"),
+                drawCode: uniqueCode,
                 provinceId: prov.provinceId,
                 openTime: new Date(cutoff.getTime() - 24 * 3600 * 1000),
                 closeTime: cutoff,
@@ -435,65 +476,10 @@ export const getActiveDraws = async (req: any, res: Response) => {
             checkDate.setDate(checkDate.getDate() + 1);
           }
         }
-      } else if (game.code === 'MB' || game.code === 'MT' || game.code === 'MN' || game.type === 'kienthiet') {
-        const openDraws = await Draw.find({
-          game: game._id,
-          status: 'open',
-          closeTime: { $gt: now }
-        }).sort({ closeTime: 1 });
-
-        if (openDraws.length < 10) {
-          const cutoffHour = game.code === 'MN' ? 16 : (game.code === 'MT' ? 17 : 18);
-          const cutoffMin = 10;
-          const drawHour = game.code === 'MN' ? 16 : (game.code === 'MT' ? 17 : 18);
-          const drawMin = 15;
-          let lastDrawNum = game.code === 'MN' ? 1100 : (game.code === 'MT' ? 1200 : 1350);
-
-          if (openDraws.length > 0) {
-            const match = openDraws[openDraws.length - 1].drawCode.match(/#?(\d+)/);
-            if (match) lastDrawNum = parseInt(match[1]);
-          } else {
-            const lastCompleted = await Draw.findOne({ game: game._id }).sort({ closeTime: -1 });
-            if (lastCompleted) {
-              const match = lastCompleted.drawCode.match(/#?(\d+)/);
-              if (match) lastDrawNum = parseInt(match[1]);
-            }
-          }
-
-          let checkDate = new Date(now);
-          if (openDraws.length > 0) {
-            const lastOpenCloseTime = new Date(openDraws[openDraws.length - 1].closeTime);
-            checkDate = new Date(lastOpenCloseTime.getTime() + 24 * 3600 * 1000);
-          }
-
-          const needed = 10 - openDraws.length;
-          let created = 0;
-          while (created < needed) {
-            const cutoff = getVNCutoffDate(checkDate, cutoffHour, cutoffMin);
-            const drawCutoff = getVNCutoffDate(checkDate, drawHour, drawMin);
-            if (cutoff > now) {
-              const exists = await Draw.findOne({ game: game._id, closeTime: cutoff });
-              if (!exists) {
-                lastDrawNum += 1;
-                const drawCode = `#${String(lastDrawNum).padStart(4, '0')}`;
-                await Draw.create({
-                  game: game._id,
-                  drawCode,
-                  openTime: new Date(cutoff.getTime() - 24 * 3600 * 1000),
-                  closeTime: cutoff,
-                  drawTime: drawCutoff,
-                  status: 'open'
-                });
-                created++;
-              }
-            }
-            checkDate.setDate(checkDate.getDate() + 1);
-          }
-        }
       }
     }
 
-    // Đảm bảo luôn có đầy đủ các kỳ quay 14 ngày tới cho Lô Đề / XSKT 3 Miền
+    // Đảm bảo luôn có đầy đủ các kỳ quay 14 ngày tới cho Lô Đề / XSKT 3 Miền (với mã kỳ quay duy nhất theo tỉnh thành)
     await ensureKienThietDraws();
 
     const draws = await Draw.find({ status: 'open', closeTime: { $gt: now } }).populate('game').sort({ closeTime: 1 }).lean();
@@ -576,9 +562,27 @@ export const createDraw = async (req: any, res: Response) => {
   try {
     const { gameId, drawCode, openTime, closeTime, jackpotAmount, provinceId } = req.body;
 
+    if (!drawCode || !String(drawCode).trim()) {
+      return res.status(400).json({ message: 'Mã kỳ quay không được để trống' });
+    }
+
+    const cleanDrawCode = String(drawCode).trim().startsWith('#')
+      ? String(drawCode).trim()
+      : `#${String(drawCode).trim()}`;
+
+    // Kiểm tra kỳ quay trùng lặp cho cùng một game
+    const existing = await Draw.findOne({
+      game: gameId,
+      drawCode: cleanDrawCode
+    });
+
+    if (existing) {
+      return res.status(400).json({ message: `Mã kỳ quay ${cleanDrawCode} đã tồn tại trong hệ thống, không được trùng!` });
+    }
+
     const draw = await Draw.create({
       game: gameId,
-      drawCode,
+      drawCode: cleanDrawCode,
       openTime,
       closeTime,
       jackpotAmount,
@@ -716,7 +720,20 @@ export const updateDraw = async (req: any, res: Response) => {
       return res.status(404).json({ message: 'Không tìm thấy kỳ quay' });
     }
 
-    if (drawCode !== undefined) draw.drawCode = drawCode;
+    if (drawCode !== undefined) {
+      const cleanDrawCode = String(drawCode).trim().startsWith('#')
+        ? String(drawCode).trim()
+        : `#${String(drawCode).trim()}`;
+      const existing = await Draw.findOne({
+        _id: { $ne: id },
+        game: draw.game,
+        drawCode: cleanDrawCode
+      });
+      if (existing) {
+        return res.status(400).json({ message: `Mã kỳ quay ${cleanDrawCode} đã tồn tại trong hệ thống, không thể cập nhật trùng!` });
+      }
+      draw.drawCode = cleanDrawCode;
+    }
     if (openTime !== undefined) draw.openTime = new Date(openTime);
     if (closeTime !== undefined) draw.closeTime = new Date(closeTime);
     if (drawTime !== undefined) draw.drawTime = drawTime ? new Date(drawTime) : undefined;
@@ -732,6 +749,11 @@ export const updateDraw = async (req: any, res: Response) => {
     if (provinceId !== undefined) draw.provinceId = provinceId;
 
     await draw.save();
+
+    if (draw.winningNumbers && draw.winningNumbers.length > 0 && draw.status === 'completed') {
+      processDrawResults(draw._id.toString()).catch(e => console.error('updateDraw processDrawResults error:', e));
+    }
+
     const updated = await Draw.findById(id).populate('game');
     res.json({ message: 'Cập nhật kỳ quay thành công', draw: updated });
   } catch (error: any) {
