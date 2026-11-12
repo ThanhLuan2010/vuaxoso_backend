@@ -443,14 +443,14 @@ export const createOrder = async (req: any, res: Response) => {
     const vnTimeStr = now.toLocaleString("en-US", { timeZone: "Asia/Ho_Chi_Minh" });
     const vnDate = new Date(vnTimeStr);
 
+    const todayDay = String(vnDate.getDate()).padStart(2, '0');
+    const todayMonth = String(vnDate.getMonth() + 1).padStart(2, '0');
+    const todayYear = vnDate.getFullYear();
+    const todayStr = `${todayDay}/${todayMonth}/${todayYear}`;
+
     // For Kien Thiet
     if (gameType.startsWith('kienthiet_')) {
-      const provinceId = gameType.replace('kienthiet_', '');
-
-      const todayDay = String(vnDate.getDate()).padStart(2, '0');
-      const todayMonth = String(vnDate.getMonth() + 1).padStart(2, '0');
-      const todayYear = vnDate.getFullYear();
-      const todayStr = `${todayDay}/${todayMonth}/${todayYear}`; // e.g., "05/08/2026"
+      const provinceId = gameType.replace('kienthiet_', ''); // e.g., "05/08/2026"
 
       // The `drawId` from frontend for Kien Thiet is usually the date string e.g. "05/08/2026" (or "05/08/2026 (Hôm nay)")
       // Wait, the client sends "05/08/2026 (Hôm nay)" or just "05/08/2026" ?
@@ -477,7 +477,18 @@ export const createOrder = async (req: any, res: Response) => {
       const searchGameCode = gameType.includes('max_3d') ? 'max_3d' : ((gameType === 'bao_keno' || gameType === 'clln_keno') ? 'keno' : gameType);
       const gameDoc = await Game.findOne({ code: searchGameCode });
       const isLodeOrRegion = ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn"].includes(searchGameCode);
+      const isMbDerivedDienToan = ['loto_235', 'loto_cap', 'bao_loto_2', 'truot_loto'].includes(searchGameCode);
       const isScheduledDate = (typeof drawId === "string" && (drawId.startsWith("sched_") || /^\d{2}\/\d{2}\/\d{4}/.test(drawId))) || (drawDate && /^\d{2}\/\d{2}\/\d{4}/.test(drawDate));
+
+      if (isMbDerivedDienToan) {
+        const targetDateStr = (drawDate || (typeof drawId === 'string' && /^\d{2}\/\d{2}\/\d{4}/.test(drawId) ? drawId : '')).substring(0, 10);
+        if (targetDateStr === todayStr) {
+          const currentMinutes = vnDate.getHours() * 60 + vnDate.getMinutes();
+          if (currentMinutes >= 18 * 60 + 10) {
+            return res.status(400).json({ message: 'Đã quá thời gian chốt vé (18:10) của ngày hôm nay. Vui lòng mua vé cho kỳ quay kế tiếp.' });
+          }
+        }
+      }
 
       if (drawId === 'DUMMY_DRAW_ID') {
         if (!gameDoc) {
@@ -497,6 +508,25 @@ export const createOrder = async (req: any, res: Response) => {
         }
         if (!draw) {
           draw = await Draw.findOne({ drawCode: { $in: [drawId, cleanCode] } });
+        }
+      }
+
+      if (!draw && isMbDerivedDienToan && gameDoc) {
+        const targetDateStr = drawDate || (typeof drawId === 'string' && /^\d{2}\/\d{2}\/\d{4}/.test(drawId) ? drawId : null);
+        if (targetDateStr) {
+          const dateParts = targetDateStr.substring(0, 10).split('/');
+          if (dateParts.length === 3) {
+            const day = parseInt(dateParts[0], 10);
+            const month = parseInt(dateParts[1], 10);
+            const year = parseInt(dateParts[2], 10);
+            const startOfDay = new Date(Date.UTC(year, month - 1, day, 0 - 7, 0, 0));
+            const endOfDay = new Date(Date.UTC(year, month - 1, day, 23 - 7, 59, 59, 999));
+            draw = await Draw.findOne({
+              game: gameDoc._id,
+              status: 'open',
+              closeTime: { $gte: startOfDay, $lte: endOfDay, $gt: now }
+            }).sort({ closeTime: 1 });
+          }
         }
       }
 
@@ -912,10 +942,23 @@ export const getOrderById = async (req: any, res: Response) => {
 
     if (!drawDoc && order.drawId && String(order.drawId).startsWith('#')) {
       const cleanCode = order.drawId.trim();
-      drawDoc = await Draw.findOne({
-        drawCode: cleanCode,
-        status: 'open'
-      }).populate('province').lean();
+      let query: any = { drawCode: cleanCode };
+      if (order.provinceName) {
+        const prov = await Province.findOne({
+          $or: [
+            { name: new RegExp(`^${order.provinceName.trim()}$`, 'i') },
+            { provinceId: new RegExp(`^${order.provinceName.trim()}$`, 'i') },
+            { code: new RegExp(`^${order.provinceName.trim()}$`, 'i') }
+          ]
+        }).lean();
+        if (prov) {
+          query.provinceId = prov.provinceId;
+        }
+      }
+      drawDoc = await Draw.findOne(query).sort({ closeTime: -1, createdAt: -1 }).populate('province').lean();
+      if (!drawDoc) {
+        drawDoc = await Draw.findOne({ drawCode: cleanCode }).sort({ closeTime: -1, createdAt: -1 }).populate('province').lean();
+      }
     }
 
     if (!drawDoc) {
@@ -965,6 +1008,9 @@ export const getOrderById = async (req: any, res: Response) => {
       order.draw = drawDoc;
       order.drawCode = drawDoc.drawCode;
       order.drawId = drawDoc.drawCode;
+      if ((!order.winningNumbers || order.winningNumbers.length === 0) && drawDoc.winningNumbers && drawDoc.winningNumbers.length > 0) {
+        order.winningNumbers = drawDoc.winningNumbers;
+      }
       Order.updateOne({ _id: order._id }, { $set: { drawId: drawDoc.drawCode } }).catch(() => {});
     }
 

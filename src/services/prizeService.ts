@@ -86,6 +86,15 @@ export const processDrawResults = async (drawId: string) => {
       { drawId: { $in: possibleDrawIds } }
     ];
 
+    if (['loto_235', 'loto_cap', 'bao_loto_2', 'truot_loto'].includes(game.code)) {
+      orderConditions.push({
+        $and: [
+          { $or: [{ drawDate: { $in: dateList } }, { drawId: { $in: dateList } }, { drawId: { $regex: new RegExp(vnIsoDate.replace(/-/g, ''), 'i') } }] },
+          { gameType: game.code }
+        ]
+      });
+    }
+
     if (is3MienOrLode) {
       const isMB = game.code === 'MB' || draw.provinceId === 'MB';
       const isMT = game.code === 'MT';
@@ -1412,7 +1421,7 @@ export const processDrawResults = async (drawId: string) => {
                      const numLen = ticketStr.length;
                      const betAmount = board.cost || 10000;
                      
-                     if (order.playType?.includes('Bao 2 số')) {
+                     if (order.playType?.includes('Bao 2 số') || order.playType?.includes('Bao lô tô 2') || game.code === 'bao_loto_2') {
                         // Bao 2 số: Trúng 2 số cuối của 27 giải (x2.7)
                         if (w.length >= 27 && numLen === 2) {
                            for (let i = 0; i < 27; i++) {

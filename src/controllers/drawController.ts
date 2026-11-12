@@ -481,9 +481,12 @@ export const getActiveDraws = async (req: any, res: Response) => {
             const dayOfWeek = getVNDayOfWeek(checkDate);
             if (drawDays.includes(dayOfWeek)) {
               const isLotto570 = game.code === 'lotto_570';
-              const is18h15Game = ['dientoan_636', 'bao_636', 'loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(game.code);
+              const isMbTimeGame = ['loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(game.code);
+              const is18h15Game = ['dientoan_636', 'bao_636'].includes(game.code) || isMbTimeGame;
 
-              const closeCutoff = isLotto570 ? getVNCutoffDate(checkDate, 17, 0) : getVNCutoffDate(checkDate, 17, 20);
+              const closeCutoff = isLotto570 
+                ? getVNCutoffDate(checkDate, 17, 0) 
+                : (isMbTimeGame ? getVNCutoffDate(checkDate, 18, 10) : getVNCutoffDate(checkDate, 17, 20));
               const drawCutoff = isLotto570 
                 ? getVNCutoffDate(checkDate, 17, 20) 
                 : (is18h15Game ? getVNCutoffDate(checkDate, 18, 15) : getVNCutoffDate(checkDate, 18, 0));
@@ -494,7 +497,7 @@ export const getActiveDraws = async (req: any, res: Response) => {
                 await Draw.create({
                   game: game._id,
                   drawCode,
-                  openTime: new Date(closeCutoff.getTime() - 2 * 24 * 3600 * 1000),
+                  openTime: new Date(closeCutoff.getTime() - 24 * 3600 * 1000 + (isMbTimeGame ? 5 * 60 * 1000 : 0)),
                   closeTime: closeCutoff,
                   drawTime: drawCutoff,
                   status: 'open'
@@ -625,6 +628,53 @@ export const createDraw = async (req: any, res: Response) => {
 };
 
 // Admin: Cập nhật kết quả trúng thưởng
+
+// Tự động đồng bộ kết quả XSMB sang 4 game điện toán: loto_235, loto_cap, bao_loto_2, truot_loto
+export const syncMbResultsToDienToan = async (mbDraw: any) => {
+  try {
+    const Game = require('../models/Game').default;
+    const mbCloseDate = new Date(mbDraw.closeTime || mbDraw.drawTime || mbDraw.createdAt);
+    const vnDayStr = mbCloseDate.toLocaleDateString('en-GB', { timeZone: 'Asia/Ho_Chi_Minh' });
+    const [d, m, y] = vnDayStr.split('/').map(Number);
+    const startOfDay = new Date(Date.UTC(y, m - 1, d, 0 - 7, 0, 0));
+    const endOfDay = new Date(Date.UTC(y, m - 1, d, 23 - 7, 59, 59, 999));
+
+    const mbDerivedGames = await Game.find({
+      code: { $in: ['loto_235', 'loto_cap', 'bao_loto_2', 'truot_loto'] }
+    });
+
+    for (const g of mbDerivedGames) {
+      let targetDraw = await Draw.findOne({
+        game: g._id,
+        closeTime: { $gte: startOfDay, $lte: endOfDay }
+      });
+
+      if (!targetDraw) {
+        const closeTime = new Date(Date.UTC(y, m - 1, d, 18 - 7, 10, 0));
+        const drawTime = new Date(Date.UTC(y, m - 1, d, 18 - 7, 15, 0));
+        targetDraw = await Draw.create({
+          game: g._id,
+          drawCode: mbDraw.drawCode || ('#' + Date.now()),
+          openTime: new Date(closeTime.getTime() - 24 * 3600 * 1000 + 5 * 60 * 1000),
+          closeTime,
+          drawTime,
+          winningNumbers: mbDraw.winningNumbers,
+          status: 'completed'
+        });
+      } else {
+        targetDraw.winningNumbers = mbDraw.winningNumbers;
+        targetDraw.status = 'completed';
+        await targetDraw.save();
+      }
+
+      await processDrawResults(targetDraw._id.toString());
+      console.log('syncMbResultsToDienToan: Đã đồng bộ kết quả MB sang ' + g.code + ' (Kỳ ' + targetDraw.drawCode + ')');
+    }
+  } catch (err) {
+    console.error('Lỗi khi syncMbResultsToDienToan:', err);
+  }
+};
+
 export const enterResults = async (req: any, res: Response) => {
   try {
     const { winningNumbers, provinceId } = req.body;
@@ -641,6 +691,12 @@ export const enterResults = async (req: any, res: Response) => {
 
     // Chạy logic dò vé để trả thưởng cho User (Phase 3)
     await processDrawResults(draw._id.toString());
+
+    // Nếu là kỳ quay Miền Bắc (MB), tự động đồng bộ kết quả cho 4 game điện toán theo KQ MB
+    const gameCurrent = draw.game as any;
+    if (gameCurrent && gameCurrent.code === 'MB' && winningNumbers && winningNumbers.length >= 27) {
+      syncMbResultsToDienToan(draw).catch(e => console.error('enterResults syncMbResultsToDienToan error:', e));
+    }
 
     // Auto-create next draw if no active draw exists (Only for Keno / fast-interval games)
     const game = draw.game as any;
@@ -781,6 +837,11 @@ export const updateDraw = async (req: any, res: Response) => {
 
     if (draw.winningNumbers && draw.winningNumbers.length > 0 && draw.status === 'completed') {
       processDrawResults(draw._id.toString()).catch(e => console.error('updateDraw processDrawResults error:', e));
+
+      const gameCurrent = draw.game as any;
+      if (gameCurrent && gameCurrent.code === 'MB' && draw.winningNumbers.length >= 27) {
+        syncMbResultsToDienToan(draw).catch(e => console.error('updateDraw syncMbResultsToDienToan error:', e));
+      }
     }
 
     const updated = await Draw.findById(id).populate('game');

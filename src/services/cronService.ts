@@ -132,9 +132,12 @@ export const ensureUpcomingDraws = async () => {
           const dayOfWeek = getVNDayOfWeek(checkDate);
           if (drawDays.includes(dayOfWeek)) {
             const isLotto570 = game.code === 'lotto_570';
-            const is18h15Game = ['dientoan_636', 'bao_636', 'loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(game.code);
+            const isMbTimeGame = ['loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(game.code);
+            const is18h15Game = ['dientoan_636', 'bao_636'].includes(game.code) || isMbTimeGame;
 
-            const closeCutoff = isLotto570 ? getVNCutoffDate(checkDate, 17, 0) : getVNCutoffDate(checkDate, 17, 20);
+            const closeCutoff = isLotto570 
+              ? getVNCutoffDate(checkDate, 17, 0) 
+              : (isMbTimeGame ? getVNCutoffDate(checkDate, 18, 10) : getVNCutoffDate(checkDate, 17, 20));
             const drawCutoff = isLotto570 
               ? getVNCutoffDate(checkDate, 17, 20) 
               : (is18h15Game ? getVNCutoffDate(checkDate, 18, 15) : getVNCutoffDate(checkDate, 18, 0));
@@ -145,7 +148,7 @@ export const ensureUpcomingDraws = async () => {
               await Draw.create({
                 game: game._id,
                 drawCode,
-                openTime: new Date(closeCutoff.getTime() - 24 * 3600 * 1000),
+                openTime: new Date(closeCutoff.getTime() - 24 * 3600 * 1000 + (isMbTimeGame ? 5 * 60 * 1000 : 0)),
                 closeTime: closeCutoff,
                 drawTime: drawCutoff,
                 status: 'open'
@@ -258,6 +261,25 @@ export const ensureGameConfigs = async () => {
         { code: cfg.code },
         { $set: { cronExpression: cfg.cronExpression, drawDurationMinutes: cfg.drawDurationMinutes, autoRandomResult: isAuto } }
       );
+    }
+
+    let truotGame = await Game.findOne({ code: 'truot_loto' });
+    if (!truotGame) {
+      await Game.create({
+        code: 'truot_loto',
+        name: 'TRƯỢT LÔ TÔ (4-8-10 cặp)',
+        type: 'dientoan',
+        brandColor: '#FF4D15',
+        bgColor: '#FFF2EE',
+        badge: 'Mỗi ngày',
+        subtext: '🏆 x12 lần',
+        isActive: true,
+        cronExpression: '15 18 * * *',
+        drawDurationMinutes: 0,
+        autoRandomResult: false,
+        payoutRates: { 'Trượt 4': 2.5, 'Trượt 8': 8.5, 'Trượt 10': 12 }
+      });
+      console.log('CronService: Đã tự động tạo game TRƯỢT LÔ TÔ (truot_loto)');
     }
 
     const lodeGame = await Game.findOne({ code: 'xoso_3mien' });
