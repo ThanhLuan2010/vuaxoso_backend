@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.processDrawResults = void 0;
 const Draw_1 = __importDefault(require("../models/Draw"));
+const Province_1 = __importDefault(require("../models/Province"));
 const Order_1 = __importDefault(require("../models/Order"));
 const User_1 = __importDefault(require("../models/User"));
 const Transaction_1 = __importDefault(require("../models/Transaction"));
@@ -55,16 +56,19 @@ const processDrawResults = async (drawId) => {
         const schedDate = `sched_${vnIsoDate}`;
         const dateList = [vnDayStr, vnIsoDate, schedDate];
         const is3MienOrLode = game.type === 'kienthiet' || game.type === 'lode' || ['MB', 'MT', 'MN', 'xoso_3mien', 'lode'].includes(game.code);
-        if (is3MienOrLode) {
-            // Tìm các kỳ quay anh em (cùng ngày) như xoso_3mien để gộp vào dò vé và đồng bộ kết quả
-            const siblingDraws = await Draw_1.default.find({
+        if (is3MienOrLode && draw.provinceId && draw.provinceId !== 'MB') {
+            // Chỉ tìm các kỳ quay trùng lặp của ĐÚNG TỈNH ĐÓ (provinceId khớp chính xác) để thêm vào possibleDrawIds
+            // Tuyệt đối không can thiệp hay ghi đè kết quả của các tỉnh/đài khác!
+            const sameProvinceDraws = await Draw_1.default.find({
                 _id: { $ne: draw._id },
+                game: draw.game,
+                provinceId: draw.provinceId,
                 closeTime: {
-                    $gte: new Date(closeTimeDate.getTime() - 12 * 3600 * 1000),
-                    $lte: new Date(closeTimeDate.getTime() + 12 * 3600 * 1000)
+                    $gte: new Date(closeTimeDate.getTime() - 2 * 3600 * 1000),
+                    $lte: new Date(closeTimeDate.getTime() + 2 * 3600 * 1000)
                 }
             }).select('_id drawCode').lean();
-            siblingDraws.forEach(sd => {
+            sameProvinceDraws.forEach(sd => {
                 possibleDrawIds.push(sd._id);
                 possibleDrawIds.push(sd._id.toString());
                 if (sd.drawCode) {
@@ -72,43 +76,88 @@ const processDrawResults = async (drawId) => {
                     possibleDrawIds.push(sd.drawCode.replace(/^#/, ''));
                 }
             });
-            // Đồng bộ kết quả trúng thưởng cho các kỳ quay phái sinh (xoso_3mien) cùng ngày
-            if (siblingDraws.length > 0) {
-                await Draw_1.default.updateMany({ _id: { $in: siblingDraws.map(s => s._id) } }, { $set: { winningNumbers: draw.winningNumbers, status: 'completed' } });
-            }
         }
         let orderConditions = [
             { drawId: { $in: possibleDrawIds } }
         ];
+        if (['loto_235', 'loto_cap', 'bao_loto_2', 'truot_loto'].includes(game.code)) {
+            orderConditions.push({
+                $and: [
+                    { $or: [{ drawDate: { $in: dateList } }, { drawId: { $in: dateList } }, { drawId: { $regex: new RegExp(vnIsoDate.replace(/-/g, ''), 'i') } }] },
+                    { gameType: game.code }
+                ]
+            });
+        }
         if (is3MienOrLode) {
             const isMB = game.code === 'MB' || draw.provinceId === 'MB';
             const isMT = game.code === 'MT';
             const isMN = game.code === 'MN';
-            let regionGameTypes = [game.code, 'xoso_3mien', 'lode', game.code.toLowerCase()];
-            let regionProvinceRegex = null;
+            let targetProvince = null;
+            if (draw.provinceId && draw.provinceId !== 'MB') {
+                targetProvince = await Province_1.default.findOne({
+                    $or: [
+                        { provinceId: draw.provinceId },
+                        { code: draw.provinceId },
+                        { name: new RegExp(`^${draw.provinceId}$`, 'i') }
+                    ]
+                }).lean();
+            }
             if (isMB) {
-                regionGameTypes.push('MB', 'mb');
-                regionProvinceRegex = /miền bắc|hà nội|mb/i;
+                const mbRegex = /miền bắc|hà nội|mb|xsmb/i;
+                orderConditions.push({
+                    $and: [
+                        { $or: [{ drawDate: { $in: dateList } }, { drawId: { $in: dateList } }] },
+                        {
+                            $or: [
+                                { gameType: { $in: ['MB', 'mb', 'kienthiet_mb'] } },
+                                {
+                                    gameType: { $in: ['xoso_3mien', 'lode'] },
+                                    $or: [
+                                        { provinceName: { $regex: mbRegex } },
+                                        { provinceName: { $in: [null, '', undefined] } }
+                                    ]
+                                },
+                                { provinceName: { $regex: mbRegex } }
+                            ]
+                        }
+                    ]
+                });
             }
-            else if (isMN) {
-                regionGameTypes.push('MN', 'mn');
-                regionProvinceRegex = /miền nam|mn/i;
+            else if (targetProvince) {
+                // Cho MT / MN khi có đài/tỉnh cụ thể: Chỉ dò vé của đúng đài/tỉnh này!
+                const escapedNames = [targetProvince.name, targetProvince.code, targetProvince.provinceId]
+                    .filter(Boolean)
+                    .map((s) => s.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&'));
+                const provRegex = new RegExp(`^(${escapedNames.join('|')})$`, 'i');
+                const ktGameType = `kienthiet_${targetProvince.provinceId.toLowerCase()}`;
+                orderConditions.push({
+                    $and: [
+                        { $or: [{ drawDate: { $in: dateList } }, { drawId: { $in: dateList } }] },
+                        {
+                            $or: [
+                                { provinceName: { $regex: provRegex } },
+                                { gameType: ktGameType }
+                            ]
+                        }
+                    ]
+                });
             }
-            else if (isMT) {
-                regionGameTypes.push('MT', 'mt');
-                regionProvinceRegex = /miền trung|mt/i;
+            else if (isMN || isMT) {
+                // Fallback khi kỳ quay cũ không gắn provinceId
+                const regionGameTypes = [game.code, game.code.toLowerCase(), `kienthiet_${game.code.toLowerCase()}`];
+                const regionRegex = isMN ? /miền nam|mn/i : /miền trung|mt/i;
+                orderConditions.push({
+                    $and: [
+                        { $or: [{ drawDate: { $in: dateList } }, { drawId: { $in: dateList } }] },
+                        {
+                            $or: [
+                                { gameType: { $in: regionGameTypes } },
+                                { provinceName: { $regex: regionRegex } }
+                            ]
+                        }
+                    ]
+                });
             }
-            orderConditions.push({
-                $and: [
-                    { $or: [{ drawDate: { $in: dateList } }, { drawId: { $in: dateList } }] },
-                    {
-                        $or: [
-                            { gameType: { $in: regionGameTypes } },
-                            ...(regionProvinceRegex ? [{ provinceName: { $regex: regionProvinceRegex } }] : [])
-                        ]
-                    }
-                ]
-            });
         }
         let orderQuery = {
             $or: orderConditions,
@@ -1472,7 +1521,7 @@ const processDrawResults = async (drawId) => {
                                 if (game.code === 'loto_235' || game.code.includes('loto')) {
                                     const numLen = ticketStr.length;
                                     const betAmount = board.cost || 10000;
-                                    if (order.playType?.includes('Bao 2 số')) {
+                                    if (order.playType?.includes('Bao 2 số') || order.playType?.includes('Bao lô tô 2') || game.code === 'bao_loto_2') {
                                         // Bao 2 số: Trúng 2 số cuối của 27 giải (x2.7)
                                         if (w.length >= 27 && numLen === 2) {
                                             for (let i = 0; i < 27; i++) {

@@ -931,13 +931,15 @@ export const getOrderById = async (req: any, res: Response) => {
     }
 
     // Check if the user is authorized to view this order (either admin or owner)
-    if (order.user.toString() !== req.user.id && req.user.role !== 'admin') {
+    const orderUserId = String(order.user?._id || order.user || '');
+    const currentUserId = String(req.user?._id || req.user?.id || '');
+    if (orderUserId && currentUserId && orderUserId !== currentUserId && req.user?.role !== 'admin') {
       return res.status(403).json({ message: 'Không có quyền truy cập' });
     }
 
     let drawDoc: any = null;
     if (order.drawId && mongoose.Types.ObjectId.isValid(order.drawId)) {
-      drawDoc = await Draw.findById(order.drawId).populate('province').lean();
+      drawDoc = await Draw.findById(order.drawId).lean();
     }
 
     if (!drawDoc && order.drawId && String(order.drawId).startsWith('#')) {
@@ -955,9 +957,9 @@ export const getOrderById = async (req: any, res: Response) => {
           query.provinceId = prov.provinceId;
         }
       }
-      drawDoc = await Draw.findOne(query).sort({ closeTime: -1, createdAt: -1 }).populate('province').lean();
+      drawDoc = await Draw.findOne(query).sort({ closeTime: -1, createdAt: -1 }).lean();
       if (!drawDoc) {
-        drawDoc = await Draw.findOne({ drawCode: cleanCode }).sort({ closeTime: -1, createdAt: -1 }).populate('province').lean();
+        drawDoc = await Draw.findOne({ drawCode: cleanCode }).sort({ closeTime: -1, createdAt: -1 }).lean();
       }
     }
 
@@ -992,19 +994,31 @@ export const getOrderById = async (req: any, res: Response) => {
               game: { $in: relatedGameIds },
               provinceId: { $in: [provId, order.provinceName].filter(Boolean) as string[] },
               closeTime: { $gte: startOfDay, $lte: endOfDay }
-            }).populate('province').lean();
+            }).lean();
           }
           if (!drawDoc) {
             drawDoc = await Draw.findOne({
               game: { $in: relatedGameIds },
               closeTime: { $gte: startOfDay, $lte: endOfDay }
-            }).populate('province').lean();
+            }).lean();
           }
         }
       }
     }
 
     if (drawDoc) {
+      // Gắn province detail nếu có
+      if (drawDoc.provinceId && !drawDoc.province) {
+        const p = await Province.findOne({
+          $or: [
+            { provinceId: drawDoc.provinceId },
+            { code: drawDoc.provinceId },
+            { name: new RegExp(`^${drawDoc.provinceId}$`, 'i') }
+          ]
+        }).lean();
+        if (p) drawDoc.province = p;
+      }
+
       order.draw = drawDoc;
       order.drawCode = drawDoc.drawCode;
       order.drawId = drawDoc.drawCode;
@@ -1016,6 +1030,7 @@ export const getOrderById = async (req: any, res: Response) => {
 
     res.json(order);
   } catch (error: any) {
+    console.error('getOrderById error:', error);
     res.status(500).json({ message: error.message });
   }
 };

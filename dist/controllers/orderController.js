@@ -184,8 +184,10 @@ const checkoutOrders = async (req, res) => {
         const rawIp = req.headers["x-forwarded-for"] || req.socket?.remoteAddress || req.ip || "";
         const ipAddress = Array.isArray(rawIp) ? rawIp[0] : (typeof rawIp === "string" ? rawIp.split(",")[0].trim() : rawIp);
         const loginDevice = req.headers["user-agent"] || "";
-        // Clear cart immediately
-        await Cart_1.default.findOneAndUpdate({ user: req.user.id }, { items: [] }).catch(() => { });
+        // Clear cart immediately ONLY if this checkout explicitly requested clearing cart (e.g. from Cart checkout)
+        if (req.body.clearCart === true) {
+            await Cart_1.default.findOneAndUpdate({ user: req.user.id }, { items: [] }).catch(() => { });
+        }
         // Prepare all order documents
         let runningBalance = balanceBefore;
         const timestamp = Date.now();
@@ -419,13 +421,13 @@ const createOrder = async (req, res) => {
         const now = new Date();
         const vnTimeStr = now.toLocaleString("en-US", { timeZone: "Asia/Ho_Chi_Minh" });
         const vnDate = new Date(vnTimeStr);
+        const todayDay = String(vnDate.getDate()).padStart(2, '0');
+        const todayMonth = String(vnDate.getMonth() + 1).padStart(2, '0');
+        const todayYear = vnDate.getFullYear();
+        const todayStr = `${todayDay}/${todayMonth}/${todayYear}`;
         // For Kien Thiet
         if (gameType.startsWith('kienthiet_')) {
-            const provinceId = gameType.replace('kienthiet_', '');
-            const todayDay = String(vnDate.getDate()).padStart(2, '0');
-            const todayMonth = String(vnDate.getMonth() + 1).padStart(2, '0');
-            const todayYear = vnDate.getFullYear();
-            const todayStr = `${todayDay}/${todayMonth}/${todayYear}`; // e.g., "05/08/2026"
+            const provinceId = gameType.replace('kienthiet_', ''); // e.g., "05/08/2026"
             // The `drawId` from frontend for Kien Thiet is usually the date string e.g. "05/08/2026" (or "05/08/2026 (Hôm nay)")
             // Wait, the client sends "05/08/2026 (Hôm nay)" or just "05/08/2026" ?
             // Let's just extract the date part (first 10 chars)
@@ -453,7 +455,17 @@ const createOrder = async (req, res) => {
             const searchGameCode = gameType.includes('max_3d') ? 'max_3d' : ((gameType === 'bao_keno' || gameType === 'clln_keno') ? 'keno' : gameType);
             const gameDoc = await Game_1.default.findOne({ code: searchGameCode });
             const isLodeOrRegion = ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn"].includes(searchGameCode);
+            const isMbDerivedDienToan = ['loto_235', 'loto_cap', 'bao_loto_2', 'truot_loto'].includes(searchGameCode);
             const isScheduledDate = (typeof drawId === "string" && (drawId.startsWith("sched_") || /^\d{2}\/\d{2}\/\d{4}/.test(drawId))) || (drawDate && /^\d{2}\/\d{2}\/\d{4}/.test(drawDate));
+            if (isMbDerivedDienToan) {
+                const targetDateStr = (drawDate || (typeof drawId === 'string' && /^\d{2}\/\d{2}\/\d{4}/.test(drawId) ? drawId : '')).substring(0, 10);
+                if (targetDateStr === todayStr) {
+                    const currentMinutes = vnDate.getHours() * 60 + vnDate.getMinutes();
+                    if (currentMinutes >= 18 * 60 + 10) {
+                        return res.status(400).json({ message: 'Đã quá thời gian chốt vé (18:10) của ngày hôm nay. Vui lòng mua vé cho kỳ quay kế tiếp.' });
+                    }
+                }
+            }
             if (drawId === 'DUMMY_DRAW_ID') {
                 if (!gameDoc) {
                     return res.status(400).json({ message: 'Không tìm thấy loại hình vé số này' });
@@ -475,6 +487,24 @@ const createOrder = async (req, res) => {
                 }
                 if (!draw) {
                     draw = await Draw_1.default.findOne({ drawCode: { $in: [drawId, cleanCode] } });
+                }
+            }
+            if (!draw && isMbDerivedDienToan && gameDoc) {
+                const targetDateStr = drawDate || (typeof drawId === 'string' && /^\d{2}\/\d{2}\/\d{4}/.test(drawId) ? drawId : null);
+                if (targetDateStr) {
+                    const dateParts = targetDateStr.substring(0, 10).split('/');
+                    if (dateParts.length === 3) {
+                        const day = parseInt(dateParts[0], 10);
+                        const month = parseInt(dateParts[1], 10);
+                        const year = parseInt(dateParts[2], 10);
+                        const startOfDay = new Date(Date.UTC(year, month - 1, day, 0 - 7, 0, 0));
+                        const endOfDay = new Date(Date.UTC(year, month - 1, day, 23 - 7, 59, 59, 999));
+                        draw = await Draw_1.default.findOne({
+                            game: gameDoc._id,
+                            status: 'open',
+                            closeTime: { $gte: startOfDay, $lte: endOfDay, $gt: now }
+                        }).sort({ closeTime: 1 });
+                    }
                 }
             }
             // Khớp kỳ quay theo ngày và đài đối với Lô Đề / XSKT nếu chưa tìm thấy draw theo drawId
@@ -863,15 +893,36 @@ const getOrderById = async (req, res) => {
             return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
         }
         // Check if the user is authorized to view this order (either admin or owner)
-        if (order.user.toString() !== req.user.id && req.user.role !== 'admin') {
+        const orderUserId = String(order.user?._id || order.user || '');
+        const currentUserId = String(req.user?._id || req.user?.id || '');
+        if (orderUserId && currentUserId && orderUserId !== currentUserId && req.user?.role !== 'admin') {
             return res.status(403).json({ message: 'Không có quyền truy cập' });
         }
+        let drawDoc = null;
         if (order.drawId && mongoose_1.default.Types.ObjectId.isValid(order.drawId)) {
-            const draw = await Draw_1.default.findById(order.drawId).lean();
-            if (draw)
-                order.drawId = draw.drawCode;
+            drawDoc = await Draw_1.default.findById(order.drawId).lean();
         }
-        if (!order.drawId || !String(order.drawId).startsWith('#')) {
+        if (!drawDoc && order.drawId && String(order.drawId).startsWith('#')) {
+            const cleanCode = order.drawId.trim();
+            let query = { drawCode: cleanCode };
+            if (order.provinceName) {
+                const prov = await Province_1.default.findOne({
+                    $or: [
+                        { name: new RegExp(`^${order.provinceName.trim()}$`, 'i') },
+                        { provinceId: new RegExp(`^${order.provinceName.trim()}$`, 'i') },
+                        { code: new RegExp(`^${order.provinceName.trim()}$`, 'i') }
+                    ]
+                }).lean();
+                if (prov) {
+                    query.provinceId = prov.provinceId;
+                }
+            }
+            drawDoc = await Draw_1.default.findOne(query).sort({ closeTime: -1, createdAt: -1 }).lean();
+            if (!drawDoc) {
+                drawDoc = await Draw_1.default.findOne({ drawCode: cleanCode }).sort({ closeTime: -1, createdAt: -1 }).lean();
+            }
+        }
+        if (!drawDoc) {
             const targetDateStr = order.drawDate || (typeof order.drawId === 'string' && /^\d{2}\/\d{2}\/\d{4}/.test(order.drawId) ? order.drawId : null);
             if (targetDateStr) {
                 const dateParts = targetDateStr.split('/');
@@ -895,30 +946,47 @@ const getOrderById = async (req, res) => {
                         if (p)
                             provId = p.provinceId;
                     }
-                    let matchedDraw = null;
                     if (provId) {
-                        matchedDraw = await Draw_1.default.findOne({
+                        drawDoc = await Draw_1.default.findOne({
                             game: { $in: relatedGameIds },
                             provinceId: { $in: [provId, order.provinceName].filter(Boolean) },
                             closeTime: { $gte: startOfDay, $lte: endOfDay }
-                        }).select('_id drawCode').lean();
+                        }).lean();
                     }
-                    if (!matchedDraw) {
-                        matchedDraw = await Draw_1.default.findOne({
+                    if (!drawDoc) {
+                        drawDoc = await Draw_1.default.findOne({
                             game: { $in: relatedGameIds },
                             closeTime: { $gte: startOfDay, $lte: endOfDay }
-                        }).select('_id drawCode').lean();
-                    }
-                    if (matchedDraw && matchedDraw.drawCode) {
-                        order.drawId = matchedDraw.drawCode;
-                        Order_1.default.updateOne({ _id: order._id }, { $set: { drawId: matchedDraw.drawCode } }).catch(() => { });
+                        }).lean();
                     }
                 }
             }
         }
+        if (drawDoc) {
+            // Gắn province detail nếu có
+            if (drawDoc.provinceId && !drawDoc.province) {
+                const p = await Province_1.default.findOne({
+                    $or: [
+                        { provinceId: drawDoc.provinceId },
+                        { code: drawDoc.provinceId },
+                        { name: new RegExp(`^${drawDoc.provinceId}$`, 'i') }
+                    ]
+                }).lean();
+                if (p)
+                    drawDoc.province = p;
+            }
+            order.draw = drawDoc;
+            order.drawCode = drawDoc.drawCode;
+            order.drawId = drawDoc.drawCode;
+            if ((!order.winningNumbers || order.winningNumbers.length === 0) && drawDoc.winningNumbers && drawDoc.winningNumbers.length > 0) {
+                order.winningNumbers = drawDoc.winningNumbers;
+            }
+            Order_1.default.updateOne({ _id: order._id }, { $set: { drawId: drawDoc.drawCode } }).catch(() => { });
+        }
         res.json(order);
     }
     catch (error) {
+        console.error('getOrderById error:', error);
         res.status(500).json({ message: error.message });
     }
 };

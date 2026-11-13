@@ -13,7 +13,9 @@
     "reset:kienthiet": "ts-node src/scripts/resetKienThietDraws.ts",
     "seed:lode": "ts-node src/scripts/seedLodeGame.ts",
     "test:email": "ts-node src/scripts/testEmail.ts",
-    "migrate:winning-tx": "ts-node src/scripts/migrateWinningTransactions.ts"
+    "migrate:winning-tx": "ts-node src/scripts/migrateWinningTransactions.ts",
+    "test:e2e": "ts-node src/scripts/test_e2e_all_games.ts",
+    "test": "npm run test:e2e"
   },
   "keywords": [],
   "author": "",
