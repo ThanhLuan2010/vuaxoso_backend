@@ -260,43 +260,54 @@ export const checkoutOrders = async (req: any, res: Response) => {
       }
     })();
 
-    // Create 1 notification
-    await Notification.create({
-      user: user._id,
-      title: "Mua vé thành công",
-      body: `Bạn đã thanh toán thành công ${createdOrders.length} vé. Tổng tiền: ${totalBatchCost.toLocaleString("vi-VN")} đ`,
-      type: "order",
-      category: "important",
-      orderId: createdOrders[0]?._id?.toString()
-    }).catch(() => {});
+    const GAME_NAMES_MAP: Record<string, string> = {
+      power_655: "POWER 6/55",
+      mega_645: "MEGA 6/45",
+      keno: "KENO",
+      bao_keno: "BAO KENO",
+      clln_keno: "KENO CHẴN LẺ / LỚN NHỎ",
+      max_3d: "MAX 3D",
+      max_3d_pro: "MAX 3D PRO",
+      max_4d: "MAX 4D",
+      bingo18: "BINGO 18",
+      lotto_535: "LOTTO 5/35",
+      lotto_570: "LOTTO 5/70",
+      loto_235: "LÔ TÔ 2-3-5",
+      loto_cap: "LÔ TÔ CẶP SỐ",
+      dientoan_636: "ĐIỆN TOÁN 6X36",
+      than_tai_4: "THẦN TÀI 4",
+      truot_loto: "TRƯỢT LÔ TÔ",
+      MB: "LÔ ĐỀ MIỀN BẮC",
+      MT: "LÔ ĐỀ MIỀN TRUNG",
+      MN: "LÔ ĐỀ MIỀN NAM",
+    };
+
+    // Tạo thông báo riêng biệt cho từng vé đã mua, tránh việc gộp nhiều vé vào 1 thông báo
+    // nhưng khi nhấn vào chi tiết lại chỉ ra 1 vé có giá tiền khác gây hiểu lầm cho người dùng
+    for (const ord of createdOrders) {
+      let gameTitle = GAME_NAMES_MAP[ord.gameType] || ord.gameType;
+      if (ord.gameType && ord.gameType.startsWith("kienthiet_")) {
+        const provCode = ord.gameType.replace("kienthiet_", "").toUpperCase();
+        gameTitle = `XSKT ${ord.provinceName || provCode}`;
+      } else if (gameCache[ord.gameType]?.name) {
+        gameTitle = gameCache[ord.gameType].name;
+      }
+
+      await Notification.create({
+        user: user._id,
+        title: "Mua vé thành công",
+        body: `Bạn đã thanh toán thành công vé ${gameTitle} (#${ord.orderId}). Tiền thanh toán: ${(ord.totalCost || 0).toLocaleString("vi-VN")} đ`,
+        type: "order",
+        category: "important",
+        orderId: ord._id.toString()
+      }).catch(() => {});
+    }
 
     // Send single email containing full, clearly separated details of each ticket in background
     (async () => {
       try {
         const alertEmail = process.env.ADMIN_ALERT_EMAIL || "developervnteam@gmail.com";
         const orderDateStr = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
-
-        const GAME_NAMES_MAP: Record<string, string> = {
-          power_655: "POWER 6/55",
-          mega_645: "MEGA 6/45",
-          keno: "KENO",
-          bao_keno: "BAO KENO",
-          clln_keno: "KENO CHẴN LẺ / LỚN NHỎ",
-          max_3d: "MAX 3D",
-          max_3d_pro: "MAX 3D PRO",
-          max_4d: "MAX 4D",
-          bingo18: "BINGO 18",
-          lotto_535: "LOTTO 5/35",
-          lotto_570: "LOTTO 5/70",
-          loto_235: "LÔ TÔ 2-3-5",
-          loto_cap: "LÔ TÔ CẶP SỐ",
-          dientoan_636: "ĐIỆN TOÁN 6X36",
-          than_tai_4: "THẦN TÀI 4",
-          truot_loto: "TRƯỢT LÔ TÔ",
-          MB: "LÔ ĐỀ MIỀN BẮC",
-          MT: "LÔ ĐỀ MIỀN TRUNG",
-          MN: "LÔ ĐỀ MIỀN NAM",
-        };
 
         const drawIdsToFetch = createdOrders
           .map((o: any) => o.drawId)

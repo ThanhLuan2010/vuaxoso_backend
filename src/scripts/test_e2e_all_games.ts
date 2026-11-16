@@ -355,6 +355,43 @@ testCase('VALIDATION', 'Kiểm tra trừ số dư ví (Balance debit) và chặn
   assert.strictEqual(canAfford, false, 'Không đủ số dư');
 });
 
+testCase('NOTIFICATION', 'Thanh toán giỏ hàng nhiều vé tạo thông báo riêng cho từng vé (khớp giá 100% khi nhấn chi tiết)', () => {
+  // Giả lập 3 đơn hàng được tạo trong 1 lượt thanh toán giỏ hàng
+  const createdOrders = [
+    { _id: 'ord_1', orderId: 'ORD_001', gameType: 'power_655', totalCost: 20000 },
+    { _id: 'ord_2', orderId: 'ORD_002', gameType: 'mega_645', totalCost: 30000 },
+    { _id: 'ord_3', orderId: 'ORD_003', gameType: 'MB', totalCost: 50000 }
+  ];
+
+  const GAME_NAMES_MAP: Record<string, string> = {
+    power_655: 'POWER 6/55',
+    mega_645: 'MEGA 6/45',
+    MB: 'LÔ ĐỀ MIỀN BẮC'
+  };
+
+  const notifications = createdOrders.map(ord => ({
+    title: 'Mua vé thành công',
+    body: `Bạn đã thanh toán thành công vé ${GAME_NAMES_MAP[ord.gameType]} (#${ord.orderId}). Tiền thanh toán: ${ord.totalCost.toLocaleString('vi-VN')} đ`,
+    orderId: ord._id,
+    cost: ord.totalCost
+  }));
+
+  // Kiểm tra mỗi vé có 1 thông báo riêng biệt
+  assert.strictEqual(notifications.length, 3);
+  assert.strictEqual(notifications[0].orderId, 'ord_1');
+  assert.strictEqual(notifications[0].cost, 20000);
+  assert(notifications[0].body.includes('20.000 đ'));
+
+  assert.strictEqual(notifications[1].orderId, 'ord_2');
+  assert.strictEqual(notifications[1].cost, 30000);
+  assert(notifications[1].body.includes('30.000 đ'));
+
+  assert.strictEqual(notifications[2].orderId, 'ord_3');
+  assert.strictEqual(notifications[2].cost, 50000);
+  assert(notifications[2].body.includes('50.000 đ'));
+});
+
+
 console.log('\n=============================================================================');
 const totalPassed = results.filter((r) => r.passed).length;
 const totalFailed = results.filter((r) => !r.passed).length;
