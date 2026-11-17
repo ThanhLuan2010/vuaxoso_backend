@@ -1146,7 +1146,7 @@ export const getAllOrders = async (req: any, res: Response) => {
     const drawIds = Array.from(new Set(orders.map((o: any) => o.drawId).filter((id: any) => id && mongoose.Types.ObjectId.isValid(id))));
     const drawMap = new Map();
     if (drawIds.length > 0) {
-      const draws = await Draw.find({ _id: { $in: drawIds } }).select("_id drawCode drawTime closeTime").lean();
+      const draws = await Draw.find({ _id: { $in: drawIds } }).select("_id drawCode drawTime closeTime winningNumbers").lean();
       draws.forEach((d: any) => drawMap.set(d._id.toString(), d));
     }
 
@@ -1167,6 +1167,9 @@ export const getAllOrders = async (req: any, res: Response) => {
         if (!order.drawDate && (draw.drawTime || draw.closeTime)) {
           const timeToDisplay = draw.drawTime || draw.closeTime;
           order.drawDate = new Date(timeToDisplay).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
+        }
+        if ((!order.winningNumbers || order.winningNumbers.length === 0) && draw.winningNumbers && draw.winningNumbers.length > 0) {
+          order.winningNumbers = draw.winningNumbers;
         }
       }
     }

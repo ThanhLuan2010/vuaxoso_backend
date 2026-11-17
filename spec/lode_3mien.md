@@ -156,3 +156,37 @@ $$\text{Cost} = \text{Số lượng con số} \times \text{Tiền cược mỗi 
 - Lúc 17:15 cố tình đặt vé MT hôm nay $\rightarrow$ **Bị chặn**.
 - Lúc 18:15 cố tình đặt vé MB hôm nay $\rightarrow$ **Bị chặn**.
 - Đặt vé cho ngày mai (tương lai) $\rightarrow$ Hợp lệ, chấp nhận đặt cược.
+
+---
+
+## 4. QUY CHUẨN HIỂN THỊ ĐƠN CƯỢC NHIỀU VÉ XIÊN / TRƯỢT TRÊN MOBILE
+- **Vấn đề thực tế**: Khi người chơi đánh nhiều cặp xiên hoặc nhiều bộ số trượt (ví dụ dàn 110 bộ số `47&15&63&64&06&84`), việc dò kết quả thủ công giữa 110 dòng số đen rất khó khăn.
+- **Quy tắc hiển thị (Highlighting)**:
+  1. **Bộ số trúng (Winning Combo)**:
+     - Highlight toàn bộ các số và dấu `&` bằng **Màu đỏ `#E11D48`**, in đậm (`bold`).
+     - Hàng chứa bộ số trúng được tô nền hồng nhạt (`#FFF1F2`) với viền hồng (`#FECDD3`).
+     - Hiển thị nhãn **`[TRÚNG]`** màu đỏ ở cuối dòng để người chơi dễ dàng nhận biết khi cuộn danh sách.
+  2. **Bộ số chưa trúng đủ (Partial Match)**:
+     - Các con số riêng lẻ có về trong bảng kết quả xổ số được tô **Màu đỏ `#E11D48`**, các số không về giữ màu đen/xám mặc định.
+     - Giúp người chơi so sánh trực quan con nào đã về và con nào bị trượt trong từng bộ xiên.
+
+---
+
+## 5. QUY CHUẨN TÔ XANH GIẢI TRÚNG TRÊN BẢNG KẾT QUẢ MỞ THƯỞNG
+- **Nguyên tắc phân biệt theo loại cược (playType)**:
+  1. **Đề đầu đuôi (Miền Nam & Miền Trung)**:
+     - **CHỈ áp dụng cho Giải Đặc Biệt (GĐB) và Giải Tám (G8)**.
+     - Nếu số cược trùng với 2 số cuối của Giải Đặc Biệt hoặc Giải Tám $\rightarrow$ Tô xanh giải đó và hiện nhãn `[Trúng]`.
+     - Tuyệt đối **KHÔNG** tô xanh các giải khác (Giải Nhất, Nhì, Ba, Tư, Năm, Sáu, Bảy) dù số cược có trùng với 2 số cuối của các giải đó (tránh nhầm lẫn với Bao Lô).
+  2. **Đề đầu đuôi (Miền Bắc)**:
+     - **CHỈ áp dụng cho Giải Đặc Biệt (GĐB) và Giải Bảy (G7)**.
+  3. **Đề ĐB / Đề đuôi**:
+     - **CHỈ áp dụng cho Giải Đặc Biệt**.
+  4. **Đề Giải 1**:
+     - **CHỈ áp dụng cho Giải Nhất**.
+  5. **Bao Lô 2, 3, 4 số**:
+     - Áp dụng kiểm tra trên **TẤT CẢ các giải** trong bảng kết quả.
+  6. **Lô Trượt**:
+     - **KHÔNG tô xanh trúng** trên bảng kết quả mở thưởng (vì người chơi thắng khi các con số cược KHÔNG xuất hiện trong bảng giải).
+
+

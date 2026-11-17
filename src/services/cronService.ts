@@ -52,7 +52,7 @@ export const ensureUpcomingDraws = async () => {
       }).sort({ closeTime: 1 });
 
       if (openDraws.length < 10) {
-        if (game.code === 'lotto_535') {
+        if (game.code === 'lotto_535' || game.code === 'lotto_570') {
           let lastDrawNum = 1300;
           const allDraws = await Draw.find({ game: game._id }).sort({ closeTime: -1 });
           if (allDraws.length > 0) {
@@ -132,16 +132,11 @@ export const ensureUpcomingDraws = async () => {
         while (created < needed) {
           const dayOfWeek = getVNDayOfWeek(checkDate);
           if (drawDays.includes(dayOfWeek)) {
-            const isLotto570 = game.code === 'lotto_570';
             const isMbTimeGame = ['loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(game.code);
             const is18h15Game = ['dientoan_636', 'bao_636', 'dientoan_123'].includes(game.code) || isMbTimeGame;
 
-            const closeCutoff = isLotto570 
-              ? getVNCutoffDate(checkDate, 17, 0) 
-              : (isMbTimeGame ? getVNCutoffDate(checkDate, 18, 10) : getVNCutoffDate(checkDate, 17, 20));
-            const drawCutoff = isLotto570 
-              ? getVNCutoffDate(checkDate, 17, 20) 
-              : (is18h15Game ? getVNCutoffDate(checkDate, 18, 15) : getVNCutoffDate(checkDate, 18, 0));
+            const closeCutoff = isMbTimeGame ? getVNCutoffDate(checkDate, 18, 10) : getVNCutoffDate(checkDate, 17, 20);
+            const drawCutoff = is18h15Game ? getVNCutoffDate(checkDate, 18, 15) : getVNCutoffDate(checkDate, 18, 0);
 
             if (closeCutoff > now) {
               lastDrawNum += 1;
@@ -238,7 +233,7 @@ const GAME_CONFIGS = [
   { code: 'bingo18', cronExpression: '*/8 * * * *', drawDurationMinutes: 8, autoRandomResult: true },
   { code: 'bao_loto_2', cronExpression: '15 18 * * *', drawDurationMinutes: 0 },
   { code: 'lotto_535', cronExpression: '0 13,21 * * *', drawDurationMinutes: 0 },
-  { code: 'lotto_570', cronExpression: '20 17 * * *', drawDurationMinutes: 0 },
+  { code: 'lotto_570', cronExpression: '0 13,21 * * *', drawDurationMinutes: 0 },
   { code: 'MB', cronExpression: '15 18 * * *', drawDurationMinutes: 0 },
   { code: 'MT', cronExpression: '15 17 * * *', drawDurationMinutes: 0 },
   { code: 'MN', cronExpression: '15 16 * * *', drawDurationMinutes: 0 }

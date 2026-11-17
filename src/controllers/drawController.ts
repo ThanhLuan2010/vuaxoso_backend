@@ -379,7 +379,7 @@ export const getActiveDraws = async (req: any, res: Response) => {
             lastCloseTime = closeTime;
           }
         }
-      } else if (game.code === 'lotto_535') {
+      } else if (game.code === 'lotto_535' || game.code === 'lotto_570') {
         const openDraws = await Draw.find({
           game: game._id,
           status: 'open',
@@ -482,16 +482,11 @@ export const getActiveDraws = async (req: any, res: Response) => {
           while (created < needed) {
             const dayOfWeek = getVNDayOfWeek(checkDate);
             if (drawDays.includes(dayOfWeek)) {
-              const isLotto570 = game.code === 'lotto_570';
               const isMbTimeGame = ['loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(game.code);
               const is18h15Game = ['dientoan_636', 'bao_636'].includes(game.code) || isMbTimeGame;
 
-              const closeCutoff = isLotto570 
-                ? getVNCutoffDate(checkDate, 17, 0) 
-                : (isMbTimeGame ? getVNCutoffDate(checkDate, 18, 10) : getVNCutoffDate(checkDate, 17, 20));
-              const drawCutoff = isLotto570 
-                ? getVNCutoffDate(checkDate, 17, 20) 
-                : (is18h15Game ? getVNCutoffDate(checkDate, 18, 15) : getVNCutoffDate(checkDate, 18, 0));
+              const closeCutoff = isMbTimeGame ? getVNCutoffDate(checkDate, 18, 10) : getVNCutoffDate(checkDate, 17, 20);
+              const drawCutoff = is18h15Game ? getVNCutoffDate(checkDate, 18, 15) : getVNCutoffDate(checkDate, 18, 0);
 
               if (closeCutoff > now) {
                 lastDrawNum += 1;
@@ -594,7 +589,7 @@ export const getDrawResults = async (req: any, res: Response) => {
 // Admin: Tạo kỳ quay mới
 export const createDraw = async (req: any, res: Response) => {
   try {
-    const { gameId, drawCode, openTime, closeTime, jackpotAmount, provinceId } = req.body;
+    const { gameId, drawCode, openTime, closeTime, drawTime, jackpotAmount, provinceId } = req.body;
 
     if (!drawCode || !String(drawCode).trim()) {
       return res.status(400).json({ message: 'Mã kỳ quay không được để trống' });
@@ -619,6 +614,7 @@ export const createDraw = async (req: any, res: Response) => {
       drawCode: cleanDrawCode,
       openTime,
       closeTime,
+      drawTime: drawTime || closeTime,
       jackpotAmount,
       provinceId
     });
