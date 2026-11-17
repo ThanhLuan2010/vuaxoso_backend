@@ -26,6 +26,90 @@ const getCombinationsList = (array: string[], k: number): string[][] => {
   return result;
 };
 
+/**
+ * Trích xuất danh sách các bộ số xiên / trượt từ board.numbers.
+ * Hỗ trợ các định dạng:
+ * - Dạng ghép bằng '&': ['12&34', '56&78'] hoặc ['12&34, 56&78']
+ * - Dạng phân tách bằng dấu phẩy, khoảng trắng, gạch ngang: ['12 34'] hoặc ['12, 34']
+ * - Dạng mảng số rời rạc: ['12', '34'] (1 cặp) hoặc ['12', '34', '56', '78'] (2 cặp)
+ * - Tự động chuẩn hóa padStart(2, '0') cho từng số (vd: '5' -> '05')
+ */
+export const extractCombos = (rawNumbers: string[], requiredSize: number): string[][] => {
+  if (!rawNumbers || !Array.isArray(rawNumbers) || rawNumbers.length === 0) return [];
+
+  const flattened: string[] = [];
+  for (const item of rawNumbers) {
+    if (typeof item !== 'string') continue;
+    const trimmed = item.trim();
+    if (!trimmed) continue;
+    if (trimmed.includes('&') && (trimmed.includes(',') || trimmed.includes(';') || trimmed.includes('\n'))) {
+      const parts = trimmed.split(/[,;\n]+/).map(s => s.trim()).filter(Boolean);
+      flattened.push(...parts);
+    } else {
+      flattened.push(trimmed);
+    }
+  }
+
+  if (flattened.length === 0) return [];
+
+  const hasAmp = flattened.some(s => s.includes('&'));
+  if (hasAmp) {
+    const result: string[][] = [];
+    for (const item of flattened) {
+      const parts = item
+        .split(/[&,;\s-]+/)
+        .map(s => s.trim().padStart(2, '0'))
+        .filter(s => /^\d{2}$/.test(s));
+      if (parts.length >= requiredSize) {
+        result.push(parts);
+      }
+    }
+    return result;
+  }
+
+  const firstItemParts = flattened[0]
+    .split(/[,;\s-]+/)
+    .map(s => s.trim().padStart(2, '0'))
+    .filter(s => /^\d{2}$/.test(s));
+
+  if (firstItemParts.length >= requiredSize) {
+    const result: string[][] = [];
+    for (const item of flattened) {
+      const parts = item
+        .split(/[,;\s-]+/)
+        .map(s => s.trim().padStart(2, '0'))
+        .filter(s => /^\d{2}$/.test(s));
+      if (parts.length >= requiredSize) {
+        result.push(parts);
+      }
+    }
+    return result;
+  }
+
+  const allNums: string[] = [];
+  for (const item of flattened) {
+    const parts = item
+      .split(/[,;\s-]+/)
+      .map(s => s.trim().padStart(2, '0'))
+      .filter(s => /^\d{2}$/.test(s));
+    allNums.push(...parts);
+  }
+
+  if (allNums.length === requiredSize) {
+    return [allNums];
+  } else if (allNums.length > requiredSize && allNums.length % requiredSize === 0) {
+    const result: string[][] = [];
+    for (let i = 0; i < allNums.length; i += requiredSize) {
+      result.push(allNums.slice(i, i + requiredSize));
+    }
+    return result;
+  } else if (allNums.length >= requiredSize) {
+    return [allNums.slice(0, requiredSize)];
+  }
+
+  return [];
+};
+
 export const processDrawResults = async (drawId: string) => {
   try {
     const draw = await Draw.findById(drawId).populate('game');
@@ -648,17 +732,19 @@ export const processDrawResults = async (drawId: string) => {
 
             const getLodeMultiplier = (pType: string): number => {
               const p = pType.toLowerCase();
-              if (p === 'lô 2 số' || p === 'lô 2 số đầu') return isMB ? 27 : 18;
-              if (p === 'lô giải 3' || p === 'lô giải 5') return 6;
-              if (p === 'lô giải 4') return 7;
-              if (p === 'lô giải 6') return 3;
-              if (p === 'lô 3 số') return isMB ? 23 : 17;
-              if (p === 'lô 4 số') return isMB ? 20 : 16;
-              if (p === 'đề đầu' || p === 'đề đuôi') return 10;
-              if (p === 'đề đầu đuôi') return isMB ? 5 : 2;
-              if (p === 'đề giải 7') return 4;
-              if (p === '3 càng giải 6') return 3;
-              if (p === '3 càng đầu đuôi') return isMB ? 4 : 2;
+              if (p.includes('1k')) return 1;
+              if (p.includes('lô 2 số đầu') || p.includes('lo 2 so dau')) return isMB ? 27 : 18;
+              if (p.includes('lô 2 số') || p.includes('lo 2 so')) return isMB ? 27 : 18;
+              if (p.includes('lô giải 3') || p.includes('lo giai 3') || p.includes('lô giải 5') || p.includes('lo giai 5')) return 6;
+              if (p.includes('lô giải 4') || p.includes('lo giai 4')) return 7;
+              if (p.includes('lô giải 6') || p.includes('lo giai 6')) return 3;
+              if (p.includes('lô 3 số') || p.includes('lo 3 so')) return isMB ? 23 : 17;
+              if (p.includes('lô 4 số') || p.includes('lo 4 so')) return isMB ? 20 : 16;
+              if (p.includes('đề đầu đuôi') || p.includes('de dau duoi')) return isMB ? 5 : 2;
+              if ((p.includes('đề đầu') || p.includes('de dau') || p.includes('đề đuôi') || p.includes('de duoi')) && !p.includes('đb') && !p.includes('db') && !p.includes('giải 1') && !p.includes('giai 1')) return 10;
+              if (p.includes('đề giải 7') || p.includes('de giai 7')) return 4;
+              if (p.includes('3 càng giải 6') || p.includes('3 cang giai 6')) return 3;
+              if (p.includes('3 càng đầu đuôi') || p.includes('3 cang dau duoi')) return isMB ? 4 : 2;
               return 1;
             };
 
@@ -669,10 +755,11 @@ export const processDrawResults = async (drawId: string) => {
               : Math.max(1000, Math.round(board.cost / numCount / mult));
             const betPerNum = baseCost;
 
-            const allLast2 = w.map((n: string) => (n || '').slice(-2));
-            const allFirst2 = w.map((n: string) => (n || '').slice(0, 2));
-            const allLast3 = w.filter((n: string) => (n || '').length >= 3).map((n: string) => n.slice(-3));
-            const allLast4 = w.filter((n: string) => (n || '').length >= 4).map((n: string) => n.slice(-4));
+            const allLast2 = w.map((n: string) => String(n || '').trim().padStart(2, '0').slice(-2));
+            const allFirst2 = w.map((n: string) => String(n || '').trim().padStart(2, '0').slice(0, 2));
+            const allLast3 = w.filter((n: string) => (n || '').length >= 3).map((n: string) => String(n).trim().slice(-3));
+            const allLast4 = w.filter((n: string) => (n || '').length >= 4).map((n: string) => String(n).trim().slice(-4));
+            const allLast2Set = new Set(allLast2);
 
             let g3Pool: string[] = [];
             let g4Pool: string[] = [];
@@ -1268,16 +1355,24 @@ export const processDrawResults = async (drawId: string) => {
               }
             }
             // 4.17. Lô Xiên 2
-            else if (pTypeLower.startsWith('xiên 2') || pTypeLower.startsWith('xien 2')) {
+            else if (
+              (pTypeLower.includes('xiên 2') || pTypeLower.includes('xien 2')) &&
+              !pTypeLower.includes('đb') && !pTypeLower.includes('db') &&
+              !pTypeLower.includes('giải 1') && !pTypeLower.includes('giai 1') &&
+              !pTypeLower.includes('3 càng') && !pTypeLower.includes('4 càng')
+            ) {
               const defaultRate = isMB ? 16 : 28;
               const rate = (game.payoutRates && (game.payoutRates['Xiên 2'] || game.payoutRates['xien_2'])) ?? defaultRate;
               let boardPrize = 0;
-              const combos = (board.numbers || []).some(n => n.includes('&'))
-                ? (board.numbers || []).map(s => s.split('&').map(x => x.trim()))
-                : [(board.numbers || []).map(x => x.trim())];
+              const combos = extractCombos(board.numbers || [], 2);
+              const comboCount = Math.max(1, combos.length);
+              const betPerCombo = (board.baseCost && board.baseCost > 0)
+                ? board.baseCost
+                : Math.max(1000, Math.round(board.cost / comboCount));
+
               combos.forEach((pair) => {
-                if (pair.length >= 2 && pair.every(n => allLast2.includes(n))) {
-                  boardPrize += Math.round(betPerNum * rate);
+                if (pair.length >= 2 && pair.every(n => allLast2Set.has(n))) {
+                  boardPrize += Math.round(betPerCombo * rate);
                 }
               });
               if (boardPrize > 0) {
@@ -1286,16 +1381,24 @@ export const processDrawResults = async (drawId: string) => {
               }
             }
             // 4.18. Lô Xiên 3
-            else if (pTypeLower.startsWith('xiên 3') || pTypeLower.startsWith('xien 3')) {
+            else if (
+              (pTypeLower.includes('xiên 3') || pTypeLower.includes('xien 3')) &&
+              !pTypeLower.includes('đb') && !pTypeLower.includes('db') &&
+              !pTypeLower.includes('giải 1') && !pTypeLower.includes('giai 1') &&
+              !pTypeLower.includes('3 càng') && !pTypeLower.includes('4 càng')
+            ) {
               const defaultRate = isMB ? 65 : 150;
               const rate = (game.payoutRates && (game.payoutRates['Xiên 3'] || game.payoutRates['xien_3'])) ?? defaultRate;
               let boardPrize = 0;
-              const combos = (board.numbers || []).some(n => n.includes('&'))
-                ? (board.numbers || []).map(s => s.split('&').map(x => x.trim()))
-                : [(board.numbers || []).map(x => x.trim())];
+              const combos = extractCombos(board.numbers || [], 3);
+              const comboCount = Math.max(1, combos.length);
+              const betPerCombo = (board.baseCost && board.baseCost > 0)
+                ? board.baseCost
+                : Math.max(1000, Math.round(board.cost / comboCount));
+
               combos.forEach((trip) => {
-                if (trip.length >= 3 && trip.every(n => allLast2.includes(n))) {
-                  boardPrize += Math.round(betPerNum * rate);
+                if (trip.length >= 3 && trip.every(n => allLast2Set.has(n))) {
+                  boardPrize += Math.round(betPerCombo * rate);
                 }
               });
               if (boardPrize > 0) {
@@ -1304,16 +1407,67 @@ export const processDrawResults = async (drawId: string) => {
               }
             }
             // 4.19. Lô Xiên 4
-            else if (pTypeLower.startsWith('xiên 4') || pTypeLower.startsWith('xien 4')) {
+            else if (
+              (pTypeLower.includes('xiên 4') || pTypeLower.includes('xien 4')) &&
+              !pTypeLower.includes('trượt') && !pTypeLower.includes('truot') &&
+              !pTypeLower.includes('đb') && !pTypeLower.includes('db') &&
+              !pTypeLower.includes('giải 1') && !pTypeLower.includes('giai 1') &&
+              !pTypeLower.includes('3 càng') && !pTypeLower.includes('4 càng')
+            ) {
               const defaultRate = isMB ? 180 : 750;
               const rate = (game.payoutRates && (game.payoutRates['Xiên 4'] || game.payoutRates['xien_4'])) ?? defaultRate;
               let boardPrize = 0;
-              const combos = (board.numbers || []).some(n => n.includes('&'))
-                ? (board.numbers || []).map(s => s.split('&').map(x => x.trim()))
-                : [(board.numbers || []).map(x => x.trim())];
+              const combos = extractCombos(board.numbers || [], 4);
+              const comboCount = Math.max(1, combos.length);
+              const betPerCombo = (board.baseCost && board.baseCost > 0)
+                ? board.baseCost
+                : Math.max(1000, Math.round(board.cost / comboCount));
+
               combos.forEach((quad) => {
-                if (quad.length >= 4 && quad.every(n => allLast2.includes(n))) {
-                  boardPrize += Math.round(betPerNum * rate);
+                if (quad.length >= 4 && quad.every(n => allLast2Set.has(n))) {
+                  boardPrize += Math.round(betPerCombo * rate);
+                }
+              });
+              if (boardPrize > 0) {
+                isWinner = true;
+                prizeAmount += boardPrize;
+              }
+            }
+            // 4.19b. Lô Xiên Chung (Nếu playType chỉ là 'Xiên' hoặc 'Lô Xiên' mà không chỉ rõ bậc)
+            else if (
+              (pTypeLower === 'xiên' || pTypeLower === 'xien' || pTypeLower === 'lô xiên' || pTypeLower === 'lo xien') &&
+              !pTypeLower.includes('đb') && !pTypeLower.includes('db') &&
+              !pTypeLower.includes('giải 1') && !pTypeLower.includes('giai 1') &&
+              !pTypeLower.includes('3 càng') && !pTypeLower.includes('4 càng')
+            ) {
+              let sampleK = 2;
+              const firstItem = (board.numbers || [])[0] || '';
+              const firstParts = firstItem.split(/[&,;\s-]+/).map(s => s.trim()).filter(Boolean);
+              if (firstParts.length >= 4) sampleK = 4;
+              else if (firstParts.length === 3) sampleK = 3;
+              else sampleK = 2;
+
+              let defaultRate = isMB ? 16 : 28;
+              let rateKey = 'Xiên 2';
+              if (sampleK === 4) {
+                defaultRate = isMB ? 180 : 750;
+                rateKey = 'Xiên 4';
+              } else if (sampleK === 3) {
+                defaultRate = isMB ? 65 : 150;
+                rateKey = 'Xiên 3';
+              }
+
+              const rate = (game.payoutRates && (game.payoutRates[rateKey] || game.payoutRates[rateKey.toLowerCase().replace(/\s+/g, '_')])) ?? defaultRate;
+              let boardPrize = 0;
+              const combos = extractCombos(board.numbers || [], sampleK);
+              const comboCount = Math.max(1, combos.length);
+              const betPerCombo = (board.baseCost && board.baseCost > 0)
+                ? board.baseCost
+                : Math.max(1000, Math.round(board.cost / comboCount));
+
+              combos.forEach((combo) => {
+                if (combo.length >= sampleK && combo.every(n => allLast2Set.has(n))) {
+                  boardPrize += Math.round(betPerCombo * rate);
                 }
               });
               if (boardPrize > 0) {
@@ -1323,22 +1477,35 @@ export const processDrawResults = async (drawId: string) => {
             }
             // 4.20. Lô Trượt (Xiên 4, 6, 8, 10)
             else if (pTypeLower.includes('trượt') || pTypeLower.includes('truot')) {
-              let defaultRate = 2.0;
-              if (pTypeLower.includes('4')) defaultRate = isMB ? 2.3 : 1.8;
-              else if (pTypeLower.includes('6')) defaultRate = isMB ? 4.5 : 2.5;
-              else if (pTypeLower.includes('8')) defaultRate = isMB ? 8.0 : 3.3;
-              else if (pTypeLower.includes('10')) defaultRate = isMB ? 12.0 : 4.3;
+              let requiredSize = 4;
+              let defaultRate = isMB ? 2.3 : 1.8;
+              if (pTypeLower.includes('10')) {
+                requiredSize = 10;
+                defaultRate = isMB ? 12.0 : 4.3;
+              } else if (pTypeLower.includes('8')) {
+                requiredSize = 8;
+                defaultRate = isMB ? 8.0 : 3.3;
+              } else if (pTypeLower.includes('6')) {
+                requiredSize = 6;
+                defaultRate = isMB ? 4.5 : 2.5;
+              } else {
+                requiredSize = 4;
+                defaultRate = isMB ? 2.3 : 1.8;
+              }
 
               const rateKey = Object.keys(game.payoutRates || {}).find(k => k.toLowerCase() === pTypeLower) || '';
               const rate = (rateKey && game.payoutRates[rateKey]) ? game.payoutRates[rateKey] : defaultRate;
 
               let boardPrize = 0;
-              const combos = (board.numbers || []).some(n => n.includes('&'))
-                ? (board.numbers || []).map(s => s.split('&').map(x => x.trim()))
-                : [(board.numbers || []).map(x => x.trim())];
+              const combos = extractCombos(board.numbers || [], requiredSize);
+              const comboCount = Math.max(1, combos.length);
+              const betPerCombo = (board.baseCost && board.baseCost > 0)
+                ? board.baseCost
+                : Math.max(1000, Math.round(board.cost / comboCount));
+
               combos.forEach((nums) => {
-                if (nums.length > 0 && nums.every(n => !allLast2.includes(n))) {
-                  boardPrize += Math.round(betPerNum * rate);
+                if (nums.length >= requiredSize && nums.every(n => !allLast2Set.has(n))) {
+                  boardPrize += Math.round(betPerCombo * rate);
                 }
               });
               if (boardPrize > 0) {
@@ -1390,7 +1557,8 @@ export const processDrawResults = async (drawId: string) => {
       } else if (['loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(game.code)) {
         const w = draw.winningNumbers;
         if (w && w.length >= 9) {
-           const w2 = w.map(n => n.slice(-2)); // Get last 2 digits of all winning numbers
+           const w2 = w.map(n => String(n || '').trim().padStart(2, '0').slice(-2)); // Get last 2 digits of all winning numbers
+           const w2Set = new Set(w2);
 
            allBoards.forEach((board) => {
              let ticketPrize = 0;
@@ -1398,20 +1566,29 @@ export const processDrawResults = async (drawId: string) => {
 
              if (game.code === 'truot_loto') {
                // Player wins if NONE of their selected numbers appear in the results (w2)
-               const allMissed = board.numbers.every(num => !w2.includes(num));
+               const flatNums = (board.numbers || [])
+                 .flatMap(s => String(s).split(/[&,;\s-]+/))
+                 .map(s => s.trim().padStart(2, '0'))
+                 .filter(s => /^\d{2}$/.test(s));
+               const allMissed = flatNums.length >= 4 && flatNums.every(num => !w2Set.has(num));
                if (allMissed) {
-                 if (order.playType === 'Trượt 4') ticketPrize = 25000; // x2.5
-                 if (order.playType === 'Trượt 8') ticketPrize = 85000; // x8.5
-                 if (order.playType === 'Trượt 10') ticketPrize = 120000; // x12
+                 if (order.playType?.includes('4')) ticketPrize = 25000; // x2.5
+                 else if (order.playType?.includes('8')) ticketPrize = 85000; // x8.5
+                 else if (order.playType?.includes('10')) ticketPrize = 120000; // x12
+                 else ticketPrize = 25000;
                }
              } else if (game.code === 'loto_cap') {
                // Player wins if ALL of their selected numbers appear in the results (w2)
-               const allHit = board.numbers.every(num => w2.includes(num));
+               const flatNums = (board.numbers || [])
+                 .flatMap(s => String(s).split(/[&,;\s-]+/))
+                 .map(s => s.trim().padStart(2, '0'))
+                 .filter(s => /^\d{2}$/.test(s));
+               const allHit = flatNums.length >= 2 && flatNums.every(num => w2Set.has(num));
                if (allHit) {
                  const betAmount = board.cost || 10000;
-                  if (order.playType === 'Lô tô 2 cặp') ticketPrize = betAmount * 15; // x15
-                  if (order.playType === 'Lô tô 3 cặp') ticketPrize = betAmount * 65; // x65
-                  if (order.playType === 'Lô tô 4 cặp') ticketPrize = betAmount * 170; // x170
+                 if (order.playType?.includes('2') || flatNums.length === 2) ticketPrize = betAmount * 15; // x15
+                 else if (order.playType?.includes('3') || flatNums.length === 3) ticketPrize = betAmount * 65; // x65
+                 else if (order.playType?.includes('4') || flatNums.length >= 4) ticketPrize = betAmount * 170; // x170
                }
              } else {
                // loto_235 or standard games (evaluate per ticket)
