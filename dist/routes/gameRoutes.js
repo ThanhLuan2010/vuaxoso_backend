@@ -12,4 +12,5 @@ router.get('/', gameController_1.getGames);
 router.post('/', authMiddleware_1.protect, authMiddleware_1.admin, gameController_1.createGame);
 router.put('/:id', authMiddleware_1.protect, authMiddleware_1.admin, gameController_1.updateGame);
 router.put('/:id/rates', authMiddleware_1.protect, authMiddleware_1.admin, gameController_1.updateGameRates);
+router.delete('/:id', authMiddleware_1.protect, authMiddleware_1.admin, gameController_1.deleteGame);
 exports.default = router;

@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importDefault(require("mongoose"));
 const dotenv_1 = __importDefault(require("dotenv"));
 const path_1 = __importDefault(require("path"));
+const Game_1 = __importDefault(require("../models/Game"));
 const Draw_1 = __importDefault(require("../models/Draw"));
 const Order_1 = __importDefault(require("../models/Order"));
 const User_1 = __importDefault(require("../models/User"));
@@ -54,7 +55,12 @@ const resetSystemData = async () => {
         // 8. XOÁ TOÀN BỘ KỲ QUAY CŨ
         const deletedDraws = await Draw_1.default.deleteMany({});
         console.log(`✓ Đã xoá toàn bộ ${deletedDraws.deletedCount} kỳ quay cũ.`);
-        // 9. ĐỒNG BỘ CẤU HÌNH GAME & TẠO LẠI KỲ QUAY MỚI CHUẨN XÁC
+        // 9. DỌN DẸP TRIỆT ĐỂ GAME RÁC / ĐÃ BỎ (clln_keno, bao_keno)
+        const delDeprecated = await Game_1.default.deleteMany({ code: { $in: ['clln_keno', 'bao_keno'] } });
+        if (delDeprecated.deletedCount > 0) {
+            console.log(`✓ Đã xoá vĩnh viễn ${delDeprecated.deletedCount} game rác (clln_keno, bao_keno) khỏi database.`);
+        }
+        // 10. ĐỒNG BỘ CẤU HÌNH GAME & TẠO LẠI KỲ QUAY MỚI CHUẨN XÁC
         console.log('Đang đồng bộ cấu hình game và khởi tạo các kỳ quay mở mới...');
         await (0, cronService_1.ensureGameConfigs)();
         await (0, cronService_1.ensureUpcomingDraws)();

@@ -25,7 +25,7 @@ const cleanCorruptedKenoDraws = async () => {
             closeTime: Date
         }, { strict: false }));
         const kenoGames = await Game.find({
-            code: { $in: ['keno', 'bao_keno', 'clln_keno', 'bingo18'] }
+            code: { $in: ['keno', 'bingo18'] }
         }).lean();
         const gameIds = kenoGames.map((g) => g._id);
         console.log(`Tìm thấy ${kenoGames.length} game Keno/Bingo:`, kenoGames.map((g) => g.code));

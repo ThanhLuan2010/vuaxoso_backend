@@ -254,11 +254,11 @@ const getActiveDraws = async (req, res) => {
         const Game = require('../models/Game').default;
         const games = await Game.find({ isActive: true });
         // Auto-close các kỳ quay mở đã hết hạn của các game KHÔNG PHẢI Keno / Bingo18 (chờ Admin nhập kết quả)
-        const autoGames = games.filter((g) => ['keno', 'bao_keno', 'clln_keno', 'bingo18'].includes(g.code));
+        const autoGames = games.filter((g) => ['keno', 'bingo18'].includes(g.code));
         const autoGameIds = autoGames.map((g) => g._id);
         await Draw_1.default.updateMany({ game: { $nin: autoGameIds }, status: 'open', closeTime: { $lte: now } }, { $set: { status: 'closed' } });
         for (const game of games) {
-            if (game.code === 'keno' || game.code === 'bao_keno' || game.code === 'clln_keno' || game.code === 'bingo18') {
+            if (game.code === 'keno' || game.code === 'bingo18') {
                 if (game.code === 'bingo18') {
                     // Xóa tất cả các kỳ quay mở cũ bị gán nhầm lịch hàng ngày (closeTime > 3 tiếng tới)
                     const maxAllowedCloseTime = new Date(now.getTime() + 3 * 3600 * 1000);
@@ -393,7 +393,7 @@ const getActiveDraws = async (req, res) => {
                 game.code === 'max_4d' ||
                 game.code === 'dientoan_636' ||
                 game.code === 'bao_636' ||
-                (game.type === 'dientoan' && game.code !== 'bingo18') ||
+                (game.type === 'dientoan' && !['bingo18', 'loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(game.code)) ||
                 game.type === 'vietlott') {
                 const openDraws = await Draw_1.default.find({
                     game: game._id,
@@ -448,9 +448,8 @@ const getActiveDraws = async (req, res) => {
                     while (created < needed) {
                         const dayOfWeek = getVNDayOfWeek(checkDate);
                         if (drawDays.includes(dayOfWeek)) {
-                            const isMbTimeGame = ['loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(game.code);
-                            const is18h15Game = ['dientoan_636', 'bao_636', 'dientoan_123'].includes(game.code) || isMbTimeGame;
-                            const closeCutoff = isMbTimeGame ? getVNCutoffDate(checkDate, 18, 10) : getVNCutoffDate(checkDate, 17, 20);
+                            const is18h15Game = ['dientoan_636', 'bao_636', 'dientoan_123'].includes(game.code);
+                            const closeCutoff = getVNCutoffDate(checkDate, 17, 20);
                             const drawCutoff = is18h15Game ? getVNCutoffDate(checkDate, 18, 15) : getVNCutoffDate(checkDate, 18, 0);
                             if (closeCutoff > now) {
                                 lastDrawNum += 1;
@@ -458,7 +457,7 @@ const getActiveDraws = async (req, res) => {
                                 await Draw_1.default.create({
                                     game: game._id,
                                     drawCode,
-                                    openTime: new Date(closeCutoff.getTime() - 24 * 3600 * 1000 + (isMbTimeGame ? 5 * 60 * 1000 : 0)),
+                                    openTime: new Date(closeCutoff.getTime() - 24 * 3600 * 1000),
                                     closeTime: closeCutoff,
                                     drawTime: drawCutoff,
                                     status: 'open'
@@ -617,26 +616,13 @@ const syncMbResultsToDienToan = async (mbDraw) => {
                 game: g._id,
                 closeTime: { $gte: startOfDay, $lte: endOfDay }
             });
-            if (!targetDraw) {
-                const closeTime = new Date(Date.UTC(y, m - 1, d, 18 - 7, 10, 0));
-                const drawTime = new Date(Date.UTC(y, m - 1, d, 18 - 7, 15, 0));
-                targetDraw = await Draw_1.default.create({
-                    game: g._id,
-                    drawCode: mbDraw.drawCode || ('#' + Date.now()),
-                    openTime: new Date(closeTime.getTime() - 24 * 3600 * 1000 + 5 * 60 * 1000),
-                    closeTime,
-                    drawTime,
-                    winningNumbers: mbDraw.winningNumbers,
-                    status: 'completed'
-                });
-            }
-            else {
+            if (targetDraw) {
                 targetDraw.winningNumbers = mbDraw.winningNumbers;
                 targetDraw.status = 'completed';
                 await targetDraw.save();
+                await (0, prizeService_1.processDrawResults)(targetDraw._id.toString());
+                console.log('syncMbResultsToDienToan: Đã cập nhật kết quả MB sang ' + g.code + ' (Kỳ ' + targetDraw.drawCode + ')');
             }
-            await (0, prizeService_1.processDrawResults)(targetDraw._id.toString());
-            console.log('syncMbResultsToDienToan: Đã đồng bộ kết quả MB sang ' + g.code + ' (Kỳ ' + targetDraw.drawCode + ')');
         }
     }
     catch (err) {

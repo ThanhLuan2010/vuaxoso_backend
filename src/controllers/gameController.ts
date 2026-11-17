@@ -7,6 +7,10 @@ export const getGames = async (req: any, res: Response) => {
     const { search, admin } = req.query;
 
     if (admin === 'true') {
+      try {
+        await Game.deleteMany({ code: { $in: ['clln_keno', 'bao_keno'] } });
+      } catch (e) {}
+
       const count = await Game.countDocuments();
       if (count < 22) {
         try {
@@ -18,16 +22,24 @@ export const getGames = async (req: any, res: Response) => {
       }
     }
 
-    const query: any = {};
+    const query: any = {
+      code: { $nin: ['clln_keno', 'bao_keno'] }
+    };
     if (admin !== 'true') {
       query.isActive = true;
     }
     if (search) {
       const normalizedSearch = search.replace(/loto/gi, 'lot+o').replace(/lotto/gi, 'lot+o');
-      query.$or = [
-        { name: { $regex: normalizedSearch, $options: 'i' } },
-        { code: { $regex: normalizedSearch, $options: 'i' } }
+      query.$and = [
+        { code: { $nin: ['clln_keno', 'bao_keno'] } },
+        {
+          $or: [
+            { name: { $regex: normalizedSearch, $options: 'i' } },
+            { code: { $regex: normalizedSearch, $options: 'i' } }
+          ]
+        }
       ];
+      delete query.code;
     }
     const games = await Game.find(query).lean();
     res.json(games);
@@ -85,6 +97,27 @@ export const updateGameRates = async (req: any, res: Response) => {
     game.markModified('payoutRates');
     await game.save();
     res.json(game);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const deleteGame = async (req: any, res: Response) => {
+  try {
+    const game = await Game.findById(req.params.id);
+    if (!game) {
+      return res.status(404).json({ message: 'Không tìm thấy game' });
+    }
+    const Draw = require('../models/Draw').default;
+    await Draw.deleteMany({ game: game._id });
+    await Game.findByIdAndDelete(req.params.id);
+    await AdminLog.create({
+      adminId: req.user?._id,
+      adminName: req.user?.name || 'Admin',
+      action: 'Xoá Game',
+      details: `Đã xoá game: ${game.name} (${game.code})`
+    });
+    res.json({ message: 'Đã xoá game thành công' });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }

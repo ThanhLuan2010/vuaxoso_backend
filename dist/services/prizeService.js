@@ -204,10 +204,10 @@ const processDrawResults = async (drawId) => {
                 const mbRegex = /miền bắc|hà nội|mb|xsmb/i;
                 orderConditions.push({
                     $and: [
-                        { $or: [{ drawDate: { $in: dateList } }, { drawId: { $in: dateList } }] },
+                        { $or: [{ drawDate: { $in: dateList } }, { drawId: { $in: [...dateList, ...possibleDrawIds] } }] },
                         {
                             $or: [
-                                { gameType: { $in: ['MB', 'mb', 'kienthiet_mb'] } },
+                                { gameType: { $in: ['MB', 'mb', 'kienthiet_mb', 'loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'] } },
                                 {
                                     gameType: { $in: ['xoso_3mien', 'lode'] },
                                     $or: [
@@ -269,6 +269,10 @@ const processDrawResults = async (drawId) => {
                     'MB', 'MT', 'MN',
                     'xoso_3mien',
                     'lode',
+                    'loto_235',
+                    'loto_cap',
+                    'truot_loto',
+                    'bao_loto_2',
                     /^kienthiet_/i
                 ]
             };
@@ -1691,7 +1695,7 @@ const processDrawResults = async (drawId) => {
                     });
                 }
             }
-            else if (['loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(game.code)) {
+            else if (['loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(order.gameType) || ['loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(game.code)) {
                 const w = draw.winningNumbers;
                 if (w && w.length >= 9) {
                     const w2 = w.map(n => String(n || '').trim().padStart(2, '0').slice(-2)); // Get last 2 digits of all winning numbers
@@ -1699,7 +1703,7 @@ const processDrawResults = async (drawId) => {
                     allBoards.forEach((board) => {
                         let ticketPrize = 0;
                         const multiplier = Math.floor(board.cost / 10000);
-                        if (game.code === 'truot_loto') {
+                        if (order.gameType === 'truot_loto' || game.code === 'truot_loto') {
                             // Người chơi thắng khi TẤT CẢ các cặp số đã chọn KHÔNG xuất hiện trong bảng kết quả (w2)
                             const flatNums = (board.numbers || [])
                                 .flatMap((s) => String(s).split(/[&,;\s-]+/))
@@ -1800,9 +1804,9 @@ const processDrawResults = async (drawId) => {
                             const pTypeLower = (board.playType || order.playType || '').toLowerCase();
                             board.numbers.forEach((ticketStr) => {
                                 let singlePrize = 0;
-                                if (game.code === 'loto_235' || game.code.includes('loto')) {
+                                if (order.gameType === 'loto_235' || order.gameType?.includes('loto') || game.code === 'loto_235' || game.code.includes('loto')) {
                                     const numLen = ticketStr.length;
-                                    if (pTypeLower.includes('bao 2 số') || pTypeLower.includes('bao 2 so') || pTypeLower.includes('bao lô tô 2') || game.code === 'bao_loto_2') {
+                                    if (pTypeLower.includes('bao 2 số') || pTypeLower.includes('bao 2 so') || pTypeLower.includes('bao lô tô 2') || order.gameType === 'bao_loto_2' || game.code === 'bao_loto_2') {
                                         // Bao 2 số: Trúng 2 số cuối của 27 giải (x2.7)
                                         for (let i = 0; i < w.length; i++) {
                                             if (w[i]?.endsWith(ticketStr)) {
@@ -1872,7 +1876,7 @@ const processDrawResults = async (drawId) => {
                         }
                         if (ticketPrize > 0) {
                             isWinner = true;
-                            prizeAmount += (game.code === 'loto_235' || game.code.includes('loto')) ? ticketPrize : ticketPrize * (multiplier > 0 ? multiplier : 1);
+                            prizeAmount += (order.gameType === 'loto_235' || order.gameType?.includes('loto') || game.code === 'loto_235' || game.code.includes('loto')) ? ticketPrize : ticketPrize * (multiplier > 0 ? multiplier : 1);
                         }
                     });
                 }

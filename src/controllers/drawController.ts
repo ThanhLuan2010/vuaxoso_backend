@@ -433,7 +433,7 @@ export const getActiveDraws = async (req: any, res: Response) => {
         game.code === 'max_4d' ||
         game.code === 'dientoan_636' ||
         game.code === 'bao_636' ||
-        (game.type === 'dientoan' && !['bingo18'].includes(game.code)) ||
+        (game.type === 'dientoan' && !['bingo18', 'loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(game.code)) ||
         game.type === 'vietlott'
       ) {
         const openDraws = await Draw.find({
@@ -483,10 +483,9 @@ export const getActiveDraws = async (req: any, res: Response) => {
           while (created < needed) {
             const dayOfWeek = getVNDayOfWeek(checkDate);
             if (drawDays.includes(dayOfWeek)) {
-              const is18h10CloseGame = ['loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(game.code);
-              const is18h15Game = ['dientoan_636', 'bao_636', 'dientoan_123', 'loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(game.code);
+              const is18h15Game = ['dientoan_636', 'bao_636', 'dientoan_123'].includes(game.code);
 
-              const closeCutoff = is18h10CloseGame ? getVNCutoffDate(checkDate, 18, 10) : getVNCutoffDate(checkDate, 17, 20);
+              const closeCutoff = getVNCutoffDate(checkDate, 17, 20);
               const drawCutoff = is18h15Game ? getVNCutoffDate(checkDate, 18, 15) : getVNCutoffDate(checkDate, 18, 0);
 
               if (closeCutoff > now) {

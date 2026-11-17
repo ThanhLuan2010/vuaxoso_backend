@@ -26,17 +26,16 @@ function getVNDayOfWeek(date) {
 const ensureUpcomingDraws = async () => {
     try {
         const now = new Date();
-        // Tự động dọn dẹp các kỳ quay thừa của game phái sinh lô đề (dùng chung kết quả XSKT 3 Miền)
-        const derivedGames = await Game_1.default.find({ code: { $in: ['xoso_3mien', 'lode'] } }).select('_id');
+        // Tự động dọn dẹp các kỳ quay thừa của game phái sinh lô đề & loto (dùng chung kết quả XSKT 3 Miền / MB)
+        const derivedGames = await Game_1.default.find({ code: { $in: ['xoso_3mien', 'lode', 'loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'] } }).select('_id');
         if (derivedGames.length > 0) {
             await Draw_1.default.deleteMany({
-                game: { $in: derivedGames.map(g => g._id) },
-                status: 'open'
+                game: { $in: derivedGames.map(g => g._id) }
             });
         }
         // 1. Vietlott / Điện Toán: Đảm bảo luôn có sẵn 10 kỳ quay
         const scheduledGames = await Game_1.default.find({
-            code: { $nin: ['keno', 'bao_keno', 'clln_keno', 'bingo18', 'MB', 'MT', 'MN', 'xoso_3mien', 'lode'] }
+            code: { $nin: ['keno', 'bingo18', 'MB', 'MT', 'MN', 'xoso_3mien', 'lode', 'loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'] }
         });
         for (const game of scheduledGames) {
             const todayCutoff = getVNCutoffDate(now, 17, 20);
@@ -133,9 +132,8 @@ const ensureUpcomingDraws = async () => {
                 while (created < needed) {
                     const dayOfWeek = getVNDayOfWeek(checkDate);
                     if (drawDays.includes(dayOfWeek)) {
-                        const isMbTimeGame = ['loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(game.code);
-                        const is18h15Game = ['dientoan_636', 'bao_636', 'dientoan_123'].includes(game.code) || isMbTimeGame;
-                        const closeCutoff = isMbTimeGame ? getVNCutoffDate(checkDate, 18, 10) : getVNCutoffDate(checkDate, 17, 20);
+                        const is18h15Game = ['dientoan_636', 'bao_636', 'dientoan_123'].includes(game.code);
+                        const closeCutoff = getVNCutoffDate(checkDate, 17, 20);
                         const drawCutoff = is18h15Game ? getVNCutoffDate(checkDate, 18, 15) : getVNCutoffDate(checkDate, 18, 0);
                         if (closeCutoff > now) {
                             lastDrawNum += 1;
@@ -143,7 +141,7 @@ const ensureUpcomingDraws = async () => {
                             await Draw_1.default.create({
                                 game: game._id,
                                 drawCode,
-                                openTime: new Date(closeCutoff.getTime() - 24 * 3600 * 1000 + (isMbTimeGame ? 5 * 60 * 1000 : 0)),
+                                openTime: new Date(closeCutoff.getTime() - 24 * 3600 * 1000),
                                 closeTime: closeCutoff,
                                 drawTime: drawCutoff,
                                 status: 'open'
@@ -156,7 +154,7 @@ const ensureUpcomingDraws = async () => {
             }
         }
         // 2. Keno & Bingo18: Đảm bảo luôn có sẵn 10 kỳ quay (Keno: 8p, Bingo18: 6p)
-        const fastGames = await Game_1.default.find({ code: { $in: ['keno', 'bao_keno', 'clln_keno', 'bingo18'] } });
+        const fastGames = await Game_1.default.find({ code: { $in: ['keno', 'bingo18'] } });
         for (const kg of fastGames) {
             if (kg.code === 'bingo18') {
                 const maxAllowedCloseTime = new Date(now.getTime() + 3 * 3600 * 1000);
@@ -217,30 +215,6 @@ exports.GAME_CONFIGS = [
         bgColor: '#FFF0F0',
         badge: '8p-1 kỳ',
         subtext: '🏆 2.000.000.000đ',
-        cronExpression: '*/8 * * * *',
-        drawDurationMinutes: 8,
-        autoRandomResult: true
-    },
-    {
-        code: 'bao_keno',
-        name: 'BAO KENO',
-        type: 'vietlott',
-        brandColor: '#FF6B00',
-        bgColor: '#FFF4EB',
-        badge: '8p-1 kỳ',
-        subtext: 'Bao số Keno',
-        cronExpression: '*/8 * * * *',
-        drawDurationMinutes: 8,
-        autoRandomResult: true
-    },
-    {
-        code: 'clln_keno',
-        name: 'KENO CHẴN LẺ LỚN NHỎ',
-        type: 'vietlott',
-        brandColor: '#2F80ED',
-        bgColor: '#EDF5FF',
-        badge: '8p-1 kỳ',
-        subtext: 'Chẵn - Lẻ - Lớn - Nhỏ',
         cronExpression: '*/8 * * * *',
         drawDurationMinutes: 8,
         autoRandomResult: true
@@ -363,7 +337,8 @@ exports.GAME_CONFIGS = [
         subtext: '🏆 x40.000 lần',
         cronExpression: '15 18 * * *',
         drawDurationMinutes: 0,
-        autoRandomResult: false
+        autoRandomResult: false,
+        isActive: false
     },
     {
         code: 'loto_235',
@@ -489,8 +464,11 @@ exports.GAME_CONFIGS = [
 ];
 const ensureGameConfigs = async () => {
     try {
+        // Tự động xoá vĩnh viễn các game rác / đã bỏ khỏi hệ thống nếu còn trong DB
+        await Game_1.default.deleteMany({ code: { $in: ['clln_keno', 'bao_keno'] } });
+        await Draw_1.default.deleteMany({ gameCode: { $in: ['clln_keno', 'bao_keno'] } });
         for (const cfg of exports.GAME_CONFIGS) {
-            const isAuto = ['keno', 'bao_keno', 'clln_keno', 'bingo18'].includes(cfg.code);
+            const isAuto = ['keno', 'bingo18'].includes(cfg.code);
             const existing = await Game_1.default.findOne({ code: cfg.code });
             if (!existing) {
                 await Game_1.default.create({
@@ -504,13 +482,17 @@ const ensureGameConfigs = async () => {
                     cronExpression: cfg.cronExpression,
                     drawDurationMinutes: cfg.drawDurationMinutes,
                     autoRandomResult: isAuto,
-                    isActive: true,
+                    isActive: cfg.isActive !== undefined ? cfg.isActive : true,
                     payoutRates: cfg.payoutRates || {}
                 });
                 console.log(`CronService: Đã tự động tạo game ${cfg.name} (${cfg.code})`);
             }
             else {
                 let changed = false;
+                if (cfg.isActive !== undefined && existing.isActive !== cfg.isActive) {
+                    existing.isActive = cfg.isActive;
+                    changed = true;
+                }
                 if (existing.cronExpression !== cfg.cronExpression) {
                     existing.cronExpression = cfg.cronExpression;
                     changed = true;
@@ -560,7 +542,7 @@ const startCronJobs = () => {
                 const game = draw.game;
                 if (!game)
                     continue;
-                const isAutoGame = ['keno', 'bao_keno', 'clln_keno', 'bingo18'].includes(game.code) || game.autoRandomResult === true;
+                const isAutoGame = ['keno', 'bingo18'].includes(game.code) || game.autoRandomResult === true;
                 if (isAutoGame) {
                     // Xổ số tự động cho Keno và Bingo18
                     if (draw.status !== 'completed' || !draw.winningNumbers || draw.winningNumbers.length === 0) {
@@ -618,7 +600,7 @@ const startCronJobs = () => {
             const activeGames = await Game_1.default.find({
                 isActive: true,
                 cronExpression: { $exists: true, $ne: '' },
-                code: { $nin: ['keno', 'bao_keno', 'clln_keno', 'bingo18'] }
+                code: { $nin: ['keno', 'bingo18'] }
             });
             for (const game of activeGames) {
                 try {

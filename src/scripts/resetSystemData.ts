@@ -69,7 +69,13 @@ const resetSystemData = async () => {
     const deletedDraws = await Draw.deleteMany({});
     console.log(`✓ Đã xoá toàn bộ ${deletedDraws.deletedCount} kỳ quay cũ.`);
 
-    // 9. ĐỒNG BỘ CẤU HÌNH GAME & TẠO LẠI KỲ QUAY MỚI CHUẨN XÁC
+    // 9. DỌN DẸP TRIỆT ĐỂ GAME RÁC / ĐÃ BỎ (clln_keno, bao_keno)
+    const delDeprecated = await Game.deleteMany({ code: { $in: ['clln_keno', 'bao_keno'] } });
+    if (delDeprecated.deletedCount > 0) {
+      console.log(`✓ Đã xoá vĩnh viễn ${delDeprecated.deletedCount} game rác (clln_keno, bao_keno) khỏi database.`);
+    }
+
+    // 10. ĐỒNG BỘ CẤU HÌNH GAME & TẠO LẠI KỲ QUAY MỚI CHUẨN XÁC
     console.log('Đang đồng bộ cấu hình game và khởi tạo các kỳ quay mở mới...');
     await ensureGameConfigs();
     await ensureUpcomingDraws();

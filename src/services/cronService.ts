@@ -343,7 +343,8 @@ export const GAME_CONFIGS = [
     subtext: '🏆 x40.000 lần',
     cronExpression: '15 18 * * *',
     drawDurationMinutes: 0,
-    autoRandomResult: false
+    autoRandomResult: false,
+    isActive: false
   },
   {
     code: 'loto_235',
@@ -470,6 +471,10 @@ export const GAME_CONFIGS = [
 
 export const ensureGameConfigs = async () => {
   try {
+    // Tự động xoá vĩnh viễn các game rác / đã bỏ khỏi hệ thống nếu còn trong DB
+    await Game.deleteMany({ code: { $in: ['clln_keno', 'bao_keno'] } });
+    await Draw.deleteMany({ gameCode: { $in: ['clln_keno', 'bao_keno'] } });
+
     for (const cfg of GAME_CONFIGS) {
       const isAuto = ['keno', 'bingo18'].includes(cfg.code);
       const existing = await Game.findOne({ code: cfg.code });
@@ -485,12 +490,16 @@ export const ensureGameConfigs = async () => {
           cronExpression: cfg.cronExpression,
           drawDurationMinutes: cfg.drawDurationMinutes,
           autoRandomResult: isAuto,
-          isActive: true,
+          isActive: (cfg as any).isActive !== undefined ? (cfg as any).isActive : true,
           payoutRates: (cfg as any).payoutRates || {}
         });
         console.log(`CronService: Đã tự động tạo game ${cfg.name} (${cfg.code})`);
       } else {
         let changed = false;
+        if ((cfg as any).isActive !== undefined && existing.isActive !== (cfg as any).isActive) {
+          existing.isActive = (cfg as any).isActive;
+          changed = true;
+        }
         if (existing.cronExpression !== cfg.cronExpression) {
           existing.cronExpression = cfg.cronExpression;
           changed = true;
