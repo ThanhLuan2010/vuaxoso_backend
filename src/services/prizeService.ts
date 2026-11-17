@@ -1838,59 +1838,46 @@ export const processDrawResults = async (drawId: string) => {
             let boardPrize = 0;
             const multiplier = Math.floor(board.cost / 10000);
             
-            if (order.playType === 'Thần tài 4' || !order.playType) {
+            if (order.playType === 'Điện toán 1-2-3') {
+              const ticketStr = board.numbers.join('');
+              if (ticketStr.length === 6 && w.length >= 3) {
+                const ticketB1 = ticketStr[0];
+                const ticketB2 = ticketStr.slice(1, 3);
+                const ticketB3 = ticketStr.slice(3, 6);
+                const wB1 = String(w[0] ?? '').trim();
+                const wB2 = String(w[1] ?? '').trim().padStart(2, '0');
+                const wB3 = String(w[2] ?? '').trim().padStart(3, '0');
+                
+                const match1 = (ticketB1 === wB1);
+                const match2 = (ticketB2 === wB2);
+                const match3 = (ticketB3 === wB3);
+
+                if (match1 && match2 && match3) {
+                  boardPrize = 400000000; // x40.000 lần
+                } else if (match2 && match3) {
+                  boardPrize = 10000000;  // x1.000 lần
+                } else if (match1 && match3) {
+                  boardPrize = 1000000;   // x100 lần
+                } else if (match3) {
+                  boardPrize = 500000;    // x50 lần
+                }
+              }
+            } else {
               const ticketStr = board.numbers.join('');
               const WXYZ = (w.length === 4 && w[0].length === 1) ? w.join('') : (w[0] || '');
               if (ticketStr.length === 4 && WXYZ.length === 4) {
                 const A = ticketStr[0], B = ticketStr[1], C = ticketStr[2], D = ticketStr[3];
                 const W = WXYZ[0], X = WXYZ[1], Y = WXYZ[2], Z = WXYZ[3];
                 
-                // Helper để kiểm tra hoán vị
-                const isPermutation = (s1: string, s2: string) => s1.split('').sort().join('') === s2.split('').sort().join('');
-                
                 if (ticketStr === WXYZ) {
-                  boardPrize = 100000000;
-                } else if (isPermutation(ticketStr, WXYZ)) {
-                  boardPrize = 10000000;
-                } else if (B === X && C === Y && D === Z) {
-                  boardPrize = 1000000;
-                } else if (isPermutation(B+C+D, X+Y+Z)) {
-                  boardPrize = 100000;
+                  boardPrize = 12200000; // Giải Nhất: x1.220 lần
                 } else if (A === W && B === X && C === Y) {
-                  boardPrize = 1000000;
-                } else if (isPermutation(A+B+C, W+X+Y)) {
-                  boardPrize = 100000;
-                } else if (C === Y && D === Z) {
-                  boardPrize = 100000;
-                } else if (A === W && B === X) {
-                  boardPrize = 100000;
-                } else if (D === Z || A === W) {
-                  boardPrize = 10000;
+                  boardPrize = 1100000;  // Giải Nhì (trùng 3 số đầu): x110 lần
+                } else if (B === X && C === Y && D === Z) {
+                  boardPrize = 1100000;  // Giải Ba (trùng 3 số cuối): x110 lần
+                } else if ((A === W && B === X) || (C === Y && D === Z)) {
+                  boardPrize = 100000;   // Giải Khuyến khích (trùng 2 đầu hoặc 2 cuối): x10 lần
                 }
-              }
-            } else if (order.playType === 'Điện toán 1-2-3') {
-              const ticketStr = board.numbers.join('');
-              if (ticketStr.length === 6 && w.length >= 4) {
-                const A = ticketStr[0], BC = ticketStr.slice(1, 3), DEF = ticketStr.slice(3, 6);
-                const W = w[1][0] || w[1], XY = w[2].slice(-2), ZUV = w[3].slice(-3);
-                
-                let prize3 = 0, prize2 = 0, prize1 = 0;
-                const isPerm = (s1: string, s2: string) => s1.split('').sort().join('') === s2.split('').sort().join('');
-                
-                // Bộ 3 số
-                if (DEF === ZUV) prize3 = 10000000;
-                else if (isPerm(DEF, ZUV)) prize3 = 1000000;
-                else if (DEF.slice(1) === ZUV.slice(1)) prize3 = 100000;
-                else if (DEF.slice(2) === ZUV.slice(2)) prize3 = 50000;
-                
-                // Bộ 2 số
-                if (BC === XY) prize2 = 750000;
-                else if (BC.slice(1) === XY.slice(1)) prize2 = 50000;
-                
-                // Bộ 1 số
-                if (A === W) prize1 = 50000;
-                
-                boardPrize = prize1 + prize2 + prize3;
               }
             }
             
@@ -1908,32 +1895,26 @@ export const processDrawResults = async (drawId: string) => {
             const multiplier = Math.floor(board.cost / 10000);
             const ticketStr = board.numbers.join('');
             if (ticketStr.length === 6) {
-              const A = ticketStr[0], BC = ticketStr.slice(1, 3), DEF = ticketStr.slice(3, 6);
-              // w là [Bộ 1, Bộ 2, Bộ 3]
-              const b1 = w.length === 3 ? w[0] : (w[1] || w[0]);
-              const b2 = w.length === 3 ? w[1] : (w[2] || w[1]);
-              const b3 = w.length === 3 ? w[2] : (w[3] || w[2]);
-              const W = String(b1)[0] || '';
-              const XY = String(b2).slice(-2);
-              const ZUV = String(b3).slice(-3);
+              const ticketB1 = ticketStr[0];
+              const ticketB2 = ticketStr.slice(1, 3);
+              const ticketB3 = ticketStr.slice(3, 6);
+              const wB1 = String(w[0] ?? '').trim();
+              const wB2 = String(w[1] ?? '').trim().padStart(2, '0');
+              const wB3 = String(w[2] ?? '').trim().padStart(3, '0');
               
-              let prize3 = 0, prize2 = 0, prize1 = 0;
-              const isPerm = (s1: string, s2: string) => s1.split('').sort().join('') === s2.split('').sort().join('');
-              
-              // Bộ 3 số
-              if (DEF === ZUV) prize3 = 10000000;
-              else if (isPerm(DEF, ZUV)) prize3 = 1000000;
-              else if (DEF.slice(1) === ZUV.slice(1)) prize3 = 100000;
-              else if (DEF.slice(2) === ZUV.slice(2)) prize3 = 50000;
-              
-              // Bộ 2 số
-              if (BC === XY) prize2 = 750000;
-              else if (BC.slice(1) === XY.slice(1)) prize2 = 50000;
-              
-              // Bộ 1 số
-              if (A === W) prize1 = 50000;
-              
-              boardPrize = prize1 + prize2 + prize3;
+              const match1 = (ticketB1 === wB1);
+              const match2 = (ticketB2 === wB2);
+              const match3 = (ticketB3 === wB3);
+
+              if (match1 && match2 && match3) {
+                boardPrize = 400000000; // Giải Nhất: x40.000 lần
+              } else if (match2 && match3) {
+                boardPrize = 10000000;  // Giải Nhì (Bộ 2 + Bộ 3): x1.000 lần
+              } else if (match1 && match3) {
+                boardPrize = 1000000;   // Giải Ba (Bộ 1 + Bộ 3): x100 lần
+              } else if (match3) {
+                boardPrize = 500000;    // Giải Tư (duy nhất Bộ 3): x50 lần
+              }
             }
             
             if (boardPrize > 0) {

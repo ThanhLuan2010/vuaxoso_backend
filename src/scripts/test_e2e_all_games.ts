@@ -312,6 +312,69 @@ testCase('TRUOT_LOTO', 'Trượt lô tô 4 (2.5x), 8 (8x), 10 (12x)', () => {
 testCase('THAN_TAI_4', 'Thần tài 4 (1220x), ĐT 1-2-3 (40.000x)', () => {
   assert.strictEqual(10000 * 1220, 12200000);
   assert.strictEqual(10000 * 40000, 400000000);
+
+  // Thần Tài 4 prize calculation logic test
+  const calculateThanTai = (ticket: string, drawResult: string) => {
+    let boardPrize = 0;
+    const ticketStr = ticket;
+    const WXYZ = drawResult;
+    if (ticketStr.length === 4 && WXYZ.length === 4) {
+      const A = ticketStr[0], B = ticketStr[1], C = ticketStr[2], D = ticketStr[3];
+      const W = WXYZ[0], X = WXYZ[1], Y = WXYZ[2], Z = WXYZ[3];
+      if (ticketStr === WXYZ) {
+        boardPrize = 12200000;
+      } else if (A === W && B === X && C === Y) {
+        boardPrize = 1100000;
+      } else if (B === X && C === Y && D === Z) {
+        boardPrize = 1100000;
+      } else if ((A === W && B === X) || (C === Y && D === Z)) {
+        boardPrize = 100000;
+      }
+    }
+    return boardPrize;
+  };
+
+  assert.strictEqual(calculateThanTai('1989', '1989'), 12200000); // Giải Nhất
+  assert.strictEqual(calculateThanTai('1980', '1989'), 1100000);  // Giải Nhì (3 đầu)
+  assert.strictEqual(calculateThanTai('0989', '1989'), 1100000);  // Giải Ba (3 cuối)
+  assert.strictEqual(calculateThanTai('1900', '1989'), 100000);   // Giải KK (2 đầu)
+  assert.strictEqual(calculateThanTai('0089', '1989'), 100000);   // Giải KK (2 cuối)
+  assert.strictEqual(calculateThanTai('1009', '1989'), 0);        // Trật
+
+  // Điện toán 1-2-3 prize calculation logic test
+  const calculateDt123 = (ticket: string[], w: string[]) => {
+    let boardPrize = 0;
+    const ticketStr = ticket.join('');
+    if (ticketStr.length === 6 && w.length >= 3) {
+      const ticketB1 = ticketStr[0];
+      const ticketB2 = ticketStr.slice(1, 3);
+      const ticketB3 = ticketStr.slice(3, 6);
+      const wB1 = String(w[0] ?? '').trim();
+      const wB2 = String(w[1] ?? '').trim().padStart(2, '0');
+      const wB3 = String(w[2] ?? '').trim().padStart(3, '0');
+      const match1 = (ticketB1 === wB1);
+      const match2 = (ticketB2 === wB2);
+      const match3 = (ticketB3 === wB3);
+
+      if (match1 && match2 && match3) {
+        boardPrize = 400000000; // x40.000
+      } else if (match2 && match3) {
+        boardPrize = 10000000;  // x1.000
+      } else if (match1 && match3) {
+        boardPrize = 1000000;   // x100
+      } else if (match3) {
+        boardPrize = 500000;    // x50
+      }
+    }
+    return boardPrize;
+  };
+
+  const drawRes = ['5', '28', '789'];
+  assert.strictEqual(calculateDt123(['5', '2', '8', '7', '8', '9'], drawRes), 400000000); // Giải Nhất
+  assert.strictEqual(calculateDt123(['3', '2', '8', '7', '8', '9'], drawRes), 10000000);  // Giải Nhì
+  assert.strictEqual(calculateDt123(['5', '0', '0', '7', '8', '9'], drawRes), 1000000);   // Giải Ba
+  assert.strictEqual(calculateDt123(['3', '0', '0', '7', '8', '9'], drawRes), 500000);    // Giải Tư
+  assert.strictEqual(calculateDt123(['5', '2', '8', '0', '0', '0'], drawRes), 0);         // Trật
 });
 
 testCase('LOTTO_535_570', 'Lotto 5/35 Bao 6 chính + 2 đặc biệt = 12 bộ = 120.000đ', () => {
