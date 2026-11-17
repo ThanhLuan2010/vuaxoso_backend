@@ -7,6 +7,7 @@
     "build": "tsc && cp -r src/config/*.json dist/config/ 2>/dev/null || true",
     "start": "node dist/index.js",
     "setup:fast-games": "ts-node src/scripts/setup-fast-games.ts",
+    "reset:data": "ts-node src/scripts/resetSystemData.ts",
     "reset:lotto570": "ts-node src/scripts/resetLotto570Draws.ts",
     "reset:bingo18": "ts-node src/scripts/resetBingo18Draws.ts",
     "seed:power": "ts-node src/seedPower655.ts",

@@ -1,3 +1,4 @@
+import { getNextOrderIds } from '../utils/orderIdGenerator';
 
 export const checkoutOrders = async (req: any, res: Response) => {
   try {
@@ -197,9 +198,9 @@ export const checkoutOrders = async (req: any, res: Response) => {
       await Cart.findOneAndUpdate({ user: req.user.id }, { items: [] }).catch(() => {});
     }
 
-    // Prepare all order documents
+    // Prepare all order documents with concise auto-incrementing orderId (a_0000001...)
+    const orderIds = await getNextOrderIds(preparedOrders.length);
     let runningBalance = balanceBefore;
-    const timestamp = Date.now();
     const orderDocs = preparedOrders.map((ord, idx) => {
       const ordBefore = runningBalance;
       runningBalance -= ord.totalCost;
@@ -208,7 +209,7 @@ export const checkoutOrders = async (req: any, res: Response) => {
         balanceBefore: ordBefore,
         balanceAfter: ordAfter,
         user: req.user.id,
-        orderId: `ORD_${timestamp}_${Math.floor(100 + Math.random() * 900)}_${idx + 1}`,
+        orderId: orderIds[idx],
         gameType: ord.gameType,
         playType: ord.playType,
         drawId: ord.drawId,
@@ -686,11 +687,12 @@ export const createOrder = async (req: any, res: Response) => {
     const loginDevice = req.headers['user-agent'] || '';
 
     await Cart.findOneAndUpdate({ user: req.user.id }, { items: [] }).catch(() => {});
+    const [nextOrderId] = await getNextOrderIds(1);
     const order = await Order.create({
       balanceBefore,
       balanceAfter,
       user: req.user.id,
-      orderId: `ORD_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      orderId: nextOrderId,
       gameType,
       playType,
       drawId,
