@@ -34,7 +34,7 @@ export const ensureUpcomingDraws = async () => {
 
     // 1. Vietlott / Điện Toán: Đảm bảo luôn có sẵn 10 kỳ quay
     const scheduledGames = await Game.find({
-      code: { $nin: ['keno', 'bingo18', 'MB', 'MT', 'MN', 'xoso_3mien', 'lode', 'loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'] }
+      code: { $nin: ['keno', 'bao_keno', 'clln_keno', 'bingo18', 'MB', 'MT', 'MN', 'xoso_3mien', 'lode', 'loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'] }
     });
 
     for (const game of scheduledGames) {
@@ -226,6 +226,30 @@ export const GAME_CONFIGS = [
     autoRandomResult: true
   },
   {
+    code: 'bao_keno',
+    name: 'BAO KENO',
+    type: 'vietlott',
+    brandColor: '#FF6B00',
+    bgColor: '#FFF4EB',
+    badge: '8p-1 kỳ',
+    subtext: 'Bao số Keno',
+    cronExpression: '*/8 * * * *',
+    drawDurationMinutes: 8,
+    autoRandomResult: true
+  },
+  {
+    code: 'clln_keno',
+    name: 'KENO CHẴN LẺ LỚN NHỎ',
+    type: 'vietlott',
+    brandColor: '#2F80ED',
+    bgColor: '#EDF5FF',
+    badge: '8p-1 kỳ',
+    subtext: 'Chẵn - Lẻ - Lớn - Nhỏ',
+    cronExpression: '*/8 * * * *',
+    drawDurationMinutes: 8,
+    autoRandomResult: true
+  },
+  {
     code: 'bingo18',
     name: 'BINGO18',
     type: 'dientoan',
@@ -343,8 +367,7 @@ export const GAME_CONFIGS = [
     subtext: '🏆 x40.000 lần',
     cronExpression: '15 18 * * *',
     drawDurationMinutes: 0,
-    autoRandomResult: false,
-    isActive: false
+    autoRandomResult: false
   },
   {
     code: 'loto_235',
@@ -471,12 +494,8 @@ export const GAME_CONFIGS = [
 
 export const ensureGameConfigs = async () => {
   try {
-    // Tự động xoá vĩnh viễn các game rác / đã bỏ khỏi hệ thống nếu còn trong DB
-    await Game.deleteMany({ code: { $in: ['clln_keno', 'bao_keno'] } });
-    await Draw.deleteMany({ gameCode: { $in: ['clln_keno', 'bao_keno'] } });
-
     for (const cfg of GAME_CONFIGS) {
-      const isAuto = ['keno', 'bingo18'].includes(cfg.code);
+      const isAuto = ['keno', 'bao_keno', 'clln_keno', 'bingo18'].includes(cfg.code);
       const existing = await Game.findOne({ code: cfg.code });
       if (!existing) {
         await Game.create({
@@ -490,16 +509,12 @@ export const ensureGameConfigs = async () => {
           cronExpression: cfg.cronExpression,
           drawDurationMinutes: cfg.drawDurationMinutes,
           autoRandomResult: isAuto,
-          isActive: (cfg as any).isActive !== undefined ? (cfg as any).isActive : true,
+          isActive: true,
           payoutRates: (cfg as any).payoutRates || {}
         });
         console.log(`CronService: Đã tự động tạo game ${cfg.name} (${cfg.code})`);
       } else {
         let changed = false;
-        if ((cfg as any).isActive !== undefined && existing.isActive !== (cfg as any).isActive) {
-          existing.isActive = (cfg as any).isActive;
-          changed = true;
-        }
         if (existing.cronExpression !== cfg.cronExpression) {
           existing.cronExpression = cfg.cronExpression;
           changed = true;
@@ -541,18 +556,18 @@ export const startCronJobs = () => {
     try {
       await ensureUpcomingDraws();
       const now = new Date();
-      
+
       // 1. Đóng các kỳ quay đã hết giờ & tự động sinh kết quả cho Keno và Bingo18
-      const drawsToClose = await Draw.find({ 
-        status: { $in: ['open', 'closed'] }, 
-        closeTime: { $lte: now } 
+      const drawsToClose = await Draw.find({
+        status: { $in: ['open', 'closed'] },
+        closeTime: { $lte: now }
       }).populate('game');
 
       for (const draw of drawsToClose) {
         const game = draw.game as any;
         if (!game) continue;
 
-        const isAutoGame = ['keno', 'bingo18'].includes(game.code) || game.autoRandomResult === true;
+        const isAutoGame = ['keno', 'bao_keno', 'clln_keno', 'bingo18'].includes(game.code) || game.autoRandomResult === true;
 
         if (isAutoGame) {
           // Xổ số tự động cho Keno và Bingo18
@@ -605,30 +620,30 @@ export const startCronJobs = () => {
       }
 
       // 2. Mở kỳ quay mới cho các Game có cấu hình cron (trừ game quay nhanh đã xử lý liên tục 10 kỳ)
-      const activeGames = await Game.find({ 
-        isActive: true, 
+      const activeGames = await Game.find({
+        isActive: true,
         cronExpression: { $exists: true, $ne: '' },
-        code: { $nin: ['keno', 'bingo18'] }
+        code: { $nin: ['keno', 'bao_keno', 'clln_keno', 'bingo18'] }
       });
 
       for (const game of activeGames) {
         try {
           if (!game.cronExpression) continue;
-          
+
           const interval = CronExpressionParser.parse(game.cronExpression);
           const nextRun = interval.next().toDate();
           const prevRun = interval.prev().toDate();
-          
+
           // Kiểm tra xem thời điểm "prevRun" có nằm trong phạm vi của phút hiện tại không
           // Node-cron chạy mỗi phút, nên nếu prevRun thuộc phút này (sai số < 60s) thì là đến lúc tạo
           const diffSeconds = Math.abs(now.getTime() - prevRun.getTime()) / 1000;
-          
+
           if (diffSeconds < 60) {
             // Đến giờ tạo kỳ mới
             // Kiểm tra xem kỳ quay cho chu kỳ này đã tồn tại chưa để tránh trùng lặp
             const openTime = prevRun;
             const closeTime = new Date(openTime.getTime() + (game.drawDurationMinutes || 10) * 60000);
-            
+
             // Tạo mã kỳ dựa trên thời gian
             const hours = String(openTime.getHours()).padStart(2, '0');
             const minutes = String(openTime.getMinutes()).padStart(2, '0');
@@ -665,10 +680,10 @@ export const startCronJobs = () => {
     try {
       console.log('CronService: Bắt đầu tiến trình dọn dẹp dữ liệu (Data Retention).');
       const now = new Date();
-      
+
       // 1. Delete Orders older than 2 months (60 days)
       const twoMonthsAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
-      
+
       // Optional: Xuất dữ liệu ra file trước khi xoá. 
       // Do yêu cầu "Xuất và xoá", ta ghi thẳng ra file backup
       const oldOrders = await Order.find({ createdAt: { $lt: twoMonthsAgo } });
@@ -678,7 +693,7 @@ export const startCronJobs = () => {
         const backupFile = path.join(backupDir, `orders_backup_${Date.now()}.json`);
         fs.writeFileSync(backupFile, JSON.stringify(oldOrders));
         console.log(`CronService: Đã xuất ${oldOrders.length} đơn cược cũ ra file backup.`);
-        
+
         const orderDelRes = await Order.deleteMany({ createdAt: { $lt: twoMonthsAgo } });
         console.log(`CronService: Đã xoá ${orderDelRes.deletedCount} đơn cược cũ hơn 2 tháng.`);
       }
@@ -690,32 +705,32 @@ export const startCronJobs = () => {
 
       // 3. Remove receipt images for deposits older than 1 month (30 days)
       const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-      const oldReceipts = await Transaction.find({ 
-        createdAt: { $lt: oneMonthAgo }, 
-        type: 'deposit', 
-        receiptImage: { $ne: null } 
+      const oldReceipts = await Transaction.find({
+        createdAt: { $lt: oneMonthAgo },
+        type: 'deposit',
+        receiptImage: { $ne: null }
       });
-      
+
       let receiptCount = 0;
       for (const tx of oldReceipts) {
         if (tx.receiptImage) {
           try {
-             let imgPath = tx.receiptImage;
-             if (imgPath.startsWith('/')) imgPath = imgPath.substring(1);
-             const filePath = path.join(process.cwd(), imgPath);
-             if (fs.existsSync(filePath)) {
-               fs.unlinkSync(filePath);
-             }
-             tx.receiptImage = undefined;
-             await tx.save();
-             receiptCount++;
-          } catch(err) {
-             console.error(`Lỗi xoá ảnh hoá đơn ${tx._id}:`, err);
+            let imgPath = tx.receiptImage;
+            if (imgPath.startsWith('/')) imgPath = imgPath.substring(1);
+            const filePath = path.join(process.cwd(), imgPath);
+            if (fs.existsSync(filePath)) {
+              fs.unlinkSync(filePath);
+            }
+            tx.receiptImage = undefined;
+            await tx.save();
+            receiptCount++;
+          } catch (err) {
+            console.error(`Lỗi xoá ảnh hoá đơn ${tx._id}:`, err);
           }
         }
       }
       console.log(`CronService: Đã xoá ${receiptCount} file ảnh sao kê nạp tiền cũ hơn 1 tháng.`);
-      
+
     } catch (err) {
       console.error('CronService: Lỗi tiến trình dọn dẹp', err);
     }

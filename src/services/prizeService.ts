@@ -601,115 +601,115 @@ export const processDrawResults = async (drawId: string) => {
               }
             });
           }
-        } else if (game.code === 'lotto_535') {
-          const w = draw.winningNumbers;
-          if (w && w.length >= 6) {
-            const drawMain = w.slice(0, 5);
-            const drawSpecial = w[5];
+        } else if (game.code === 'lotto_535' || game.code === 'lotto_570') {
+          const is570 = game.code === 'lotto_570';
+          const maxNum = is570 ? 70 : 35;
+          const jackpotBase = is570 ? 6000000000 : 3000000000;
+          const jackpotPrize = (draw.jackpotAmount && draw.jackpotAmount > 0)
+            ? Math.max(draw.jackpotAmount, jackpotBase)
+            : jackpotBase;
 
-            allBoards.forEach((board) => {
-              let boardPrize = 0;
-              let subTickets: { main: string[], special: string }[] = [];
-              const mainPool = board.numbers || [];
-              const specialPool = board.specialNumbers || [];
-              
-              if (mainPool.length === 4) {
-                // Bao 4
-                for (let i = 1; i <= 35; i++) {
-                  const num = String(i).padStart(2, '0');
-                  if (!mainPool.includes(num)) {
-                    specialPool.forEach((s: string) => {
-                      subTickets.push({ main: [...mainPool, num], special: s });
-                    });
-                  }
-                }
-              } else {
-                // Cơ bản, Bao 6-15, Bao số ĐB
-                const combinations = getCombinationsList(mainPool, 5);
-                combinations.forEach((combo: string[]) => {
-                  specialPool.forEach((s: string) => {
-                    subTickets.push({ main: combo, special: s });
-                  });
-                });
-              }
-              
-              subTickets.forEach((ticket: { main: string[], special: string }) => {
-                let matchCount = 0;
-                let hasSpecial = ticket.special === drawSpecial;
-                ticket.main.forEach((num: string) => {
-                  if (drawMain.includes(num)) matchCount++;
-                });
+          // Phân biệt rõ ràng 5 số thường (drawMain) và 1 số đặc biệt (drawSpecial)
+          let drawMain: string[] = [];
+          let drawSpecial = '';
 
-                if (matchCount === 5 && hasSpecial) boardPrize += 3000000000;
-                else if (matchCount === 5 && !hasSpecial) boardPrize += 10000000;
-                else if (matchCount === 4 && hasSpecial) boardPrize += 5000000;
-                else if (matchCount === 4 && !hasSpecial) boardPrize += 500000;
-                else if (matchCount === 3 && hasSpecial) boardPrize += 100000;
-                else if (matchCount === 3 && !hasSpecial) boardPrize += 30000;
-                else if (matchCount >= 0 && matchCount <= 2 && hasSpecial) boardPrize += 10000;
-              });
-
-              if (boardPrize > 0) {
-                isWinner = true;
-                const multiplier = Math.floor(board.cost / (subTickets.length > 0 ? subTickets.length : 1) / 10000);
-                prizeAmount += boardPrize * (multiplier > 0 ? multiplier : 1);
-              }
-            });
+          // 1. Ưu tiên lấy từ draw.specialNumbers nếu có
+          if (draw.specialNumbers && draw.specialNumbers.length > 0) {
+            drawSpecial = String(draw.specialNumbers[0]).trim().padStart(2, '0');
           }
-        } else if (game.code === 'lotto_570') {
-          const w = draw.winningNumbers;
-          if (w && w.length >= 6) {
-            const drawMain = w.slice(0, 5);
-            const drawSpecial = w[5];
 
+          // 2. Làm sạch các số từ winningNumbers (loại bỏ ký tự phân cách như '|', '+', chỉ giữ số)
+          const cleanW = (draw.winningNumbers || [])
+            .map((n: any) => String(n).trim())
+            .filter((n: string) => /^\d+$/.test(n))
+            .map((n: string) => n.padStart(2, '0'));
+
+          if (cleanW.length >= 6) {
+            drawMain = cleanW.slice(0, 5);
+            if (!drawSpecial) drawSpecial = cleanW[5];
+          } else if (cleanW.length === 5 && drawSpecial) {
+            drawMain = cleanW;
+          }
+
+          if (drawMain.length === 5 && drawSpecial) {
             allBoards.forEach((board) => {
               let boardPrize = 0;
-              let subTickets: { main: string[], special: string }[] = [];
-              const mainPool = board.numbers || [];
-              const specialPool = board.specialNumbers || [];
-              
+              let subTickets: { main: string[]; special: string }[] = [];
+
+              let mainPool = (board.numbers || [])
+                .map((n: any) => String(n).trim())
+                .filter((n: string) => /^\d+$/.test(n))
+                .map((n: string) => n.padStart(2, '0'));
+
+              let specialPool = (board.specialNumbers || [])
+                .map((n: any) => String(n).trim())
+                .filter((n: string) => /^\d+$/.test(n))
+                .map((n: string) => n.padStart(2, '0'));
+
+              // Nếu người chơi gửi 6 số trong mainPool và specialPool rỗng, tự động tách số thứ 6 làm số đặc biệt
+              if (specialPool.length === 0 && mainPool.length >= 6) {
+                specialPool = [mainPool[mainPool.length - 1]];
+                mainPool = mainPool.slice(0, mainPool.length - 1);
+              }
+
+              // Luôn đảm bảo có pool số đặc biệt để duyệt (kể cả khi không có số ĐB thì vẫn tính giải số thường)
+              const effectiveSpecialPool = specialPool.length > 0 ? specialPool : [''];
+
               if (mainPool.length === 4) {
                 // Bao 4
-                for (let i = 1; i <= 70; i++) {
+                for (let i = 1; i <= maxNum; i++) {
                   const num = String(i).padStart(2, '0');
                   if (!mainPool.includes(num)) {
-                    specialPool.forEach((s: string) => {
+                    effectiveSpecialPool.forEach((s: string) => {
                       subTickets.push({ main: [...mainPool, num], special: s });
                     });
                   }
                 }
-              } else {
-                // Cơ bản, Bao 6-15, Bao số ĐB
+              } else if (mainPool.length >= 5) {
+                // Cơ bản (5 số), Bao 6-15
                 const combinations = getCombinationsList(mainPool, 5);
                 combinations.forEach((combo: string[]) => {
-                  specialPool.forEach((s: string) => {
+                  effectiveSpecialPool.forEach((s: string) => {
                     subTickets.push({ main: combo, special: s });
                   });
                 });
               }
-              
-              subTickets.forEach((ticket: { main: string[], special: string }) => {
+
+              subTickets.forEach((ticket: { main: string[]; special: string }) => {
                 let matchCount = 0;
-                let hasSpecial = ticket.special === drawSpecial;
+                const hasSpecial = Boolean(ticket.special && ticket.special === drawSpecial);
                 ticket.main.forEach((num: string) => {
                   if (drawMain.includes(num)) matchCount++;
                 });
 
-                if (matchCount === 5 && hasSpecial) boardPrize += 6000000000;
-                else if (matchCount === 5 && !hasSpecial) boardPrize += 10000000;
-                else if (matchCount === 4 && hasSpecial) boardPrize += 10000000;
-                else if (matchCount === 4 && !hasSpecial) boardPrize += 9000000;
-                else if (matchCount === 3 && hasSpecial) boardPrize += 5000000;
-                else if (matchCount === 3 && !hasSpecial) boardPrize += 5000000;
-                else if (matchCount === 2 && hasSpecial) boardPrize += 1000000;
-                else if (matchCount === 1 && hasSpecial) boardPrize += 100000;
-                else if (matchCount === 0 && hasSpecial) boardPrize += 10000;
+                if (is570) {
+                  // Cơ cấu thưởng Lotto 5/70 (Mega Millions)
+                  if (matchCount === 5 && hasSpecial) boardPrize += jackpotPrize;
+                  else if (matchCount === 5 && !hasSpecial) boardPrize += 10000000;
+                  else if (matchCount === 4 && hasSpecial) boardPrize += 10000000;
+                  else if (matchCount === 4 && !hasSpecial) boardPrize += 9000000;
+                  else if (matchCount === 3 && hasSpecial) boardPrize += 5000000;
+                  else if (matchCount === 3 && !hasSpecial) boardPrize += 5000000;
+                  else if (matchCount === 2 && hasSpecial) boardPrize += 1000000;
+                  else if (matchCount === 1 && hasSpecial) boardPrize += 100000;
+                  else if (matchCount === 0 && hasSpecial) boardPrize += 10000;
+                } else {
+                  // Cơ cấu thưởng Lotto 5/35
+                  if (matchCount === 5 && hasSpecial) boardPrize += jackpotPrize;
+                  else if (matchCount === 5 && !hasSpecial) boardPrize += 10000000;
+                  else if (matchCount === 4 && hasSpecial) boardPrize += 5000000;
+                  else if (matchCount === 4 && !hasSpecial) boardPrize += 500000;
+                  else if (matchCount === 3 && hasSpecial) boardPrize += 100000;
+                  else if (matchCount === 3 && !hasSpecial) boardPrize += 30000;
+                  else if (matchCount >= 0 && matchCount <= 2 && hasSpecial) boardPrize += 10000;
+                }
               });
 
               if (boardPrize > 0) {
                 isWinner = true;
-                const multiplier = Math.floor(board.cost / (subTickets.length > 0 ? subTickets.length : 1) / 10000);
-                prizeAmount += boardPrize * (multiplier > 0 ? multiplier : 1);
+                const comboCount = Math.max(1, subTickets.length);
+                const multiplier = Math.max(1, Math.round((board.cost || 10000) / comboCount / 10000));
+                prizeAmount += boardPrize * multiplier;
               }
             });
           }

@@ -320,6 +320,92 @@ testCase('LOTTO_535_570', 'Lotto 5/35 Bao 6 chính + 2 đặc biệt = 12 bộ =
   assert.strictEqual(boards * 10000, 120000);
 });
 
+testCase('LOTTO_535_570_PRIZE_CALCULATION', 'Lotto 5/35 & 5/70: Phân định rõ 5 số thường và 1 số đặc biệt khi tính giải', () => {
+  // Test normalizeDrawResults
+  const { normalizeDrawResults } = require('../controllers/drawController');
+  
+  // Case 1: Nhập kết quả có dấu '|' từ CMS
+  const r1 = normalizeDrawResults('lotto_535', '05, 12, 19, 27, 34 | 08');
+  assert.deepStrictEqual(r1.winningNumbers, ['05', '12', '19', '27', '34', '08']);
+  assert.deepStrictEqual(r1.specialNumbers, ['08']);
+
+  // Case 2: Nhập số thường và số đặc biệt riêng biệt từ form CMS
+  const r2 = normalizeDrawResults('lotto_570', ['1', '15', '23', '45', '67'], ['9']);
+  assert.deepStrictEqual(r2.winningNumbers, ['01', '15', '23', '45', '67', '09']);
+  assert.deepStrictEqual(r2.specialNumbers, ['09']);
+
+  // Case 3: Nhập dạng mảng 6 số liền nhau
+  const r3 = normalizeDrawResults('lotto_535', ['02', '10', '18', '24', '31', '06']);
+  assert.deepStrictEqual(r3.winningNumbers, ['02', '10', '18', '24', '31', '06']);
+  assert.deepStrictEqual(r3.specialNumbers, ['06']);
+
+  // Giả lập tính toán giải thưởng Lotto 5/35 với 5 số thường: [05, 12, 19, 27, 34] và 1 số đặc biệt: [08]
+  const draw535 = {
+    winningNumbers: ['05', '12', '19', '27', '34', '08'],
+    specialNumbers: ['08']
+  };
+  const drawMain = draw535.winningNumbers.slice(0, 5);
+  const drawSpecial = draw535.specialNumbers[0];
+
+  const calc535 = (m: string[], s: string) => {
+    let match = m.filter(n => drawMain.includes(n)).length;
+    let hasSpecial = s === drawSpecial;
+    if (match === 5 && hasSpecial) return 3000000000;
+    if (match === 5 && !hasSpecial) return 10000000;
+    if (match === 4 && hasSpecial) return 5000000;
+    if (match === 4 && !hasSpecial) return 500000;
+    if (match === 3 && hasSpecial) return 100000;
+    if (match === 3 && !hasSpecial) return 30000;
+    if (match >= 0 && match <= 2 && hasSpecial) return 10000;
+    return 0;
+  };
+
+  assert.strictEqual(calc535(['05', '12', '19', '27', '34'], '08'), 3000000000); // 5+1: Jackpot
+  assert.strictEqual(calc535(['05', '12', '19', '27', '34'], '01'), 10000000);   // 5+0: 10tr
+  assert.strictEqual(calc535(['05', '12', '19', '27', '01'], '08'), 5000000);    // 4+1: 5tr
+  assert.strictEqual(calc535(['05', '12', '19', '27', '01'], '02'), 500000);     // 4+0: 500k
+  assert.strictEqual(calc535(['05', '12', '19', '02', '01'], '08'), 100000);     // 3+1: 100k
+  assert.strictEqual(calc535(['05', '12', '19', '02', '01'], '03'), 30000);      // 3+0: 30k
+  assert.strictEqual(calc535(['05', '12', '03', '02', '01'], '08'), 10000);      // 2+1: 10k
+  assert.strictEqual(calc535(['05', '04', '03', '02', '01'], '08'), 10000);      // 1+1: 10k
+  assert.strictEqual(calc535(['06', '04', '03', '02', '01'], '08'), 10000);      // 0+1: 10k
+  assert.strictEqual(calc535(['06', '04', '03', '02', '01'], '02'), 0);          // 0+0: 0đ
+
+  // Giả lập tính toán giải thưởng Lotto 5/70 với 5 số thường: [05, 12, 19, 27, 34] và 1 Mega Ball: [15]
+  const draw570 = {
+    winningNumbers: ['05', '12', '19', '27', '34', '15'],
+    specialNumbers: ['15']
+  };
+  const drawMain70 = draw570.winningNumbers.slice(0, 5);
+  const drawSpecial70 = draw570.specialNumbers[0];
+
+  const calc570 = (m: string[], s: string) => {
+    let match = m.filter(n => drawMain70.includes(n)).length;
+    let hasSpecial = s === drawSpecial70;
+    if (match === 5 && hasSpecial) return 6000000000;
+    if (match === 5 && !hasSpecial) return 10000000;
+    if (match === 4 && hasSpecial) return 10000000;
+    if (match === 4 && !hasSpecial) return 9000000;
+    if (match === 3 && hasSpecial) return 5000000;
+    if (match === 3 && !hasSpecial) return 5000000;
+    if (match === 2 && hasSpecial) return 1000000;
+    if (match === 1 && hasSpecial) return 100000;
+    if (match === 0 && hasSpecial) return 10000;
+    return 0;
+  };
+
+  assert.strictEqual(calc570(['05', '12', '19', '27', '34'], '15'), 6000000000); // 5+1: Jackpot 6 tỷ
+  assert.strictEqual(calc570(['05', '12', '19', '27', '34'], '01'), 10000000);   // 5+0: 10tr
+  assert.strictEqual(calc570(['05', '12', '19', '27', '01'], '15'), 10000000);   // 4+1: 10tr
+  assert.strictEqual(calc570(['05', '12', '19', '27', '01'], '02'), 9000000);    // 4+0: 9tr
+  assert.strictEqual(calc570(['05', '12', '19', '02', '01'], '15'), 5000000);    // 3+1: 5tr
+  assert.strictEqual(calc570(['05', '12', '19', '02', '01'], '03'), 5000000);    // 3+0: 5tr
+  assert.strictEqual(calc570(['05', '12', '03', '02', '01'], '15'), 1000000);    // 2+1: 1tr
+  assert.strictEqual(calc570(['05', '04', '03', '02', '01'], '15'), 100000);     // 1+1: 100k
+  assert.strictEqual(calc570(['06', '04', '03', '02', '01'], '15'), 10000);      // 0+1: 10k
+  assert.strictEqual(calc570(['06', '04', '03', '02', '01'], '02'), 0);          // 0+0: 0đ
+});
+
 testCase('LOTTO_535_SCHEDULE', 'Lotto 5/35: 2 kỳ/ngày (Kỳ 1: Mở 20h hôm trước - Đóng 12h - Xổ 13h; Kỳ 2: Mở 12h - Đóng 20h - Xổ 21h)', () => {
   const getLotto535ActiveDraw = (currentHour: number, currentMinute: number) => {
     const currentMins = currentHour * 60 + currentMinute;
