@@ -66,8 +66,8 @@ export const ensureUpcomingDraws = async () => {
           while (created < needed) {
             const prevDay = new Date(checkDay.getTime() - 24 * 3600 * 1000);
             const cutoffs = [
-              { close: getVNCutoffDate(checkDay, 12, 0), draw: getVNCutoffDate(checkDay, 13, 0), open: getVNCutoffDate(prevDay, 20, 0) },
-              { close: getVNCutoffDate(checkDay, 20, 0), draw: getVNCutoffDate(checkDay, 21, 0), open: getVNCutoffDate(checkDay, 12, 0) }
+              { close: getVNCutoffDate(checkDay, 12, 0), draw: getVNCutoffDate(checkDay, 13, 0), open: getVNCutoffDate(prevDay, 12, 0) },
+              { close: getVNCutoffDate(checkDay, 20, 0), draw: getVNCutoffDate(checkDay, 21, 0), open: getVNCutoffDate(prevDay, 20, 0) }
             ];
             for (const item of cutoffs) {
               if (item.close > now) {

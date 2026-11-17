@@ -86,15 +86,15 @@ async function run() {
   }
   console.log(`Số kỳ quay bắt đầu từ: #${lastDrawNum} (kỳ mới sẽ từ #${lastDrawNum + 1})`);
 
-  // 4. Sinh 10 kỳ quay mới theo lịch 2 kỳ/ngày:
-  // Ca 1: Chốt 12:00 VN, Mở thưởng 13:00 VN (Mở nhận vé 20:00 VN ngày hôm trước)
-  // Ca 2: Chốt 20:00 VN, Mở thưởng 21:00 VN (Mở nhận vé 12:00 VN cùng ngày)
+  // 4. Sinh 10 kỳ quay mới theo lịch 2 kỳ/ngày (mỗi kỳ mở 24 giờ):
+  // Ca 1: Mở 12:00 hôm trước -> Đóng 12:00 hôm sau -> Xổ KQ: 13:00 hôm sau
+  // Ca 2: Mở 20:00 hôm trước -> Đóng 20:00 hôm sau -> Xổ KQ: 21:00 hôm sau
   const now = new Date();
   let checkDay = new Date(now);
   const targetCount = 10;
   let createdCount = 0;
 
-  console.log('\n--- BẮT ĐẦU TẠO 10 KỲ QUAY MỚI (2 KỲ / NGÀY) ---');
+  console.log('\n--- BẮT ĐẦU TẠO 10 KỲ QUAY MỚI (2 KỲ / NGÀY, MỖI KỲ MỞ 24H) ---');
 
   while (createdCount < targetCount) {
     const prevDay = new Date(checkDay.getTime() - 24 * 3600 * 1000);
@@ -103,13 +103,13 @@ async function run() {
         name: 'Ca 1 (12h-13h)',
         close: getVNCutoffDate(checkDay, 12, 0),
         draw: getVNCutoffDate(checkDay, 13, 0),
-        open: getVNCutoffDate(prevDay, 20, 0)
+        open: getVNCutoffDate(prevDay, 12, 0)
       },
       {
         name: 'Ca 2 (20h-21h)',
         close: getVNCutoffDate(checkDay, 20, 0),
         draw: getVNCutoffDate(checkDay, 21, 0),
-        open: getVNCutoffDate(checkDay, 12, 0)
+        open: getVNCutoffDate(prevDay, 20, 0)
       }
     ];
 
