@@ -272,16 +272,30 @@ export const getActiveDraws = async (req: any, res: Response) => {
     const now = new Date();
     const nowMs = Date.now();
 
-    // Fast-path: Nếu vừa đồng bộ các kỳ quay trong vòng 20 giây qua, trả về kết quả ngay lập tức
-    if (nowMs - lastActiveSyncTime < 20 * 1000) {
-      const draws = await Draw.find({ status: 'open', closeTime: { $gt: now } })
-        .populate('game')
-        .sort({ closeTime: 1 })
-        .lean();
-      return res.json(draws);
+    // Trigger sync ngầm trong background (hoàn toàn KHÔNG chặn response của user!)
+    if (nowMs - lastActiveSyncTime > 60 * 1000) {
+      lastActiveSyncTime = nowMs;
+      setImmediate(() => {
+        syncActiveDrawsBackground().catch(err => console.error("syncActiveDrawsBackground error:", err));
+      });
     }
-    lastActiveSyncTime = nowMs;
 
+    const draws = await Draw.find({ status: 'open', closeTime: { $gt: now } })
+      .populate('game')
+      .sort({ closeTime: 1 })
+      .lean();
+    return res.json(draws);
+  } catch (error: any) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+let isSyncingActive = false;
+export const syncActiveDrawsBackground = async () => {
+  if (isSyncingActive) return;
+  isSyncingActive = true;
+  try {
+    const now = new Date();
     const Game = require('../models/Game').default;
     const games = await Game.find({ isActive: true });
 
@@ -510,11 +524,10 @@ export const getActiveDraws = async (req: any, res: Response) => {
 
     // Đảm bảo luôn có đầy đủ các kỳ quay 14 ngày tới cho Lô Đề / XSKT 3 Miền (với mã kỳ quay duy nhất theo tỉnh thành)
     await ensureKienThietDraws();
-
-    const draws = await Draw.find({ status: 'open', closeTime: { $gt: now } }).populate('game').sort({ closeTime: 1 }).lean();
-    res.json(draws);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (err) {
+    console.error("syncActiveDrawsBackground error:", err);
+  } finally {
+    isSyncingActive = false;
   }
 };
 
@@ -646,31 +659,8 @@ export const createDraw = async (req: any, res: Response) => {
 // Tự động đồng bộ kết quả XSMB sang 4 game điện toán: loto_235, loto_cap, bao_loto_2, truot_loto
 export const syncMbResultsToDienToan = async (mbDraw: any) => {
   try {
-    const Game = require('../models/Game').default;
-    const mbCloseDate = new Date(mbDraw.closeTime || mbDraw.drawTime || mbDraw.createdAt);
-    const vnDayStr = mbCloseDate.toLocaleDateString('en-GB', { timeZone: 'Asia/Ho_Chi_Minh' });
-    const [d, m, y] = vnDayStr.split('/').map(Number);
-    const startOfDay = new Date(Date.UTC(y, m - 1, d, 0 - 7, 0, 0));
-    const endOfDay = new Date(Date.UTC(y, m - 1, d, 23 - 7, 59, 59, 999));
-
-    const mbDerivedGames = await Game.find({
-      code: { $in: ['loto_235', 'loto_cap', 'bao_loto_2', 'truot_loto'] }
-    });
-
-    for (const g of mbDerivedGames) {
-      let targetDraw = await Draw.findOne({
-        game: g._id,
-        closeTime: { $gte: startOfDay, $lte: endOfDay }
-      });
-
-      if (targetDraw) {
-        targetDraw.winningNumbers = mbDraw.winningNumbers;
-        targetDraw.status = 'completed';
-        await targetDraw.save();
-        await processDrawResults(targetDraw._id.toString());
-        console.log('syncMbResultsToDienToan: Đã cập nhật kết quả MB sang ' + g.code + ' (Kỳ ' + targetDraw.drawCode + ')');
-      }
-    }
+    await processDrawResults(mbDraw._id.toString());
+    console.log(`syncMbResultsToDienToan: Đã đồng bộ và tính thưởng vé cược Lô tô theo KQ XSMB kỳ ${mbDraw.drawCode}`);
   } catch (err) {
     console.error('Lỗi khi syncMbResultsToDienToan:', err);
   }

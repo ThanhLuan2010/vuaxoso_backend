@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteDraw = exports.updateDraw = exports.getAllDraws = exports.enterResults = exports.syncMbResultsToDienToan = exports.createDraw = exports.getDrawResults = exports.getActiveDraws = exports.ensureKienThietDraws = exports.getKienThietSchedule = void 0;
+exports.deleteDraw = exports.updateDraw = exports.getAllDraws = exports.enterResults = exports.syncMbResultsToDienToan = exports.createDraw = exports.getDrawResults = exports.syncActiveDrawsBackground = exports.getActiveDraws = exports.ensureKienThietDraws = exports.getKienThietSchedule = void 0;
 const AdminLog_1 = __importDefault(require("../models/AdminLog"));
 const mongoose_1 = __importDefault(require("mongoose"));
 const Draw_1 = __importDefault(require("../models/Draw"));
@@ -242,15 +242,31 @@ const getActiveDraws = async (req, res) => {
     try {
         const now = new Date();
         const nowMs = Date.now();
-        // Fast-path: Nếu vừa đồng bộ các kỳ quay trong vòng 20 giây qua, trả về kết quả ngay lập tức
-        if (nowMs - lastActiveSyncTime < 20 * 1000) {
-            const draws = await Draw_1.default.find({ status: 'open', closeTime: { $gt: now } })
-                .populate('game')
-                .sort({ closeTime: 1 })
-                .lean();
-            return res.json(draws);
+        // Trigger sync ngầm trong background (hoàn toàn KHÔNG chặn response của user!)
+        if (nowMs - lastActiveSyncTime > 60 * 1000) {
+            lastActiveSyncTime = nowMs;
+            setImmediate(() => {
+                (0, exports.syncActiveDrawsBackground)().catch(err => console.error("syncActiveDrawsBackground error:", err));
+            });
         }
-        lastActiveSyncTime = nowMs;
+        const draws = await Draw_1.default.find({ status: 'open', closeTime: { $gt: now } })
+            .populate('game')
+            .sort({ closeTime: 1 })
+            .lean();
+        return res.json(draws);
+    }
+    catch (error) {
+        return res.status(500).json({ message: error.message });
+    }
+};
+exports.getActiveDraws = getActiveDraws;
+let isSyncingActive = false;
+const syncActiveDrawsBackground = async () => {
+    if (isSyncingActive)
+        return;
+    isSyncingActive = true;
+    try {
+        const now = new Date();
         const Game = require('../models/Game').default;
         const games = await Game.find({ isActive: true });
         // Auto-close các kỳ quay mở đã hết hạn của các game KHÔNG PHẢI Keno / Bingo18 (chờ Admin nhập kết quả)
@@ -472,14 +488,15 @@ const getActiveDraws = async (req, res) => {
         }
         // Đảm bảo luôn có đầy đủ các kỳ quay 14 ngày tới cho Lô Đề / XSKT 3 Miền (với mã kỳ quay duy nhất theo tỉnh thành)
         await (0, exports.ensureKienThietDraws)();
-        const draws = await Draw_1.default.find({ status: 'open', closeTime: { $gt: now } }).populate('game').sort({ closeTime: 1 }).lean();
-        res.json(draws);
     }
-    catch (error) {
-        res.status(500).json({ message: error.message });
+    catch (err) {
+        console.error("syncActiveDrawsBackground error:", err);
+    }
+    finally {
+        isSyncingActive = false;
     }
 };
-exports.getActiveDraws = getActiveDraws;
+exports.syncActiveDrawsBackground = syncActiveDrawsBackground;
 // Public: Lấy kết quả (kỳ quay đã hoàn thành)
 const getDrawResults = async (req, res) => {
     try {
@@ -602,28 +619,8 @@ exports.createDraw = createDraw;
 // Tự động đồng bộ kết quả XSMB sang 4 game điện toán: loto_235, loto_cap, bao_loto_2, truot_loto
 const syncMbResultsToDienToan = async (mbDraw) => {
     try {
-        const Game = require('../models/Game').default;
-        const mbCloseDate = new Date(mbDraw.closeTime || mbDraw.drawTime || mbDraw.createdAt);
-        const vnDayStr = mbCloseDate.toLocaleDateString('en-GB', { timeZone: 'Asia/Ho_Chi_Minh' });
-        const [d, m, y] = vnDayStr.split('/').map(Number);
-        const startOfDay = new Date(Date.UTC(y, m - 1, d, 0 - 7, 0, 0));
-        const endOfDay = new Date(Date.UTC(y, m - 1, d, 23 - 7, 59, 59, 999));
-        const mbDerivedGames = await Game.find({
-            code: { $in: ['loto_235', 'loto_cap', 'bao_loto_2', 'truot_loto'] }
-        });
-        for (const g of mbDerivedGames) {
-            let targetDraw = await Draw_1.default.findOne({
-                game: g._id,
-                closeTime: { $gte: startOfDay, $lte: endOfDay }
-            });
-            if (targetDraw) {
-                targetDraw.winningNumbers = mbDraw.winningNumbers;
-                targetDraw.status = 'completed';
-                await targetDraw.save();
-                await (0, prizeService_1.processDrawResults)(targetDraw._id.toString());
-                console.log('syncMbResultsToDienToan: Đã cập nhật kết quả MB sang ' + g.code + ' (Kỳ ' + targetDraw.drawCode + ')');
-            }
-        }
+        await (0, prizeService_1.processDrawResults)(mbDraw._id.toString());
+        console.log(`syncMbResultsToDienToan: Đã đồng bộ và tính thưởng vé cược Lô tô theo KQ XSMB kỳ ${mbDraw.drawCode}`);
     }
     catch (err) {
         console.error('Lỗi khi syncMbResultsToDienToan:', err);

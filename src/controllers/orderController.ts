@@ -1005,8 +1005,10 @@ export const getOrderById = async (req: any, res: Response) => {
           const candidateCodes = ['xoso_3mien', 'lode', 'MB', 'MT', 'MN', 'mb', 'mt', 'mn', 'loto_235', 'loto_cap', 'bao_loto_2', 'truot_loto'];
           if (order.gameType) candidateCodes.push(order.gameType);
           const relatedGames = await Game.find({ code: { $in: candidateCodes } }).select('_id code').lean();
-          const targetGame = relatedGames.find(g => g.code === order.gameType);
-          const relatedGameIds = targetGame ? [targetGame._id] : relatedGames.map(g => g._id);
+          const isLotoDerivedMb = ['loto_235', 'loto_cap', 'bao_loto_2', 'truot_loto'].includes(order.gameType);
+          const mbGame = relatedGames.find(g => g.code === 'MB');
+          const targetGame = isLotoDerivedMb ? mbGame : relatedGames.find(g => g.code === order.gameType);
+          const relatedGameIds = targetGame ? [targetGame._id] : (isLotoDerivedMb && mbGame ? [mbGame._id] : relatedGames.map(g => g._id));
 
           let provId = null;
           if (order.provinceName) {
@@ -1056,7 +1058,11 @@ export const getOrderById = async (req: any, res: Response) => {
       if ((!order.winningNumbers || order.winningNumbers.length === 0) && drawDoc.winningNumbers && drawDoc.winningNumbers.length > 0) {
         order.winningNumbers = drawDoc.winningNumbers;
       }
-      Order.updateOne({ _id: order._id }, { $set: { drawId: drawDoc.drawCode } }).catch(() => {});
+      const updateFields: any = { drawId: drawDoc.drawCode };
+      if (drawDoc.winningNumbers && drawDoc.winningNumbers.length > 0) {
+        updateFields.winningNumbers = drawDoc.winningNumbers;
+      }
+      Order.updateOne({ _id: order._id }, { $set: updateFields }).catch(() => {});
     }
 
     res.json(order);
