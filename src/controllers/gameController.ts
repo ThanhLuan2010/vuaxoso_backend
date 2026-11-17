@@ -5,6 +5,19 @@ import Game from '../models/Game';
 export const getGames = async (req: any, res: Response) => {
   try {
     const { search, admin } = req.query;
+
+    if (admin === 'true') {
+      const count = await Game.countDocuments();
+      if (count < 22) {
+        try {
+          const { ensureGameConfigs } = require('../services/cronService');
+          if (ensureGameConfigs) await ensureGameConfigs();
+        } catch (e) {
+          console.error('Error auto-ensuring game configs in getGames:', e);
+        }
+      }
+    }
+
     const query: any = {};
     if (admin !== 'true') {
       query.isActive = true;

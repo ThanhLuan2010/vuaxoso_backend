@@ -192,8 +192,8 @@ export const processDrawResults = async (drawId: string) => {
 
     let orders = await Order.find(orderQuery);
     
-    // Chỉ xử lý những vé chưa được dò (chưa có winningNumbers)
-    orders = orders.filter(o => !o.winningNumbers || o.winningNumbers.length === 0);
+    // Chỉ xử lý những vé chưa được dò hoặc chưa trúng thưởng (tránh trả thưởng đúp những vé đã nhận thưởng)
+    orders = orders.filter(o => !o.isWinner || !o.prizeAmount || o.prizeAmount === 0);
     console.log(`PrizeService: Tìm thấy ${orders.length} đơn hàng đang chờ dò vé.`);
 
     // PASS 1: Keno Jackpot calculation
@@ -1387,7 +1387,7 @@ export const processDrawResults = async (drawId: string) => {
             }
           });
         }
-      } else if (game.type === 'dientoan') {
+      } else if (['loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(game.code)) {
         const w = draw.winningNumbers;
         if (w && w.length >= 9) {
            const w2 = w.map(n => n.slice(-2)); // Get last 2 digits of all winning numbers
@@ -1481,12 +1481,17 @@ export const processDrawResults = async (drawId: string) => {
       } else if (game.code === 'dientoan_636' || game.code === 'bao_636') {
         const w = draw.winningNumbers;
         if (w && w.length >= 6) {
-           const drawMain = w.slice(0, 6);
+           const drawMainSet = new Set(w.slice(0, 6).map(n => String(n).trim().padStart(2, '0')));
+
+           const dbPrize = (game.payoutRates && (game.payoutRates['Đặc Biệt'] || game.payoutRates['Jackpot'] || game.payoutRates['db'])) ?? 2000000000;
+           const nhatPrize = (game.payoutRates && (game.payoutRates['Giải Nhất'] || game.payoutRates['nhat'])) ?? 1800000;
+           const nhiPrize = (game.payoutRates && (game.payoutRates['Giải Nhì'] || game.payoutRates['nhi'])) ?? 100000;
+           const baPrize = (game.payoutRates && (game.payoutRates['Giải Ba'] || game.payoutRates['ba'])) ?? 15000;
            
            allBoards.forEach((board) => {
              let boardPrize = 0;
              let subTickets: string[][] = [];
-             const mainPool = board.numbers || [];
+             const mainPool = (board.numbers || []).map(n => String(n).trim().padStart(2, '0'));
              
              if (mainPool.length === 4) {
                // Bao 4: Chọn 4 số + 2 số ngẫu nhiên còn lại
@@ -1508,7 +1513,7 @@ export const processDrawResults = async (drawId: string) => {
                  }
                }
              } else if (mainPool.length >= 6) {
-               // Cơ bản (6), Bao 7 -> Bao 12
+               // Cơ bản (6), Bao 7 -> Bao 18
                const combinations = getCombinationsList(mainPool, 6);
                combinations.forEach((combo: string[]) => {
                  subTickets.push(combo);
@@ -1518,21 +1523,19 @@ export const processDrawResults = async (drawId: string) => {
              subTickets.forEach((ticket: string[]) => {
                let matchCount = 0;
                ticket.forEach((num: string) => {
-                 if (drawMain.includes(num)) matchCount++;
+                 if (drawMainSet.has(num)) matchCount++;
                });
 
-               if (matchCount === 6) boardPrize += 500000000;
-               else if (matchCount === 5) boardPrize += 900000;
-               else if (matchCount === 4) boardPrize += 450000;
-               else if (matchCount === 3) boardPrize += 250000;
-               else if (matchCount === 2) boardPrize += 25000;
+               if (matchCount === 6) boardPrize += dbPrize;
+               else if (matchCount === 5) boardPrize += nhatPrize;
+               else if (matchCount === 4) boardPrize += nhiPrize;
+               else if (matchCount === 3) boardPrize += baPrize;
              });
 
              if (boardPrize > 0) {
                isWinner = true;
-               // cost per ticket is 5000 in frontend, so we derive multiplier
-               const multiplier = Math.floor(board.cost / (subTickets.length > 0 ? subTickets.length : 1) / 10000);
-               prizeAmount += boardPrize * (multiplier > 0 ? multiplier : 1);
+               const multiplier = Math.max(1, Math.round((board.cost || 10000) / (subTickets.length > 0 ? subTickets.length : 1) / 10000));
+               prizeAmount += boardPrize * multiplier;
              }
            });
         }

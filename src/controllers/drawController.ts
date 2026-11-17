@@ -3,6 +3,7 @@ import { Response } from 'express';
 import mongoose from 'mongoose';
 import Draw from '../models/Draw';
 import Province from '../models/Province';
+import Game from '../models/Game';
 import { processDrawResults } from '../services/prizeService';
 
 export const getKienThietSchedule = async (req: any, res: Response) => {
@@ -483,7 +484,7 @@ export const getActiveDraws = async (req: any, res: Response) => {
             const dayOfWeek = getVNDayOfWeek(checkDate);
             if (drawDays.includes(dayOfWeek)) {
               const isMbTimeGame = ['loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(game.code);
-              const is18h15Game = ['dientoan_636', 'bao_636'].includes(game.code) || isMbTimeGame;
+              const is18h15Game = ['dientoan_636', 'bao_636', 'dientoan_123'].includes(game.code) || isMbTimeGame;
 
               const closeCutoff = isMbTimeGame ? getVNCutoffDate(checkDate, 18, 10) : getVNCutoffDate(checkDate, 17, 20);
               const drawCutoff = is18h15Game ? getVNCutoffDate(checkDate, 18, 15) : getVNCutoffDate(checkDate, 18, 0);
@@ -589,10 +590,26 @@ export const getDrawResults = async (req: any, res: Response) => {
 // Admin: Tạo kỳ quay mới
 export const createDraw = async (req: any, res: Response) => {
   try {
-    const { gameId, drawCode, openTime, closeTime, drawTime, jackpotAmount, provinceId } = req.body;
+    let { gameId, drawCode, openTime, closeTime, drawTime, jackpotAmount, provinceId } = req.body;
 
     if (!drawCode || !String(drawCode).trim()) {
       return res.status(400).json({ message: 'Mã kỳ quay không được để trống' });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(gameId)) {
+      let gDoc = await Game.findOne({ code: gameId });
+      if (!gDoc) {
+        try {
+          const { ensureGameConfigs } = require('../services/cronService');
+          if (ensureGameConfigs) await ensureGameConfigs();
+          gDoc = await Game.findOne({ code: gameId });
+        } catch (e) {}
+      }
+      if (gDoc) {
+        gameId = gDoc._id;
+      } else {
+        return res.status(400).json({ message: 'Không tìm thấy loại game hợp lệ' });
+      }
     }
 
     const cleanDrawCode = String(drawCode).trim().startsWith('#')
@@ -752,12 +769,25 @@ export const getAllDraws = async (req: any, res: Response) => {
       if (mongoose.Types.ObjectId.isValid(gameId)) {
         query.game = gameId;
       } else {
-        const Game = require('../models/Game').default;
-        const gDoc = await Game.findOne({ code: gameId });
+        let gDoc = await Game.findOne({ code: gameId });
+        if (!gDoc) {
+          try {
+            const { ensureGameConfigs, ensureUpcomingDraws } = require('../services/cronService');
+            if (ensureGameConfigs) await ensureGameConfigs();
+            gDoc = await Game.findOne({ code: gameId });
+            if (gDoc && ensureUpcomingDraws) {
+              ensureUpcomingDraws().catch((e: any) => console.error('ensureUpcomingDraws error:', e));
+            }
+          } catch (e) {
+            console.error('Error auto-seeding game config:', e);
+          }
+        }
+
         if (gDoc) {
           query.game = gDoc._id;
         } else {
-          query.game = gameId;
+          // Trả về mảng rỗng nếu không tìm thấy loại game hợp lệ thay vì lỗi CastError 500
+          return res.json({ data: [], total: 0, page, limit, totalPages: 0 });
         }
       }
     }
