@@ -1,5 +1,6 @@
 import AdminLog from '../models/AdminLog';
 import { Response } from 'express';
+import mongoose from 'mongoose';
 import Draw from '../models/Draw';
 import Province from '../models/Province';
 import { processDrawResults } from '../services/prizeService';
@@ -397,9 +398,10 @@ export const getActiveDraws = async (req: any, res: Response) => {
           const needed = 10 - openDraws.length;
           let created = 0;
           while (created < needed) {
+            const prevDay = new Date(checkDay.getTime() - 24 * 3600 * 1000);
             const cutoffs = [
-              { close: getVNCutoffDate(checkDay, 12, 0), draw: getVNCutoffDate(checkDay, 13, 0) },
-              { close: getVNCutoffDate(checkDay, 20, 0), draw: getVNCutoffDate(checkDay, 21, 0) }
+              { close: getVNCutoffDate(checkDay, 12, 0), draw: getVNCutoffDate(checkDay, 13, 0), open: getVNCutoffDate(prevDay, 20, 0) },
+              { close: getVNCutoffDate(checkDay, 20, 0), draw: getVNCutoffDate(checkDay, 21, 0), open: getVNCutoffDate(checkDay, 12, 0) }
             ];
             for (const item of cutoffs) {
               if (item.close > now) {
@@ -410,7 +412,7 @@ export const getActiveDraws = async (req: any, res: Response) => {
                   await Draw.create({
                     game: game._id,
                     drawCode,
-                    openTime: new Date(item.close.getTime() - 8 * 3600 * 1000),
+                    openTime: item.open,
                     closeTime: item.close,
                     drawTime: item.draw,
                     status: 'open'
@@ -751,7 +753,17 @@ export const getAllDraws = async (req: any, res: Response) => {
 
     let query: any = {};
     if (gameId) {
-      query.game = gameId;
+      if (mongoose.Types.ObjectId.isValid(gameId)) {
+        query.game = gameId;
+      } else {
+        const Game = require('../models/Game').default;
+        const gDoc = await Game.findOne({ code: gameId });
+        if (gDoc) {
+          query.game = gDoc._id;
+        } else {
+          query.game = gameId;
+        }
+      }
     }
     if (provinceId && provinceId !== "all") {
       query.provinceId = provinceId;

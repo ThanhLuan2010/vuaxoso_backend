@@ -64,9 +64,10 @@ export const ensureUpcomingDraws = async () => {
           const needed = 10 - openDraws.length;
           let created = 0;
           while (created < needed) {
+            const prevDay = new Date(checkDay.getTime() - 24 * 3600 * 1000);
             const cutoffs = [
-              { close: getVNCutoffDate(checkDay, 12, 0), draw: getVNCutoffDate(checkDay, 13, 0) },
-              { close: getVNCutoffDate(checkDay, 20, 0), draw: getVNCutoffDate(checkDay, 21, 0) }
+              { close: getVNCutoffDate(checkDay, 12, 0), draw: getVNCutoffDate(checkDay, 13, 0), open: getVNCutoffDate(prevDay, 20, 0) },
+              { close: getVNCutoffDate(checkDay, 20, 0), draw: getVNCutoffDate(checkDay, 21, 0), open: getVNCutoffDate(checkDay, 12, 0) }
             ];
             for (const item of cutoffs) {
               if (item.close > now) {
@@ -77,7 +78,7 @@ export const ensureUpcomingDraws = async () => {
                   await Draw.create({
                     game: game._id,
                     drawCode,
-                    openTime: new Date(item.close.getTime() - 8 * 3600 * 1000),
+                    openTime: item.open,
                     closeTime: item.close,
                     drawTime: item.draw,
                     status: 'open'
@@ -133,7 +134,7 @@ export const ensureUpcomingDraws = async () => {
           if (drawDays.includes(dayOfWeek)) {
             const isLotto570 = game.code === 'lotto_570';
             const isMbTimeGame = ['loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(game.code);
-            const is18h15Game = ['dientoan_636', 'bao_636'].includes(game.code) || isMbTimeGame;
+            const is18h15Game = ['dientoan_636', 'bao_636', 'dientoan_123'].includes(game.code) || isMbTimeGame;
 
             const closeCutoff = isLotto570 
               ? getVNCutoffDate(checkDate, 17, 0) 
@@ -233,6 +234,7 @@ const GAME_CONFIGS = [
   { code: 'loto_cap', cronExpression: '15 18 * * *', drawDurationMinutes: 0 },
   { code: 'truot_loto', cronExpression: '15 18 * * *', drawDurationMinutes: 0 },
   { code: 'than_tai_4', cronExpression: '0 18 * * *', drawDurationMinutes: 0 },
+  { code: 'dientoan_123', cronExpression: '15 18 * * *', drawDurationMinutes: 0 },
   { code: 'bingo18', cronExpression: '*/8 * * * *', drawDurationMinutes: 8, autoRandomResult: true },
   { code: 'bao_loto_2', cronExpression: '15 18 * * *', drawDurationMinutes: 0 },
   { code: 'lotto_535', cronExpression: '0 13,21 * * *', drawDurationMinutes: 0 },

@@ -320,6 +320,64 @@ testCase('LOTTO_535_570', 'Lotto 5/35 Bao 6 chính + 2 đặc biệt = 12 bộ =
   assert.strictEqual(boards * 10000, 120000);
 });
 
+testCase('LOTTO_535_SCHEDULE', 'Lotto 5/35: 2 kỳ/ngày (Kỳ 1: Mở 20h hôm trước - Đóng 12h - Xổ 13h; Kỳ 2: Mở 12h - Đóng 20h - Xổ 21h)', () => {
+  const getLotto535ActiveDraw = (currentHour: number, currentMinute: number) => {
+    const currentMins = currentHour * 60 + currentMinute;
+    const cutoff12Mins = 12 * 60; // 12:00
+    const cutoff20Mins = 20 * 60; // 20:00
+
+    if (currentMins < cutoff12Mins) {
+      // Kỳ 1: Chốt 12h trưa, Xổ 13h trưa
+      return {
+        drawCode: '#1313',
+        openHour: 20, // 20h hôm trước
+        closeHour: 12,
+        drawHour: 13,
+        isNextDay: false,
+      };
+    } else if (currentMins < cutoff20Mins) {
+      // Kỳ 2: Chốt 20h tối, Xổ 21h tối
+      return {
+        drawCode: '#1314',
+        openHour: 12, // 12h trưa nay
+        closeHour: 20,
+        drawHour: 21,
+        isNextDay: false,
+      };
+    } else {
+      // Kỳ 1 ngày hôm sau: Chốt 12h trưa mai, Xổ 13h trưa mai
+      return {
+        drawCode: '#1315',
+        openHour: 20, // 20h tối nay
+        closeHour: 12,
+        drawHour: 13,
+        isNextDay: true,
+      };
+    }
+  };
+
+  // Case 1: Lúc 11:30 sáng -> Nhận cược cho Kỳ 1 (chốt 12h, xổ 13h)
+  const draw1 = getLotto535ActiveDraw(11, 30);
+  assert.strictEqual(draw1.closeHour, 12);
+  assert.strictEqual(draw1.drawHour, 13);
+  assert.strictEqual(draw1.openHour, 20);
+  assert.strictEqual(draw1.isNextDay, false);
+
+  // Case 2: Lúc 12:01 trưa -> Kỳ 1 đã chốt, nhận cược cho Kỳ 2 (chốt 20h, xổ 21h, mở 12h)
+  const draw2 = getLotto535ActiveDraw(12, 1);
+  assert.strictEqual(draw2.closeHour, 20);
+  assert.strictEqual(draw2.drawHour, 21);
+  assert.strictEqual(draw2.openHour, 12);
+  assert.strictEqual(draw2.isNextDay, false);
+
+  // Case 3: Lúc 20:05 tối -> Kỳ 2 đã chốt, nhận cược cho Kỳ 1 ngày mai (chốt 12h ngày mai, xổ 13h ngày mai, mở 20h)
+  const draw3 = getLotto535ActiveDraw(20, 5);
+  assert.strictEqual(draw3.closeHour, 12);
+  assert.strictEqual(draw3.drawHour, 13);
+  assert.strictEqual(draw3.openHour, 20);
+  assert.strictEqual(draw3.isNextDay, true);
+});
+
 // ==========================================
 // 7. KIỂM TRA CUTOFF VÀ VALIDATION
 // ==========================================
