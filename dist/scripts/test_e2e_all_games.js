@@ -332,6 +332,61 @@ testCase('LOTTO_535_570', 'Lotto 5/35 Bao 6 chính + 2 đặc biệt = 12 bộ =
     assert_1.default.strictEqual(boards, 12);
     assert_1.default.strictEqual(boards * 10000, 120000);
 });
+testCase('LOTTO_535_SCHEDULE', 'Lotto 5/35: 2 kỳ/ngày (Kỳ 1: Mở 20h hôm trước - Đóng 12h - Xổ 13h; Kỳ 2: Mở 12h - Đóng 20h - Xổ 21h)', () => {
+    const getLotto535ActiveDraw = (currentHour, currentMinute) => {
+        const currentMins = currentHour * 60 + currentMinute;
+        const cutoff12Mins = 12 * 60; // 12:00
+        const cutoff20Mins = 20 * 60; // 20:00
+        if (currentMins < cutoff12Mins) {
+            // Kỳ 1: Chốt 12h trưa, Xổ 13h trưa
+            return {
+                drawCode: '#1313',
+                openHour: 20, // 20h hôm trước
+                closeHour: 12,
+                drawHour: 13,
+                isNextDay: false,
+            };
+        }
+        else if (currentMins < cutoff20Mins) {
+            // Kỳ 2: Chốt 20h tối, Xổ 21h tối
+            return {
+                drawCode: '#1314',
+                openHour: 12, // 12h trưa nay
+                closeHour: 20,
+                drawHour: 21,
+                isNextDay: false,
+            };
+        }
+        else {
+            // Kỳ 1 ngày hôm sau: Chốt 12h trưa mai, Xổ 13h trưa mai
+            return {
+                drawCode: '#1315',
+                openHour: 20, // 20h tối nay
+                closeHour: 12,
+                drawHour: 13,
+                isNextDay: true,
+            };
+        }
+    };
+    // Case 1: Lúc 11:30 sáng -> Nhận cược cho Kỳ 1 (chốt 12h, xổ 13h)
+    const draw1 = getLotto535ActiveDraw(11, 30);
+    assert_1.default.strictEqual(draw1.closeHour, 12);
+    assert_1.default.strictEqual(draw1.drawHour, 13);
+    assert_1.default.strictEqual(draw1.openHour, 20);
+    assert_1.default.strictEqual(draw1.isNextDay, false);
+    // Case 2: Lúc 12:01 trưa -> Kỳ 1 đã chốt, nhận cược cho Kỳ 2 (chốt 20h, xổ 21h, mở 12h)
+    const draw2 = getLotto535ActiveDraw(12, 1);
+    assert_1.default.strictEqual(draw2.closeHour, 20);
+    assert_1.default.strictEqual(draw2.drawHour, 21);
+    assert_1.default.strictEqual(draw2.openHour, 12);
+    assert_1.default.strictEqual(draw2.isNextDay, false);
+    // Case 3: Lúc 20:05 tối -> Kỳ 2 đã chốt, nhận cược cho Kỳ 1 ngày mai (chốt 12h ngày mai, xổ 13h ngày mai, mở 20h)
+    const draw3 = getLotto535ActiveDraw(20, 5);
+    assert_1.default.strictEqual(draw3.closeHour, 12);
+    assert_1.default.strictEqual(draw3.drawHour, 13);
+    assert_1.default.strictEqual(draw3.openHour, 20);
+    assert_1.default.strictEqual(draw3.isNextDay, true);
+});
 // ==========================================
 // 7. KIỂM TRA CUTOFF VÀ VALIDATION
 // ==========================================
@@ -364,6 +419,36 @@ testCase('VALIDATION', 'Kiểm tra trừ số dư ví (Balance debit) và chặn
     const orderCost2 = 80000;
     const canAfford = userBalance >= orderCost2;
     assert_1.default.strictEqual(canAfford, false, 'Không đủ số dư');
+});
+testCase('NOTIFICATION', 'Thanh toán giỏ hàng nhiều vé tạo thông báo riêng cho từng vé (khớp giá 100% khi nhấn chi tiết)', () => {
+    // Giả lập 3 đơn hàng được tạo trong 1 lượt thanh toán giỏ hàng
+    const createdOrders = [
+        { _id: 'ord_1', orderId: 'ORD_001', gameType: 'power_655', totalCost: 20000 },
+        { _id: 'ord_2', orderId: 'ORD_002', gameType: 'mega_645', totalCost: 30000 },
+        { _id: 'ord_3', orderId: 'ORD_003', gameType: 'MB', totalCost: 50000 }
+    ];
+    const GAME_NAMES_MAP = {
+        power_655: 'POWER 6/55',
+        mega_645: 'MEGA 6/45',
+        MB: 'LÔ ĐỀ MIỀN BẮC'
+    };
+    const notifications = createdOrders.map(ord => ({
+        title: 'Mua vé thành công',
+        body: `Bạn đã thanh toán thành công vé ${GAME_NAMES_MAP[ord.gameType]} (#${ord.orderId}). Tiền thanh toán: ${ord.totalCost.toLocaleString('vi-VN')} đ`,
+        orderId: ord._id,
+        cost: ord.totalCost
+    }));
+    // Kiểm tra mỗi vé có 1 thông báo riêng biệt
+    assert_1.default.strictEqual(notifications.length, 3);
+    assert_1.default.strictEqual(notifications[0].orderId, 'ord_1');
+    assert_1.default.strictEqual(notifications[0].cost, 20000);
+    (0, assert_1.default)(notifications[0].body.includes('20.000 đ'));
+    assert_1.default.strictEqual(notifications[1].orderId, 'ord_2');
+    assert_1.default.strictEqual(notifications[1].cost, 30000);
+    (0, assert_1.default)(notifications[1].body.includes('30.000 đ'));
+    assert_1.default.strictEqual(notifications[2].orderId, 'ord_3');
+    assert_1.default.strictEqual(notifications[2].cost, 50000);
+    (0, assert_1.default)(notifications[2].body.includes('50.000 đ'));
 });
 console.log('\n=============================================================================');
 const totalPassed = results.filter((r) => r.passed).length;

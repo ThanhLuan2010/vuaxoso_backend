@@ -138,8 +138,17 @@ export const processDrawResults = async (drawId: string) => {
     const closeTimeDate = new Date(draw.closeTime || draw.drawTime || draw.createdAt);
     const vnDayStr = closeTimeDate.toLocaleDateString('en-GB', { timeZone: 'Asia/Ho_Chi_Minh' }); // "10/11/2026"
     const vnIsoDate = closeTimeDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }); // "2026-11-10"
+    const cleanDateCompact = vnIsoDate.replace(/-/g, '');
     const schedDate = `sched_${vnIsoDate}`;
-    const dateList = [vnDayStr, vnIsoDate, schedDate];
+    const dateList = [
+      vnDayStr, 
+      vnIsoDate, 
+      schedDate, 
+      `sched_${vnDayStr}`, 
+      `truot_${cleanDateCompact}`,
+      `loto_cap_${cleanDateCompact}`,
+      cleanDateCompact
+    ];
 
     const is3MienOrLode = game.type === 'kienthiet' || game.type === 'lode' || ['MB', 'MT', 'MN', 'xoso_3mien', 'lode'].includes(game.code);
 
@@ -173,7 +182,13 @@ export const processDrawResults = async (drawId: string) => {
     if (['loto_235', 'loto_cap', 'bao_loto_2', 'truot_loto'].includes(game.code)) {
       orderConditions.push({
         $and: [
-          { $or: [{ drawDate: { $in: dateList } }, { drawId: { $in: dateList } }, { drawId: { $regex: new RegExp(vnIsoDate.replace(/-/g, ''), 'i') } }] },
+          {
+            $or: [
+              { drawDate: { $in: dateList } },
+              { drawId: { $in: [...dateList, ...possibleDrawIds] } },
+              { drawId: { $regex: new RegExp(cleanDateCompact, 'i') } }
+            ]
+          },
           { gameType: game.code }
         ]
       });
@@ -488,8 +503,20 @@ export const processDrawResults = async (drawId: string) => {
 
             allBoards.forEach((board) => {
               let boardPrize = 0;
-              const num1 = board.numbers.slice(0, 3).join('');
-              const num2 = board.numbers.length === 6 ? board.numbers.slice(3, 6).join('') : null;
+              let num1 = '';
+              let num2: string | null = null;
+              if (board.numbers.length === 2 && board.numbers[0].length === 3 && board.numbers[1].length === 3) {
+                num1 = board.numbers[0];
+                num2 = board.numbers[1];
+              } else if (board.numbers.length === 1 && board.numbers[0].length === 3) {
+                num1 = board.numbers[0];
+              } else if (board.numbers.length === 1 && board.numbers[0].length === 6) {
+                num1 = board.numbers[0].slice(0, 3);
+                num2 = board.numbers[0].slice(3, 6);
+              } else {
+                num1 = board.numbers.slice(0, 3).join('');
+                num2 = board.numbers.length >= 6 ? board.numbers.slice(3, 6).join('') : null;
+              }
               const playType = board.playType || 'Max3D'; // Default
 
               if (playType === 'Max3D') {
@@ -683,37 +710,62 @@ export const processDrawResults = async (drawId: string) => {
             });
           }
         } else {
+          const isMega = game.code === 'mega_645';
+          const isPower = game.code === 'power_655';
           const specialNumber = draw.winningNumbers.length > 6 ? draw.winningNumbers[6] : null;
+          const drawMain6 = draw.winningNumbers.slice(0, 6);
 
           allBoards.forEach((board) => {
-            let matchCount = 0;
-            let hasSpecial = false;
-            
-            board.numbers.forEach((numStr) => {
-              if (draw.winningNumbers.slice(0, 6).includes(numStr)) matchCount++;
-              else if (specialNumber && numStr === specialNumber) hasSpecial = true;
-            });
-
             let boardPrize = 0;
-            if (game.code === 'mega_645') {
-              if (matchCount === 3) boardPrize = 30000;
-              else if (matchCount === 4) boardPrize = 300000;
-              else if (matchCount === 5) boardPrize = 10000000;
-              else if (matchCount >= 6) boardPrize = 800000000; // Jackpot: 800 Triệu
-            } else if (game.code === 'power_655') {
-              if (matchCount === 3) boardPrize = 50000;
-              else if (matchCount === 4) boardPrize = 500000;
-              else if (matchCount === 5 && !hasSpecial) boardPrize = 40000000;
-              else if (matchCount === 5 && hasSpecial) boardPrize = 1500000000; // Jackpot 2: 1.5 Tỷ
-              else if (matchCount === 6) boardPrize = 2000000000; // Jackpot 1: 2 Tỷ
-            } else {
-               if (matchCount >= 3) boardPrize = 100000; // Fallback MVP
+            const mainPool = (board.numbers || []).map(n => String(n).trim().padStart(2, '0'));
+            let subCombos: string[][] = [];
+
+            if (mainPool.length === 5) {
+              // Bao 5: Chọn 5 số, kết hợp với các số còn lại (1..45 với Mega, 1..55 với Power)
+              const maxNum = isMega ? 45 : 55;
+              for (let i = 1; i <= maxNum; i++) {
+                const s = String(i).padStart(2, '0');
+                if (!mainPool.includes(s)) {
+                  subCombos.push([...mainPool, s]);
+                }
+              }
+            } else if (mainPool.length >= 6) {
+              subCombos = getCombinationsList(mainPool, 6);
             }
+
+            const totalCombos = Math.max(1, subCombos.length);
+            const multiplier = Math.max(1, Math.round((board.cost || 10000) / totalCombos / 10000));
+
+            subCombos.forEach((combo) => {
+              let matchCount = 0;
+              let hasSpecial = false;
+
+              combo.forEach((numStr) => {
+                if (drawMain6.includes(numStr)) matchCount++;
+                else if (specialNumber && numStr === specialNumber) hasSpecial = true;
+              });
+
+              let singlePrize = 0;
+              if (isMega) {
+                if (matchCount === 3) singlePrize = 30000;
+                else if (matchCount === 4) singlePrize = 300000;
+                else if (matchCount === 5) singlePrize = 10000000;
+                else if (matchCount >= 6) singlePrize = 800000000; // Jackpot
+              } else if (isPower) {
+                if (matchCount === 3) singlePrize = 50000;
+                else if (matchCount === 4) singlePrize = 500000;
+                else if (matchCount === 5 && !hasSpecial) singlePrize = 40000000;
+                else if (matchCount === 5 && hasSpecial) singlePrize = 1500000000; // Jackpot 2: 1.5 Tỷ
+                else if (matchCount === 6) singlePrize = 2000000000; // Jackpot 1: 2 Tỷ
+              } else {
+                if (matchCount >= 3) singlePrize = 100000;
+              }
+              boardPrize += singlePrize;
+            });
 
             if (boardPrize > 0) {
               isWinner = true;
-              const multiplier = Math.floor(board.cost / 10000);
-              prizeAmount += boardPrize * (multiplier > 0 ? multiplier : 1);
+              prizeAmount += boardPrize * multiplier;
             }
           });
         }
@@ -1356,13 +1408,13 @@ export const processDrawResults = async (drawId: string) => {
             }
             // 4.17. Lô Xiên 2
             else if (
-              (pTypeLower.includes('xiên 2') || pTypeLower.includes('xien 2')) &&
+              (pTypeLower.includes('xiên 2') || pTypeLower.includes('xien 2') || pTypeLower.includes('2 cặp') || pTypeLower.includes('2 cap')) &&
               !pTypeLower.includes('đb') && !pTypeLower.includes('db') &&
               !pTypeLower.includes('giải 1') && !pTypeLower.includes('giai 1') &&
               !pTypeLower.includes('3 càng') && !pTypeLower.includes('4 càng')
             ) {
               const defaultRate = isMB ? 16 : 28;
-              const rate = (game.payoutRates && (game.payoutRates['Xiên 2'] || game.payoutRates['xien_2'])) ?? defaultRate;
+              const rate = (game.payoutRates && (game.payoutRates['Xiên 2'] || game.payoutRates['xien_2'] || game.payoutRates['Lô tô 2 cặp'])) ?? defaultRate;
               let boardPrize = 0;
               const combos = extractCombos(board.numbers || [], 2);
               const comboCount = Math.max(1, combos.length);
@@ -1382,13 +1434,13 @@ export const processDrawResults = async (drawId: string) => {
             }
             // 4.18. Lô Xiên 3
             else if (
-              (pTypeLower.includes('xiên 3') || pTypeLower.includes('xien 3')) &&
+              (pTypeLower.includes('xiên 3') || pTypeLower.includes('xien 3') || pTypeLower.includes('3 cặp') || pTypeLower.includes('3 cap')) &&
               !pTypeLower.includes('đb') && !pTypeLower.includes('db') &&
               !pTypeLower.includes('giải 1') && !pTypeLower.includes('giai 1') &&
               !pTypeLower.includes('3 càng') && !pTypeLower.includes('4 càng')
             ) {
               const defaultRate = isMB ? 65 : 150;
-              const rate = (game.payoutRates && (game.payoutRates['Xiên 3'] || game.payoutRates['xien_3'])) ?? defaultRate;
+              const rate = (game.payoutRates && (game.payoutRates['Xiên 3'] || game.payoutRates['xien_3'] || game.payoutRates['Lô tô 3 cặp'])) ?? defaultRate;
               let boardPrize = 0;
               const combos = extractCombos(board.numbers || [], 3);
               const comboCount = Math.max(1, combos.length);
@@ -1408,14 +1460,14 @@ export const processDrawResults = async (drawId: string) => {
             }
             // 4.19. Lô Xiên 4
             else if (
-              (pTypeLower.includes('xiên 4') || pTypeLower.includes('xien 4')) &&
+              (pTypeLower.includes('xiên 4') || pTypeLower.includes('xien 4') || pTypeLower.includes('4 cặp') || pTypeLower.includes('4 cap')) &&
               !pTypeLower.includes('trượt') && !pTypeLower.includes('truot') &&
               !pTypeLower.includes('đb') && !pTypeLower.includes('db') &&
               !pTypeLower.includes('giải 1') && !pTypeLower.includes('giai 1') &&
               !pTypeLower.includes('3 càng') && !pTypeLower.includes('4 càng')
             ) {
               const defaultRate = isMB ? 180 : 750;
-              const rate = (game.payoutRates && (game.payoutRates['Xiên 4'] || game.payoutRates['xien_4'])) ?? defaultRate;
+              const rate = (game.payoutRates && (game.payoutRates['Xiên 4'] || game.payoutRates['xien_4'] || game.payoutRates['Lô tô 4 cặp'])) ?? defaultRate;
               let boardPrize = 0;
               const combos = extractCombos(board.numbers || [], 4);
               const comboCount = Math.max(1, combos.length);
@@ -1435,7 +1487,7 @@ export const processDrawResults = async (drawId: string) => {
             }
             // 4.19b. Lô Xiên Chung (Nếu playType chỉ là 'Xiên' hoặc 'Lô Xiên' mà không chỉ rõ bậc)
             else if (
-              (pTypeLower === 'xiên' || pTypeLower === 'xien' || pTypeLower === 'lô xiên' || pTypeLower === 'lo xien') &&
+              (pTypeLower === 'xiên' || pTypeLower === 'xien' || pTypeLower === 'lô xiên' || pTypeLower === 'lo xien' || pTypeLower === 'cặp' || pTypeLower === 'cap' || pTypeLower === 'lô tô cặp' || pTypeLower === 'loto cap') &&
               !pTypeLower.includes('đb') && !pTypeLower.includes('db') &&
               !pTypeLower.includes('giải 1') && !pTypeLower.includes('giai 1') &&
               !pTypeLower.includes('3 càng') && !pTypeLower.includes('4 càng')
@@ -1565,82 +1617,141 @@ export const processDrawResults = async (drawId: string) => {
              const multiplier = Math.floor(board.cost / 10000);
 
              if (game.code === 'truot_loto') {
-               // Player wins if NONE of their selected numbers appear in the results (w2)
+               // Người chơi thắng khi TẤT CẢ các cặp số đã chọn KHÔNG xuất hiện trong bảng kết quả (w2)
                const flatNums = (board.numbers || [])
-                 .flatMap(s => String(s).split(/[&,;\s-]+/))
-                 .map(s => s.trim().padStart(2, '0'))
-                 .filter(s => /^\d{2}$/.test(s));
-               const allMissed = flatNums.length >= 4 && flatNums.every(num => !w2Set.has(num));
-               if (allMissed) {
-                 if (order.playType?.includes('4')) ticketPrize = 25000; // x2.5
-                 else if (order.playType?.includes('8')) ticketPrize = 85000; // x8.5
-                 else if (order.playType?.includes('10')) ticketPrize = 120000; // x12
-                 else ticketPrize = 25000;
+                 .flatMap((s: any) => String(s).split(/[&,;\s-]+/))
+                 .map((s: string) => s.trim().padStart(2, '0'))
+                 .filter((s: string) => /^\d{2}$/.test(s));
+
+               const pType = (board.playType || order.playType || '').toLowerCase();
+               const isGenericTruot = pType.includes('4') && pType.includes('8') && pType.includes('10');
+               let reqCount = 4;
+               if (!isGenericTruot && (pType.includes('10') && !pType.includes('4') && !pType.includes('8'))) {
+                 reqCount = 10;
+               } else if (!isGenericTruot && (pType.includes('8') && !pType.includes('4') && !pType.includes('10'))) {
+                 reqCount = 8;
+               } else if (!isGenericTruot && (pType.includes('4') && !pType.includes('8') && !pType.includes('10'))) {
+                 reqCount = 4;
+               } else {
+                 if (flatNums.length >= 10) reqCount = 10;
+                 else if (flatNums.length >= 8) reqCount = 8;
+                 else reqCount = 4;
                }
+
+               let defaultRate = 2.5;
+               if (reqCount === 10) defaultRate = 12;
+               else if (reqCount === 8) defaultRate = 8.5;
+               else defaultRate = 2.5;
+
+               const rateKey = reqCount === 10 ? 'Trượt 10' : reqCount === 8 ? 'Trượt 8' : 'Trượt 4';
+               const rate = (game.payoutRates && (game.payoutRates[rateKey] || game.payoutRates[rateKey.toLowerCase()])) ?? defaultRate;
+
+               const combos = extractCombos(board.numbers || [], reqCount);
+               const comboCount = Math.max(1, combos.length);
+               const betPerCombo = (board.baseCost && board.baseCost > 0)
+                 ? board.baseCost
+                 : Math.max(1000, Math.round((board.cost || 10000) / comboCount));
+
+               combos.forEach((combo) => {
+                 if (combo.length >= reqCount && combo.every((num: string) => !w2Set.has(num))) {
+                   ticketPrize += Math.round(betPerCombo * rate);
+                 }
+               });
              } else if (game.code === 'loto_cap') {
-               // Player wins if ALL of their selected numbers appear in the results (w2)
+               // Người chơi thắng khi TẤT CẢ các cặp số trong bộ số ĐỀU xuất hiện trong bảng kết quả (w2)
                const flatNums = (board.numbers || [])
-                 .flatMap(s => String(s).split(/[&,;\s-]+/))
-                 .map(s => s.trim().padStart(2, '0'))
-                 .filter(s => /^\d{2}$/.test(s));
-               const allHit = flatNums.length >= 2 && flatNums.every(num => w2Set.has(num));
-               if (allHit) {
-                 const betAmount = board.cost || 10000;
-                 if (order.playType?.includes('2') || flatNums.length === 2) ticketPrize = betAmount * 15; // x15
-                 else if (order.playType?.includes('3') || flatNums.length === 3) ticketPrize = betAmount * 65; // x65
-                 else if (order.playType?.includes('4') || flatNums.length >= 4) ticketPrize = betAmount * 170; // x170
+                 .flatMap((s: any) => String(s).split(/[&,;\s-]+/))
+                 .map((s: string) => s.trim().padStart(2, '0'))
+                 .filter((s: string) => /^\d{2}$/.test(s));
+
+               const pType = (board.playType || order.playType || '').toLowerCase();
+               const isGenericCap = pType.includes('2') && pType.includes('3') && pType.includes('4');
+               let reqCount = 2;
+               if (!isGenericCap && (pType.includes('4 cặp') || pType.includes('4 cap') || (pType.includes('4') && !pType.includes('2') && !pType.includes('3')))) {
+                 reqCount = 4;
+               } else if (!isGenericCap && (pType.includes('3 cặp') || pType.includes('3 cap') || (pType.includes('3') && !pType.includes('2') && !pType.includes('4')))) {
+                 reqCount = 3;
+               } else if (!isGenericCap && (pType.includes('2 cặp') || pType.includes('2 cap') || (pType.includes('2') && !pType.includes('3') && !pType.includes('4')))) {
+                 reqCount = 2;
+               } else {
+                 if (flatNums.length >= 4) reqCount = 4;
+                 else if (flatNums.length === 3) reqCount = 3;
+                 else reqCount = 2;
                }
+
+               let defaultRate = 15;
+               if (reqCount === 4) defaultRate = 170;
+               else if (reqCount === 3) defaultRate = 65;
+               else defaultRate = 15;
+
+               const rateKey = reqCount === 4 ? 'Lô tô 4 cặp' : reqCount === 3 ? 'Lô tô 3 cặp' : 'Lô tô 2 cặp';
+               const rate = (game.payoutRates && (game.payoutRates[rateKey] || game.payoutRates[rateKey.toLowerCase()])) ?? defaultRate;
+
+               const combos = extractCombos(board.numbers || [], reqCount);
+               const comboCount = Math.max(1, combos.length);
+               const betPerCombo = (board.baseCost && board.baseCost > 0)
+                 ? board.baseCost
+                 : Math.max(1000, Math.round((board.cost || 10000) / comboCount));
+
+               combos.forEach((combo) => {
+                 if (combo.length >= reqCount && combo.every((num: string) => w2Set.has(num))) {
+                   ticketPrize += Math.round(betPerCombo * rate);
+                 }
+               });
              } else {
-               // loto_235 or standard games (evaluate per ticket)
-               board.numbers.forEach((ticketStr) => {
+               // loto_235 hoặc các game con của điện toán loto
+               const numCount = (board.numbers || []).length;
+               const betPerNum = (board.baseCost && board.baseCost > 0)
+                 ? board.baseCost
+                 : Math.max(1000, Math.round((board.cost || 10000) / Math.max(1, numCount)));
+               const pTypeLower = (board.playType || order.playType || '').toLowerCase();
+
+               board.numbers.forEach((ticketStr: string) => {
                   let singlePrize = 0;
                   if (game.code === 'loto_235' || game.code.includes('loto')) {
                      const numLen = ticketStr.length;
-                     const betAmount = board.cost || 10000;
                      
-                     if (order.playType?.includes('Bao 2 số') || order.playType?.includes('Bao lô tô 2') || game.code === 'bao_loto_2') {
+                     if (pTypeLower.includes('bao 2 số') || pTypeLower.includes('bao 2 so') || pTypeLower.includes('bao lô tô 2') || game.code === 'bao_loto_2') {
                         // Bao 2 số: Trúng 2 số cuối của 27 giải (x2.7)
-                        if (w.length >= 27 && numLen === 2) {
-                           for (let i = 0; i < 27; i++) {
-                              if (w[i]?.endsWith(ticketStr)) {
-                                 singlePrize += betAmount * 2.7;
-                              }
+                        for (let i = 0; i < w.length; i++) {
+                           if (w[i]?.endsWith(ticketStr)) {
+                              singlePrize += betPerNum * 2.7;
                            }
                         }
-                     } else if (order.playType === 'Lô tô 2 số' && numLen === 2) {
+                     } else if ((pTypeLower.includes('2 số') || pTypeLower.includes('2 so') || numLen === 2) && numLen === 2) {
                         // Trúng 2 số: x90
                         if (w[0]?.length >= 5) {
-                           if (w[0].slice(-2) === ticketStr) singlePrize += betAmount * 90;
-                           if (w[0].slice(0, 2) === ticketStr) singlePrize += betAmount * 90;
+                           if (w[0].slice(-2) === ticketStr) singlePrize += betPerNum * 90;
+                           if (w[0].slice(0, 2) === ticketStr) singlePrize += betPerNum * 90;
                         }
                         if (w[1]?.length >= 5) {
-                           if (w[1].slice(-2) === ticketStr) singlePrize += betAmount * 90;
-                           if (w[1].slice(0, 2) === ticketStr) singlePrize += betAmount * 90;
+                           if (w[1].slice(-2) === ticketStr) singlePrize += betPerNum * 90;
+                           if (w[1].slice(0, 2) === ticketStr) singlePrize += betPerNum * 90;
                         }
-                     } else if (order.playType === 'Lô tô 3 số' && numLen === 3) {
+                     } else if ((pTypeLower.includes('3 số') || pTypeLower.includes('3 so') || numLen === 3) && numLen === 3) {
                         // Trúng 3 số: x900
                         if (w[0]?.length >= 5) {
-                           if (w[0].slice(-3) === ticketStr) singlePrize += betAmount * 900;
-                           if (w[0].slice(0, 3) === ticketStr) singlePrize += betAmount * 900;
+                           if (w[0].slice(-3) === ticketStr) singlePrize += betPerNum * 900;
+                           if (w[0].slice(0, 3) === ticketStr) singlePrize += betPerNum * 900;
                         }
                         if (w[1]?.length >= 5) {
-                           if (w[1].slice(-3) === ticketStr) singlePrize += betAmount * 900;
-                           if (w[1].slice(0, 3) === ticketStr) singlePrize += betAmount * 900;
+                           if (w[1].slice(-3) === ticketStr) singlePrize += betPerNum * 900;
+                           if (w[1].slice(0, 3) === ticketStr) singlePrize += betPerNum * 900;
                         }
-                     } else if (order.playType === 'Lô tô 4 số' && numLen === 4) {
+                     } else if ((pTypeLower.includes('4 số') || pTypeLower.includes('4 so') || numLen === 4) && numLen === 4) {
                         // Trúng 4 số: x9000
                         if (w[0]?.length >= 5) {
-                           if (w[0].slice(-4) === ticketStr) singlePrize += betAmount * 9000;
-                           if (w[0].slice(0, 4) === ticketStr) singlePrize += betAmount * 9000;
+                           if (w[0].slice(-4) === ticketStr) singlePrize += betPerNum * 9000;
+                           if (w[0].slice(0, 4) === ticketStr) singlePrize += betPerNum * 9000;
                         }
                         if (w[1]?.length >= 5) {
-                           if (w[1].slice(-4) === ticketStr) singlePrize += betAmount * 9000;
-                           if (w[1].slice(0, 4) === ticketStr) singlePrize += betAmount * 9000;
+                           if (w[1].slice(-4) === ticketStr) singlePrize += betPerNum * 9000;
+                           if (w[1].slice(0, 4) === ticketStr) singlePrize += betPerNum * 9000;
                         }
-                     } else if (order.playType === 'Lô tô 5 số' && numLen === 5) {
+                     } else if ((pTypeLower.includes('5 số') || pTypeLower.includes('5 so') || numLen === 5) && numLen === 5) {
                         // Trúng 5 số: x90,000
-                        if (w[0] === ticketStr) singlePrize += betAmount * 90000;
-                        if (w[1] === ticketStr) singlePrize += betAmount * 90000;
+                        if (w[0] === ticketStr) singlePrize += betPerNum * 90000;
+                        if (w[1] === ticketStr) singlePrize += betPerNum * 90000;
                      }
                   } else {
                      if (w2.includes(ticketStr)) singlePrize = 10000;
@@ -1837,8 +1948,29 @@ export const processDrawResults = async (drawId: string) => {
             let boardPrize = 0;
             const multiplier = Math.floor(board.cost / 10000);
             
+            const bingoPType = (board.playType || order.playType || '').toLowerCase();
             board.numbers.forEach(bet => {
-              if (order.playType === 'Cơ bản') {
+              if (bingoPType.includes('tổng') || bingoPType.includes('tong')) {
+                const betSum = Number(bet);
+                if (wSum === betSum) {
+                   if (wSum === 3 || wSum === 18) boardPrize += 1200000;
+                   else if (wSum === 4 || wSum === 17) boardPrize += 400000;
+                   else if (wSum === 5 || wSum === 16) boardPrize += 200000;
+                   else if (wSum === 6 || wSum === 15) boardPrize += 120000;
+                   else if (wSum === 7 || wSum === 14) boardPrize += 80000;
+                   else if (wSum === 8 || wSum === 13) boardPrize += 60000;
+                   else if (wSum === 9 || wSum === 12) boardPrize += 60000;
+                   else if (wSum === 10 || wSum === 11) boardPrize += 50000;
+                }
+              } else if (bingoPType.includes('tài') || bingoPType.includes('tai') || bingoPType.includes('xỉu') || bingoPType.includes('xiu') || bingoPType.includes('hoà') || bingoPType.includes('hoa')) {
+                const taiRate = (game.payoutRates && (game.payoutRates['Tài'] || game.payoutRates['tai'])) ?? 2;
+                const xiuRate = (game.payoutRates && (game.payoutRates['Xỉu'] || game.payoutRates['xiu'])) ?? 2;
+                const hoaRate = (game.payoutRates && (game.payoutRates['Hoà'] || game.payoutRates['hoa'])) ?? 3;
+                if ((bet === 'Tài' || bet.toLowerCase() === 'tai') && wSum >= 12 && wSum <= 18) boardPrize += Math.round(10000 * taiRate);
+                else if ((bet === 'Xỉu' || bet.toLowerCase() === 'xiu') && wSum >= 3 && wSum <= 9) boardPrize += Math.round(10000 * xiuRate);
+                else if ((bet === 'Hoà' || bet.toLowerCase() === 'hoa') && (wSum === 10 || wSum === 11)) boardPrize += Math.round(10000 * hoaRate);
+              } else {
+                // Cơ bản (1, 2, 3 số trùng)
                 if (bet.length === 1) {
                    const digit = Number(bet);
                    const count = wInts.filter(n => n === digit).length;
@@ -1854,22 +1986,6 @@ export const processDrawResults = async (drawId: string) => {
                    const count = wInts.filter(n => n === digit).length;
                    if (count === 3) boardPrize += 40000;
                 }
-              } else if (order.playType === 'Cộng tổng') {
-                const betSum = Number(bet);
-                if (wSum === betSum) {
-                   if (wSum === 3 || wSum === 18) boardPrize += 1200000;
-                   else if (wSum === 4 || wSum === 17) boardPrize += 400000;
-                   else if (wSum === 5 || wSum === 16) boardPrize += 200000;
-                   else if (wSum === 6 || wSum === 15) boardPrize += 120000;
-                   else if (wSum === 7 || wSum === 14) boardPrize += 80000;
-                   else if (wSum === 8 || wSum === 13) boardPrize += 60000;
-                   else if (wSum === 9 || wSum === 12) boardPrize += 60000;
-                   else if (wSum === 10 || wSum === 11) boardPrize += 50000;
-                }
-              } else if (order.playType === 'Tài Xỉu Hoà') {
-                if (bet === 'Tài' && wSum >= 12 && wSum <= 18) boardPrize += 20000;
-                else if (bet === 'Xỉu' && wSum >= 3 && wSum <= 9) boardPrize += 20000;
-                else if (bet === 'Hoà' && (wSum === 10 || wSum === 11)) boardPrize += 30000;
               }
             });
             

@@ -383,25 +383,81 @@ function simulatePrize(order: any, draw: any, game: any) {
             .flatMap((s: any) => String(s).split(/[&,;\s-]+/))
             .map((s: string) => s.trim().padStart(2, '0'))
             .filter((s: string) => /^\d{2}$/.test(s));
-          const allMissed = flatNums.length >= 4 && flatNums.every((num: string) => !w2Set.has(num));
-          if (allMissed) {
-            if (order.playType?.includes('4')) ticketPrize = 25000;
-            else if (order.playType?.includes('8')) ticketPrize = 85000;
-            else if (order.playType?.includes('10')) ticketPrize = 120000;
-            else ticketPrize = 25000;
+
+          const pType = (board.playType || order.playType || '').toLowerCase();
+          const isGenericTruot = pType.includes('4') && pType.includes('8') && pType.includes('10');
+          let reqCount = 4;
+          if (!isGenericTruot && (pType.includes('10') && !pType.includes('4') && !pType.includes('8'))) {
+            reqCount = 10;
+          } else if (!isGenericTruot && (pType.includes('8') && !pType.includes('4') && !pType.includes('10'))) {
+            reqCount = 8;
+          } else if (!isGenericTruot && (pType.includes('4') && !pType.includes('8') && !pType.includes('10'))) {
+            reqCount = 4;
+          } else {
+            if (flatNums.length >= 10) reqCount = 10;
+            else if (flatNums.length >= 8) reqCount = 8;
+            else reqCount = 4;
           }
+
+          let defaultRate = 2.5;
+          if (reqCount === 10) defaultRate = 12;
+          else if (reqCount === 8) defaultRate = 8.5;
+          else defaultRate = 2.5;
+
+          const rateKey = reqCount === 10 ? 'Trượt 10' : reqCount === 8 ? 'Trượt 8' : 'Trượt 4';
+          const rate = (game.payoutRates && (game.payoutRates[rateKey] || game.payoutRates[rateKey.toLowerCase()])) ?? defaultRate;
+
+          const combos = extractCombos(board.numbers || [], reqCount);
+          const comboCount = Math.max(1, combos.length);
+          const betPerCombo = (board.baseCost && board.baseCost > 0)
+            ? board.baseCost
+            : Math.max(1000, Math.round((board.cost || 10000) / comboCount));
+
+          combos.forEach((combo: string[]) => {
+            if (combo.length >= reqCount && combo.every((num: string) => !w2Set.has(num))) {
+              ticketPrize += Math.round(betPerCombo * rate);
+            }
+          });
         } else if (game.code === 'loto_cap') {
           const flatNums = (board.numbers || [])
             .flatMap((s: any) => String(s).split(/[&,;\s-]+/))
             .map((s: string) => s.trim().padStart(2, '0'))
             .filter((s: string) => /^\d{2}$/.test(s));
-          const allHit = flatNums.length >= 2 && flatNums.every((num: string) => w2Set.has(num));
-          if (allHit) {
-            const betAmount = board.cost || 10000;
-            if (order.playType?.includes('2') || flatNums.length === 2) ticketPrize = betAmount * 15;
-            else if (order.playType?.includes('3') || flatNums.length === 3) ticketPrize = betAmount * 65;
-            else if (order.playType?.includes('4') || flatNums.length >= 4) ticketPrize = betAmount * 170;
+
+          const pType = (board.playType || order.playType || '').toLowerCase();
+          const isGenericCap = pType.includes('2') && pType.includes('3') && pType.includes('4');
+          let reqCount = 2;
+          if (!isGenericCap && (pType.includes('4 cặp') || pType.includes('4 cap') || (pType.includes('4') && !pType.includes('2') && !pType.includes('3')))) {
+            reqCount = 4;
+          } else if (!isGenericCap && (pType.includes('3 cặp') || pType.includes('3 cap') || (pType.includes('3') && !pType.includes('2') && !pType.includes('4')))) {
+            reqCount = 3;
+          } else if (!isGenericCap && (pType.includes('2 cặp') || pType.includes('2 cap') || (pType.includes('2') && !pType.includes('3') && !pType.includes('4')))) {
+            reqCount = 2;
+          } else {
+            if (flatNums.length >= 4) reqCount = 4;
+            else if (flatNums.length === 3) reqCount = 3;
+            else reqCount = 2;
           }
+
+          let defaultRate = 15;
+          if (reqCount === 4) defaultRate = 170;
+          else if (reqCount === 3) defaultRate = 65;
+          else defaultRate = 15;
+
+          const rateKey = reqCount === 4 ? 'Lô tô 4 cặp' : reqCount === 3 ? 'Lô tô 3 cặp' : 'Lô tô 2 cặp';
+          const rate = (game.payoutRates && (game.payoutRates[rateKey] || game.payoutRates[rateKey.toLowerCase()])) ?? defaultRate;
+
+          const combos = extractCombos(board.numbers || [], reqCount);
+          const comboCount = Math.max(1, combos.length);
+          const betPerCombo = (board.baseCost && board.baseCost > 0)
+            ? board.baseCost
+            : Math.max(1000, Math.round((board.cost || 10000) / comboCount));
+
+          combos.forEach((combo: string[]) => {
+            if (combo.length >= reqCount && combo.every((num: string) => w2Set.has(num))) {
+              ticketPrize += Math.round(betPerCombo * rate);
+            }
+          });
         }
         if (ticketPrize > 0) {
           isWinner = true;
@@ -656,7 +712,7 @@ assertTest(
 
 // 21. loto_cap: '12&34' trúng -> rate 15 * 10k = 150.000đ
 assertTest(
-  'loto_cap ("12&34")',
+  'loto_cap 2 cặp ("12&34")',
   simulatePrize(
     { playType: 'Lô tô 2 cặp', numbers: ['12&34'], totalCost: 10000, cost: 10000 },
     { winningNumbers: mockWinningMB },
@@ -665,7 +721,51 @@ assertTest(
   { isWinner: true, prizeAmount: 150000 }
 );
 
-// 22. truot_loto: '99&98&97&96' trúng -> 25.000đ
+// 22. loto_cap: 3 cặp '12&34&56' trúng -> rate 65 * 10k = 650.000đ
+assertTest(
+  'loto_cap 3 cặp ("12&34&56")',
+  simulatePrize(
+    { playType: 'Lô tô 3 cặp', numbers: ['12&34&56'], totalCost: 10000, cost: 10000 },
+    { winningNumbers: mockWinningMB },
+    { type: 'dientoan', code: 'loto_cap' }
+  ),
+  { isWinner: true, prizeAmount: 650000 }
+);
+
+// 23. loto_cap: 4 cặp '12&34&56&78' trúng -> rate 170 * 10k = 1.700.000đ
+assertTest(
+  'loto_cap 4 cặp ("12&34&56&78")',
+  simulatePrize(
+    { playType: 'Lô tô 4 cặp', numbers: ['12&34&56&78'], totalCost: 10000, cost: 10000 },
+    { winningNumbers: mockWinningMB },
+    { type: 'dientoan', code: 'loto_cap' }
+  ),
+  { isWinner: true, prizeAmount: 1700000 }
+);
+
+// 24. loto_cap: playType là "LÔ TÔ 2, 3, 4 Cặp" nhưng đánh 3 cặp -> PHẢI ăn x65 chứ KHÔNG ĐƯỢC nhầm thành x15!
+assertTest(
+  'loto_cap playType chung với 3 cặp -> ăn x65',
+  simulatePrize(
+    { playType: 'LÔ TÔ 2, 3, 4 Cặp', numbers: ['12&34&56'], totalCost: 10000, cost: 10000 },
+    { winningNumbers: mockWinningMB },
+    { type: 'dientoan', code: 'loto_cap' }
+  ),
+  { isWinner: true, prizeAmount: 650000 }
+);
+
+// 25. loto_cap: Đánh 3 con ['12', '34', '99'] kiểu 2 cặp (99 trượt, nhưng combo 12-34 trúng) -> vẫn ăn 150.000đ (thay vì bị báo trượt toàn bộ)!
+assertTest(
+  'loto_cap 2 cặp với 3 số [12, 34, 99] (trúng 1 combo)',
+  simulatePrize(
+    { playType: 'Lô tô 2 cặp', numbers: ['12', '34', '99'], totalCost: 30000, cost: 30000, baseCost: 10000 },
+    { winningNumbers: mockWinningMB },
+    { type: 'dientoan', code: 'loto_cap' }
+  ),
+  { isWinner: true, prizeAmount: 150000 }
+);
+
+// 26. truot_loto: '99&98&97&96' trúng Trượt 4 -> 25.000đ (x2.5)
 assertTest(
   'truot_loto ("99&98&97&96")',
   simulatePrize(
@@ -674,6 +774,28 @@ assertTest(
     { type: 'dientoan', code: 'truot_loto' }
   ),
   { isWinner: true, prizeAmount: 25000 }
+);
+
+// 27. truot_loto: Trượt 8 -> 85.000đ (x8.5)
+assertTest(
+  'truot_loto Trượt 8',
+  simulatePrize(
+    { playType: 'Trượt 8', numbers: ['91&92&93&94&95&96&97&98'], totalCost: 10000, cost: 10000 },
+    { winningNumbers: mockWinningMB },
+    { type: 'dientoan', code: 'truot_loto' }
+  ),
+  { isWinner: true, prizeAmount: 85000 }
+);
+
+// 28. truot_loto: Trượt 10 -> 120.000đ (x12)
+assertTest(
+  'truot_loto Trượt 10',
+  simulatePrize(
+    { playType: 'Trượt 10', numbers: ['81&82&83&84&85&86&87&88&89&90'], totalCost: 10000, cost: 10000 },
+    { winningNumbers: mockWinningMB },
+    { type: 'dientoan', code: 'truot_loto' }
+  ),
+  { isWinner: true, prizeAmount: 120000 }
 );
 
 console.log(`\n================================`);

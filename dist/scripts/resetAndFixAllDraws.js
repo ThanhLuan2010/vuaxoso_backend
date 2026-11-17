@@ -119,9 +119,19 @@ const resetAndFixAllDraws = async () => {
             const baseNum = cfg.baseNum || 1000;
             for (let i = 0; i < cutoffs.length; i++) {
                 const closeTime = cutoffs[i];
-                const openTime = i === 0 ? new Date(now.getTime() - 60000) : new Date(cutoffs[i - 1].getTime() + 1000);
+                let openTime = i === 0 ? new Date(now.getTime() - 60000) : new Date(cutoffs[i - 1].getTime() + 1000);
+                if (cfg.code === 'lotto_535') {
+                    const vnHour = (closeTime.getUTCHours() + 7) % 24;
+                    openTime = vnHour === 12
+                        ? new Date(closeTime.getTime() - 16 * 3600 * 1000)
+                        : new Date(closeTime.getTime() - 8 * 3600 * 1000);
+                }
                 const drawCode = `#${String(baseNum + i).padStart(4, '0')}`;
-                const drawTime = cfg.code === 'lotto_570' ? new Date(closeTime.getTime() + 20 * 60 * 1000) : (['MN', 'MT', 'MB'].includes(cfg.code) ? new Date(closeTime.getTime() + 5 * 60 * 1000) : undefined);
+                const drawTime = cfg.code === 'lotto_535'
+                    ? new Date(closeTime.getTime() + 60 * 60 * 1000)
+                    : cfg.code === 'lotto_570'
+                        ? new Date(closeTime.getTime() + 20 * 60 * 1000)
+                        : (['MN', 'MT', 'MB'].includes(cfg.code) ? new Date(closeTime.getTime() + 5 * 60 * 1000) : undefined);
                 await Draw_1.default.create({
                     game: game._id,
                     drawCode,

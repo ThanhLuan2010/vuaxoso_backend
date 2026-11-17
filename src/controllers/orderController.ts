@@ -979,7 +979,16 @@ export const getOrderById = async (req: any, res: Response) => {
     }
 
     if (!drawDoc) {
-      const targetDateStr = order.drawDate || (typeof order.drawId === 'string' && /^\d{2}\/\d{2}\/\d{4}/.test(order.drawId) ? order.drawId : null);
+      let targetDateStr = order.drawDate || null;
+      if (!targetDateStr && typeof order.drawId === 'string') {
+        const matchIso = order.drawId.match(/(\d{4})(\d{2})(\d{2})/);
+        if (matchIso) {
+          targetDateStr = `${matchIso[3]}/${matchIso[2]}/${matchIso[1]}`;
+        } else if (/^\d{2}\/\d{2}\/\d{4}/.test(order.drawId)) {
+          targetDateStr = order.drawId.substring(0, 10);
+        }
+      }
+
       if (targetDateStr) {
         const dateParts = targetDateStr.split('/');
         if (dateParts.length === 3) {
@@ -989,8 +998,11 @@ export const getOrderById = async (req: any, res: Response) => {
           const startOfDay = new Date(Date.UTC(year, month - 1, day, 0 - 7, 0, 0));
           const endOfDay = new Date(Date.UTC(year, month - 1, day, 23 - 7, 59, 59, 999));
 
-          const relatedGames = await Game.find({ code: { $in: ['xoso_3mien', 'lode', 'MB', 'MT', 'MN', 'mb', 'mt', 'mn'] } }).select('_id').lean();
-          const relatedGameIds = relatedGames.map(g => g._id);
+          const candidateCodes = ['xoso_3mien', 'lode', 'MB', 'MT', 'MN', 'mb', 'mt', 'mn', 'loto_235', 'loto_cap', 'bao_loto_2', 'truot_loto'];
+          if (order.gameType) candidateCodes.push(order.gameType);
+          const relatedGames = await Game.find({ code: { $in: candidateCodes } }).select('_id code').lean();
+          const targetGame = relatedGames.find(g => g.code === order.gameType);
+          const relatedGameIds = targetGame ? [targetGame._id] : relatedGames.map(g => g._id);
 
           let provId = null;
           if (order.provinceName) {

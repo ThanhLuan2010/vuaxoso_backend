@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.startCronJobs = exports.ensureGameConfigs = exports.ensureUpcomingDraws = void 0;
+exports.startCronJobs = exports.ensureGameConfigs = exports.GAME_CONFIGS = exports.ensureUpcomingDraws = void 0;
 const node_cron_1 = __importDefault(require("node-cron"));
 const Game_1 = __importDefault(require("../models/Game"));
 const Draw_1 = __importDefault(require("../models/Draw"));
@@ -47,7 +47,7 @@ const ensureUpcomingDraws = async () => {
                 closeTime: { $gt: now }
             }).sort({ closeTime: 1 });
             if (openDraws.length < 10) {
-                if (game.code === 'lotto_535') {
+                if (game.code === 'lotto_535' || game.code === 'lotto_570') {
                     let lastDrawNum = 1300;
                     const allDraws = await Draw_1.default.find({ game: game._id }).sort({ closeTime: -1 });
                     if (allDraws.length > 0) {
@@ -59,9 +59,10 @@ const ensureUpcomingDraws = async () => {
                     const needed = 10 - openDraws.length;
                     let created = 0;
                     while (created < needed) {
+                        const prevDay = new Date(checkDay.getTime() - 24 * 3600 * 1000);
                         const cutoffs = [
-                            { close: getVNCutoffDate(checkDay, 12, 0), draw: getVNCutoffDate(checkDay, 13, 0) },
-                            { close: getVNCutoffDate(checkDay, 20, 0), draw: getVNCutoffDate(checkDay, 21, 0) }
+                            { close: getVNCutoffDate(checkDay, 12, 0), draw: getVNCutoffDate(checkDay, 13, 0), open: getVNCutoffDate(prevDay, 12, 0) },
+                            { close: getVNCutoffDate(checkDay, 20, 0), draw: getVNCutoffDate(checkDay, 21, 0), open: getVNCutoffDate(prevDay, 20, 0) }
                         ];
                         for (const item of cutoffs) {
                             if (item.close > now) {
@@ -72,7 +73,7 @@ const ensureUpcomingDraws = async () => {
                                     await Draw_1.default.create({
                                         game: game._id,
                                         drawCode,
-                                        openTime: new Date(item.close.getTime() - 8 * 3600 * 1000),
+                                        openTime: item.open,
                                         closeTime: item.close,
                                         drawTime: item.draw,
                                         status: 'open'
@@ -132,15 +133,10 @@ const ensureUpcomingDraws = async () => {
                 while (created < needed) {
                     const dayOfWeek = getVNDayOfWeek(checkDate);
                     if (drawDays.includes(dayOfWeek)) {
-                        const isLotto570 = game.code === 'lotto_570';
                         const isMbTimeGame = ['loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(game.code);
-                        const is18h15Game = ['dientoan_636', 'bao_636'].includes(game.code) || isMbTimeGame;
-                        const closeCutoff = isLotto570
-                            ? getVNCutoffDate(checkDate, 17, 0)
-                            : (isMbTimeGame ? getVNCutoffDate(checkDate, 18, 10) : getVNCutoffDate(checkDate, 17, 20));
-                        const drawCutoff = isLotto570
-                            ? getVNCutoffDate(checkDate, 17, 20)
-                            : (is18h15Game ? getVNCutoffDate(checkDate, 18, 15) : getVNCutoffDate(checkDate, 18, 0));
+                        const is18h15Game = ['dientoan_636', 'bao_636', 'dientoan_123'].includes(game.code) || isMbTimeGame;
+                        const closeCutoff = isMbTimeGame ? getVNCutoffDate(checkDate, 18, 10) : getVNCutoffDate(checkDate, 17, 20);
+                        const drawCutoff = is18h15Game ? getVNCutoffDate(checkDate, 18, 15) : getVNCutoffDate(checkDate, 18, 0);
                         if (closeCutoff > now) {
                             lastDrawNum += 1;
                             const drawCode = `#${String(lastDrawNum).padStart(4, "0")}`;
@@ -212,71 +208,333 @@ const ensureUpcomingDraws = async () => {
     }
 };
 exports.ensureUpcomingDraws = ensureUpcomingDraws;
-const GAME_CONFIGS = [
-    { code: 'keno', cronExpression: '*/8 * * * *', drawDurationMinutes: 8, autoRandomResult: true },
-    { code: 'bao_keno', cronExpression: '*/8 * * * *', drawDurationMinutes: 8, autoRandomResult: true },
-    { code: 'clln_keno', cronExpression: '*/8 * * * *', drawDurationMinutes: 8, autoRandomResult: true },
-    { code: 'power_655', cronExpression: '0 18 * * 2,4,6', drawDurationMinutes: 0 },
-    { code: 'mega_645', cronExpression: '0 18 * * 3,5,0', drawDurationMinutes: 0 },
-    { code: 'max_3d', cronExpression: '0 18 * * 1,3,5', drawDurationMinutes: 0 },
-    { code: 'max_3d_pro', cronExpression: '0 18 * * 2,4,6', drawDurationMinutes: 0 },
-    { code: 'max_4d', cronExpression: '0 18 * * *', drawDurationMinutes: 0 },
-    { code: 'dientoan_636', cronExpression: '15 18 * * 3,6', drawDurationMinutes: 0 },
-    { code: 'bao_636', cronExpression: '15 18 * * 3,6', drawDurationMinutes: 0 },
-    { code: 'loto_235', cronExpression: '15 18 * * *', drawDurationMinutes: 0 },
-    { code: 'loto_cap', cronExpression: '15 18 * * *', drawDurationMinutes: 0 },
-    { code: 'truot_loto', cronExpression: '15 18 * * *', drawDurationMinutes: 0 },
-    { code: 'than_tai_4', cronExpression: '0 18 * * *', drawDurationMinutes: 0 },
-    { code: 'bingo18', cronExpression: '*/8 * * * *', drawDurationMinutes: 8, autoRandomResult: true },
-    { code: 'bao_loto_2', cronExpression: '15 18 * * *', drawDurationMinutes: 0 },
-    { code: 'lotto_535', cronExpression: '0 13,21 * * *', drawDurationMinutes: 0 },
-    { code: 'lotto_570', cronExpression: '20 17 * * *', drawDurationMinutes: 0 },
-    { code: 'MB', cronExpression: '15 18 * * *', drawDurationMinutes: 0 },
-    { code: 'MT', cronExpression: '15 17 * * *', drawDurationMinutes: 0 },
-    { code: 'MN', cronExpression: '15 16 * * *', drawDurationMinutes: 0 }
+exports.GAME_CONFIGS = [
+    {
+        code: 'keno',
+        name: 'KENO',
+        type: 'vietlott',
+        brandColor: '#E51F27',
+        bgColor: '#FFF0F0',
+        badge: '8p-1 kỳ',
+        subtext: '🏆 2.000.000.000đ',
+        cronExpression: '*/8 * * * *',
+        drawDurationMinutes: 8,
+        autoRandomResult: true
+    },
+    {
+        code: 'bao_keno',
+        name: 'BAO KENO',
+        type: 'vietlott',
+        brandColor: '#FF6B00',
+        bgColor: '#FFF4EB',
+        badge: '8p-1 kỳ',
+        subtext: 'Bao số Keno',
+        cronExpression: '*/8 * * * *',
+        drawDurationMinutes: 8,
+        autoRandomResult: true
+    },
+    {
+        code: 'clln_keno',
+        name: 'KENO CHẴN LẺ LỚN NHỎ',
+        type: 'vietlott',
+        brandColor: '#2F80ED',
+        bgColor: '#EDF5FF',
+        badge: '8p-1 kỳ',
+        subtext: 'Chẵn - Lẻ - Lớn - Nhỏ',
+        cronExpression: '*/8 * * * *',
+        drawDurationMinutes: 8,
+        autoRandomResult: true
+    },
+    {
+        code: 'bingo18',
+        name: 'BINGO18',
+        type: 'dientoan',
+        brandColor: '#FF5722',
+        bgColor: '#FFF3E0',
+        badge: '8p-1 kỳ',
+        subtext: '🎲 Xúc xắc 111-666',
+        cronExpression: '*/8 * * * *',
+        drawDurationMinutes: 8,
+        autoRandomResult: true
+    },
+    {
+        code: 'power_655',
+        name: 'POWER 6/55',
+        type: 'vietlott',
+        brandColor: '#E51F27',
+        bgColor: '#FFF0F0',
+        badge: '18h00 T3-T5-T7',
+        subtext: '🏆 Jackpot 1 > 30 Tỷ',
+        cronExpression: '0 18 * * 2,4,6',
+        drawDurationMinutes: 0,
+        autoRandomResult: false
+    },
+    {
+        code: 'mega_645',
+        name: 'MEGA 6/45',
+        type: 'vietlott',
+        brandColor: '#E51F27',
+        bgColor: '#FFF0F0',
+        badge: '18h00 T4-T6-CN',
+        subtext: '🏆 Jackpot > 12 Tỷ',
+        cronExpression: '0 18 * * 3,5,0',
+        drawDurationMinutes: 0,
+        autoRandomResult: false
+    },
+    {
+        code: 'max_3d',
+        name: 'MAX 3D',
+        type: 'vietlott',
+        brandColor: '#0052CC',
+        bgColor: '#EBF3FF',
+        badge: '18h00 T2-T4-T6',
+        subtext: '🏆 1 Tỷ',
+        cronExpression: '0 18 * * 1,3,5',
+        drawDurationMinutes: 0,
+        autoRandomResult: false
+    },
+    {
+        code: 'max_3d_pro',
+        name: 'MAX 3D PRO',
+        type: 'vietlott',
+        brandColor: '#9C27B0',
+        bgColor: '#F3E5F5',
+        badge: '18h00 T3-T5-T7',
+        subtext: '🏆 2 Tỷ',
+        cronExpression: '0 18 * * 2,4,6',
+        drawDurationMinutes: 0,
+        autoRandomResult: false
+    },
+    {
+        code: 'max_4d',
+        name: 'MAX 4D',
+        type: 'vietlott',
+        brandColor: '#FF9800',
+        bgColor: '#FFF3E0',
+        badge: '18h00 Hàng ngày',
+        subtext: '🏆 15 Triệu',
+        cronExpression: '0 18 * * *',
+        drawDurationMinutes: 0,
+        autoRandomResult: false
+    },
+    {
+        code: 'dientoan_636',
+        name: 'ĐIỆN TOÁN 6X36',
+        type: 'dientoan',
+        brandColor: '#00897B',
+        bgColor: '#E0F2F1',
+        badge: '18h15 T4-T7',
+        subtext: '🏆 Jackpot',
+        cronExpression: '15 18 * * 3,6',
+        drawDurationMinutes: 0,
+        autoRandomResult: false
+    },
+    {
+        code: 'bao_636',
+        name: 'BAO 6X36',
+        type: 'dientoan',
+        brandColor: '#00897B',
+        bgColor: '#E0F2F1',
+        badge: '18h15 T4-T7',
+        subtext: 'Bao số Điện toán',
+        cronExpression: '15 18 * * 3,6',
+        drawDurationMinutes: 0,
+        autoRandomResult: false
+    },
+    {
+        code: 'than_tai_4',
+        name: 'ĐIỆN TOÁN Thần Tài',
+        type: 'dientoan',
+        brandColor: '#FFB300',
+        bgColor: '#FFF8E1',
+        badge: '18h00 Hàng ngày',
+        subtext: '🏆 1 Tỷ 220 Triệu',
+        cronExpression: '0 18 * * *',
+        drawDurationMinutes: 0,
+        autoRandomResult: false
+    },
+    {
+        code: 'dientoan_123',
+        name: 'ĐIỆN TOÁN 1*2*3',
+        type: 'dientoan',
+        brandColor: '#E51F27',
+        bgColor: '#FFF0F0',
+        badge: '18h15 Hàng ngày',
+        subtext: '🏆 x40.000 lần',
+        cronExpression: '15 18 * * *',
+        drawDurationMinutes: 0,
+        autoRandomResult: false
+    },
+    {
+        code: 'loto_235',
+        name: 'LÔ TÔ 2,3,5 SỐ',
+        type: 'dientoan',
+        brandColor: '#43A047',
+        bgColor: '#E8F5E9',
+        badge: '18h15 Hàng ngày',
+        subtext: 'Theo kết quả XSMB',
+        cronExpression: '15 18 * * *',
+        drawDurationMinutes: 0,
+        autoRandomResult: false
+    },
+    {
+        code: 'loto_cap',
+        name: 'LÔ TÔ CẶP SỐ',
+        type: 'dientoan',
+        brandColor: '#7CB342',
+        bgColor: '#F1F8E9',
+        badge: '18h15 Hàng ngày',
+        subtext: 'Theo kết quả XSMB',
+        cronExpression: '15 18 * * *',
+        drawDurationMinutes: 0,
+        autoRandomResult: false
+    },
+    {
+        code: 'truot_loto',
+        name: 'TRƯỢT LÔ TÔ (4-8-10 cặp)',
+        type: 'dientoan',
+        brandColor: '#FF4D15',
+        bgColor: '#FFF2EE',
+        badge: '18h15 Hàng ngày',
+        subtext: '🏆 x12 lần',
+        cronExpression: '15 18 * * *',
+        drawDurationMinutes: 0,
+        autoRandomResult: false,
+        payoutRates: { 'Trượt 4': 2.5, 'Trượt 8': 8.5, 'Trượt 10': 12 }
+    },
+    {
+        code: 'bao_loto_2',
+        name: 'BAO LÔ TÔ 2 SỐ',
+        type: 'dientoan',
+        brandColor: '#1E88E5',
+        bgColor: '#E3F2FD',
+        badge: '18h15 Hàng ngày',
+        subtext: 'Theo kết quả XSMB',
+        cronExpression: '15 18 * * *',
+        drawDurationMinutes: 0,
+        autoRandomResult: false
+    },
+    {
+        code: 'lotto_535',
+        name: 'LOTTO 5/35',
+        type: 'vietlott',
+        brandColor: '#8E24AA',
+        bgColor: '#F3E5F5',
+        badge: '13h & 21h',
+        subtext: '🏆 Jackpot',
+        cronExpression: '0 13,21 * * *',
+        drawDurationMinutes: 0,
+        autoRandomResult: false
+    },
+    {
+        code: 'lotto_570',
+        name: 'LOTTO 5/70',
+        type: 'vietlott',
+        brandColor: '#6A1B9A',
+        bgColor: '#EDE7F6',
+        badge: '13h & 21h',
+        subtext: '🏆 Jackpot',
+        cronExpression: '0 13,21 * * *',
+        drawDurationMinutes: 0,
+        autoRandomResult: false
+    },
+    {
+        code: 'MB',
+        name: 'XỔ SỐ MIỀN BẮC',
+        type: 'kienthiet',
+        brandColor: '#D32F2F',
+        bgColor: '#FFEBEE',
+        badge: '18h15 Hàng ngày',
+        subtext: 'Miền Bắc',
+        cronExpression: '15 18 * * *',
+        drawDurationMinutes: 0,
+        autoRandomResult: false
+    },
+    {
+        code: 'MT',
+        name: 'XỔ SỐ MIỀN TRUNG',
+        type: 'kienthiet',
+        brandColor: '#F57C00',
+        bgColor: '#FFF3E0',
+        badge: '17h15 Hàng ngày',
+        subtext: 'Miền Trung',
+        cronExpression: '15 17 * * *',
+        drawDurationMinutes: 0,
+        autoRandomResult: false
+    },
+    {
+        code: 'MN',
+        name: 'XỔ SỐ MIỀN NAM',
+        type: 'kienthiet',
+        brandColor: '#388E3C',
+        bgColor: '#E8F5E9',
+        badge: '16h15 Hàng ngày',
+        subtext: 'Miền Nam',
+        cronExpression: '15 16 * * *',
+        drawDurationMinutes: 0,
+        autoRandomResult: false
+    },
+    {
+        code: 'xoso_3mien',
+        name: 'LÔ ĐỀ 3 MIỀN',
+        type: 'lode',
+        brandColor: '#E51F27',
+        bgColor: '#FCE8EA',
+        badge: 'Đủ 3 Miền',
+        subtext: 'Lô đề Bắc Trung Nam',
+        cronExpression: '',
+        drawDurationMinutes: 0,
+        autoRandomResult: false
+    }
 ];
 const ensureGameConfigs = async () => {
     try {
-        // Bật tự động tạo kết quả cho Keno và Bingo18
-        await Game_1.default.updateMany({ code: { $in: ['keno', 'bao_keno', 'clln_keno', 'bingo18'] } }, { $set: { autoRandomResult: true } });
-        // Đảm bảo tắt tự động tạo kết quả cho tất cả các game còn lại
-        await Game_1.default.updateMany({ code: { $nin: ['keno', 'bao_keno', 'clln_keno', 'bingo18'] } }, { $set: { autoRandomResult: false } });
-        for (const cfg of GAME_CONFIGS) {
+        for (const cfg of exports.GAME_CONFIGS) {
             const isAuto = ['keno', 'bao_keno', 'clln_keno', 'bingo18'].includes(cfg.code);
-            await Game_1.default.updateOne({ code: cfg.code }, { $set: { cronExpression: cfg.cronExpression, drawDurationMinutes: cfg.drawDurationMinutes, autoRandomResult: isAuto } });
-        }
-        let truotGame = await Game_1.default.findOne({ code: 'truot_loto' });
-        if (!truotGame) {
-            await Game_1.default.create({
-                code: 'truot_loto',
-                name: 'TRƯỢT LÔ TÔ (4-8-10 cặp)',
-                type: 'dientoan',
-                brandColor: '#FF4D15',
-                bgColor: '#FFF2EE',
-                badge: 'Mỗi ngày',
-                subtext: '🏆 x12 lần',
-                isActive: true,
-                cronExpression: '15 18 * * *',
-                drawDurationMinutes: 0,
-                autoRandomResult: false,
-                payoutRates: { 'Trượt 4': 2.5, 'Trượt 8': 8.5, 'Trượt 10': 12 }
-            });
-            console.log('CronService: Đã tự động tạo game TRƯỢT LÔ TÔ (truot_loto)');
-        }
-        const lodeGame = await Game_1.default.findOne({ code: 'xoso_3mien' });
-        if (!lodeGame) {
-            await Game_1.default.create({
-                code: 'xoso_3mien',
-                name: 'LÔ ĐỀ 3 MIỀN',
-                type: 'lode',
-                brandColor: '#E51F27',
-                bgColor: '#FCE8EA',
-                badge: 'Đủ 3 Miền',
-                cronExpression: '',
-                drawDurationMinutes: 0,
-                isActive: true
-            });
-            console.log('CronService: Đã tự động tạo game LÔ ĐỀ 3 MIỀN (xoso_3mien)');
+            const existing = await Game_1.default.findOne({ code: cfg.code });
+            if (!existing) {
+                await Game_1.default.create({
+                    code: cfg.code,
+                    name: cfg.name,
+                    type: cfg.type,
+                    brandColor: cfg.brandColor,
+                    bgColor: cfg.bgColor,
+                    badge: cfg.badge,
+                    subtext: cfg.subtext,
+                    cronExpression: cfg.cronExpression,
+                    drawDurationMinutes: cfg.drawDurationMinutes,
+                    autoRandomResult: isAuto,
+                    isActive: true,
+                    payoutRates: cfg.payoutRates || {}
+                });
+                console.log(`CronService: Đã tự động tạo game ${cfg.name} (${cfg.code})`);
+            }
+            else {
+                let changed = false;
+                if (existing.cronExpression !== cfg.cronExpression) {
+                    existing.cronExpression = cfg.cronExpression;
+                    changed = true;
+                }
+                if (existing.drawDurationMinutes !== cfg.drawDurationMinutes) {
+                    existing.drawDurationMinutes = cfg.drawDurationMinutes;
+                    changed = true;
+                }
+                if (existing.autoRandomResult !== isAuto) {
+                    existing.autoRandomResult = isAuto;
+                    changed = true;
+                }
+                if (!existing.name && cfg.name) {
+                    existing.name = cfg.name;
+                    changed = true;
+                }
+                if (!existing.type && cfg.type) {
+                    existing.type = cfg.type;
+                    changed = true;
+                }
+                if (changed) {
+                    await existing.save();
+                }
+            }
         }
     }
     catch (err) {

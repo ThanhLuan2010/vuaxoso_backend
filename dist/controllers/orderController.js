@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.updateOrderAdmin = exports.getOrderSummary = exports.getAllOrders = exports.getOrderById = exports.getMyOrders = exports.createOrder = exports.checkoutOrders = void 0;
+const orderIdGenerator_1 = require("../utils/orderIdGenerator");
 const checkoutOrders = async (req, res) => {
     try {
         const rawOrders = req.body.orders || req.body.items || [];
@@ -188,9 +189,9 @@ const checkoutOrders = async (req, res) => {
         if (req.body.clearCart === true) {
             await Cart_1.default.findOneAndUpdate({ user: req.user.id }, { items: [] }).catch(() => { });
         }
-        // Prepare all order documents
+        // Prepare all order documents with concise auto-incrementing orderId (a_0000001...)
+        const orderIds = await (0, orderIdGenerator_1.getNextOrderIds)(preparedOrders.length);
         let runningBalance = balanceBefore;
-        const timestamp = Date.now();
         const orderDocs = preparedOrders.map((ord, idx) => {
             const ordBefore = runningBalance;
             runningBalance -= ord.totalCost;
@@ -199,7 +200,7 @@ const checkoutOrders = async (req, res) => {
                 balanceBefore: ordBefore,
                 balanceAfter: ordAfter,
                 user: req.user.id,
-                orderId: `ORD_${timestamp}_${Math.floor(100 + Math.random() * 900)}_${idx + 1}`,
+                orderId: orderIds[idx],
                 gameType: ord.gameType,
                 playType: ord.playType,
                 drawId: ord.drawId,
@@ -251,41 +252,53 @@ const checkoutOrders = async (req, res) => {
                 console.error("Error updating tickets in checkoutOrders:", e);
             }
         })();
-        // Create 1 notification
-        await Notification_1.default.create({
-            user: user._id,
-            title: "Mua vé thành công",
-            body: `Bạn đã thanh toán thành công ${createdOrders.length} vé. Tổng tiền: ${totalBatchCost.toLocaleString("vi-VN")} đ`,
-            type: "order",
-            category: "important",
-            orderId: createdOrders[0]?._id?.toString()
-        }).catch(() => { });
+        const GAME_NAMES_MAP = {
+            power_655: "POWER 6/55",
+            mega_645: "MEGA 6/45",
+            keno: "KENO",
+            bao_keno: "BAO KENO",
+            clln_keno: "KENO CHẴN LẺ / LỚN NHỎ",
+            max_3d: "MAX 3D",
+            max_3d_pro: "MAX 3D PRO",
+            max_4d: "MAX 4D",
+            bingo18: "BINGO 18",
+            lotto_535: "LOTTO 5/35",
+            lotto_570: "LOTTO 5/70",
+            loto_235: "LÔ TÔ 2-3-5",
+            loto_cap: "LÔ TÔ CẶP SỐ",
+            dientoan_636: "ĐIỆN TOÁN 6X36",
+            than_tai_4: "ĐIỆN TOÁN THẦN TÀI",
+            dientoan_123: "ĐIỆN TOÁN 1*2*3",
+            truot_loto: "TRƯỢT LÔ TÔ",
+            MB: "LÔ ĐỀ MIỀN BẮC",
+            MT: "LÔ ĐỀ MIỀN TRUNG",
+            MN: "LÔ ĐỀ MIỀN NAM",
+        };
+        // Tạo thông báo riêng biệt cho từng vé đã mua, tránh việc gộp nhiều vé vào 1 thông báo
+        // nhưng khi nhấn vào chi tiết lại chỉ ra 1 vé có giá tiền khác gây hiểu lầm cho người dùng
+        for (const ord of createdOrders) {
+            let gameTitle = GAME_NAMES_MAP[ord.gameType] || ord.gameType;
+            if (ord.gameType && ord.gameType.startsWith("kienthiet_")) {
+                const provCode = ord.gameType.replace("kienthiet_", "").toUpperCase();
+                gameTitle = `XSKT ${ord.provinceName || provCode}`;
+            }
+            else if (gameCache[ord.gameType]?.name) {
+                gameTitle = gameCache[ord.gameType].name;
+            }
+            await Notification_1.default.create({
+                user: user._id,
+                title: "Mua vé thành công",
+                body: `Bạn đã thanh toán thành công vé ${gameTitle} (#${ord.orderId}). Tiền thanh toán: ${(ord.totalCost || 0).toLocaleString("vi-VN")} đ`,
+                type: "order",
+                category: "important",
+                orderId: ord._id.toString()
+            }).catch(() => { });
+        }
         // Send single email containing full, clearly separated details of each ticket in background
         (async () => {
             try {
                 const alertEmail = process.env.ADMIN_ALERT_EMAIL || "developervnteam@gmail.com";
                 const orderDateStr = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
-                const GAME_NAMES_MAP = {
-                    power_655: "POWER 6/55",
-                    mega_645: "MEGA 6/45",
-                    keno: "KENO",
-                    bao_keno: "BAO KENO",
-                    clln_keno: "KENO CHẴN LẺ / LỚN NHỎ",
-                    max_3d: "MAX 3D",
-                    max_3d_pro: "MAX 3D PRO",
-                    max_4d: "MAX 4D",
-                    bingo18: "BINGO 18",
-                    lotto_535: "LOTTO 5/35",
-                    lotto_570: "LOTTO 5/70",
-                    loto_235: "LÔ TÔ 2-3-5",
-                    loto_cap: "LÔ TÔ CẶP SỐ",
-                    dientoan_636: "ĐIỆN TOÁN 6X36",
-                    than_tai_4: "THẦN TÀI 4",
-                    truot_loto: "TRƯỢT LÔ TÔ",
-                    MB: "LÔ ĐỀ MIỀN BẮC",
-                    MT: "LÔ ĐỀ MIỀN TRUNG",
-                    MN: "LÔ ĐỀ MIỀN NAM",
-                };
                 const drawIdsToFetch = createdOrders
                     .map((o) => o.drawId)
                     .filter((d) => d && mongoose_1.default.Types.ObjectId.isValid(d));
@@ -639,11 +652,12 @@ const createOrder = async (req, res) => {
         const ipAddress = Array.isArray(rawIp) ? rawIp[0] : (typeof rawIp === 'string' ? rawIp.split(',')[0].trim() : rawIp);
         const loginDevice = req.headers['user-agent'] || '';
         await Cart_1.default.findOneAndUpdate({ user: req.user.id }, { items: [] }).catch(() => { });
+        const [nextOrderId] = await (0, orderIdGenerator_1.getNextOrderIds)(1);
         const order = await Order_1.default.create({
             balanceBefore,
             balanceAfter,
             user: req.user.id,
-            orderId: `ORD_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+            orderId: nextOrderId,
             gameType,
             playType,
             drawId,
@@ -709,7 +723,8 @@ const createOrder = async (req, res) => {
                 loto_235: 'LÔ TÔ 2-3-5',
                 loto_cap: 'LÔ TÔ CẶP SỐ',
                 dientoan_636: 'ĐIỆN TOÁN 6X36',
-                than_tai_4: 'THẦN TÀI 4',
+                than_tai_4: 'ĐIỆN TOÁN THẦN TÀI',
+                dientoan_123: 'ĐIỆN TOÁN 1*2*3',
                 truot_loto: 'TRƯỢT LÔ TÔ',
                 MB: 'LÔ ĐỀ MIỀN BẮC',
                 MT: 'LÔ ĐỀ MIỀN TRUNG',
@@ -923,7 +938,16 @@ const getOrderById = async (req, res) => {
             }
         }
         if (!drawDoc) {
-            const targetDateStr = order.drawDate || (typeof order.drawId === 'string' && /^\d{2}\/\d{2}\/\d{4}/.test(order.drawId) ? order.drawId : null);
+            let targetDateStr = order.drawDate || null;
+            if (!targetDateStr && typeof order.drawId === 'string') {
+                const matchIso = order.drawId.match(/(\d{4})(\d{2})(\d{2})/);
+                if (matchIso) {
+                    targetDateStr = `${matchIso[3]}/${matchIso[2]}/${matchIso[1]}`;
+                }
+                else if (/^\d{2}\/\d{2}\/\d{4}/.test(order.drawId)) {
+                    targetDateStr = order.drawId.substring(0, 10);
+                }
+            }
             if (targetDateStr) {
                 const dateParts = targetDateStr.split('/');
                 if (dateParts.length === 3) {
@@ -932,8 +956,12 @@ const getOrderById = async (req, res) => {
                     const year = parseInt(dateParts[2], 10);
                     const startOfDay = new Date(Date.UTC(year, month - 1, day, 0 - 7, 0, 0));
                     const endOfDay = new Date(Date.UTC(year, month - 1, day, 23 - 7, 59, 59, 999));
-                    const relatedGames = await Game_1.default.find({ code: { $in: ['xoso_3mien', 'lode', 'MB', 'MT', 'MN', 'mb', 'mt', 'mn'] } }).select('_id').lean();
-                    const relatedGameIds = relatedGames.map(g => g._id);
+                    const candidateCodes = ['xoso_3mien', 'lode', 'MB', 'MT', 'MN', 'mb', 'mt', 'mn', 'loto_235', 'loto_cap', 'bao_loto_2', 'truot_loto'];
+                    if (order.gameType)
+                        candidateCodes.push(order.gameType);
+                    const relatedGames = await Game_1.default.find({ code: { $in: candidateCodes } }).select('_id code').lean();
+                    const targetGame = relatedGames.find(g => g.code === order.gameType);
+                    const relatedGameIds = targetGame ? [targetGame._id] : relatedGames.map(g => g._id);
                     let provId = null;
                     if (order.provinceName) {
                         const p = await Province_1.default.findOne({
@@ -1079,7 +1107,7 @@ const getAllOrders = async (req, res) => {
         const drawIds = Array.from(new Set(orders.map((o) => o.drawId).filter((id) => id && mongoose_1.default.Types.ObjectId.isValid(id))));
         const drawMap = new Map();
         if (drawIds.length > 0) {
-            const draws = await Draw_1.default.find({ _id: { $in: drawIds } }).select("_id drawCode drawTime closeTime").lean();
+            const draws = await Draw_1.default.find({ _id: { $in: drawIds } }).select("_id drawCode drawTime closeTime winningNumbers").lean();
             draws.forEach((d) => drawMap.set(d._id.toString(), d));
         }
         for (const order of orders) {
@@ -1098,6 +1126,9 @@ const getAllOrders = async (req, res) => {
                 if (!order.drawDate && (draw.drawTime || draw.closeTime)) {
                     const timeToDisplay = draw.drawTime || draw.closeTime;
                     order.drawDate = new Date(timeToDisplay).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
+                }
+                if ((!order.winningNumbers || order.winningNumbers.length === 0) && draw.winningNumbers && draw.winningNumbers.length > 0) {
+                    order.winningNumbers = draw.winningNumbers;
                 }
             }
         }

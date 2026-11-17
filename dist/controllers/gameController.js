@@ -9,6 +9,19 @@ const Game_1 = __importDefault(require("../models/Game"));
 const getGames = async (req, res) => {
     try {
         const { search, admin } = req.query;
+        if (admin === 'true') {
+            const count = await Game_1.default.countDocuments();
+            if (count < 22) {
+                try {
+                    const { ensureGameConfigs } = require('../services/cronService');
+                    if (ensureGameConfigs)
+                        await ensureGameConfigs();
+                }
+                catch (e) {
+                    console.error('Error auto-ensuring game configs in getGames:', e);
+                }
+            }
+        }
         const query = {};
         if (admin !== 'true') {
             query.isActive = true;

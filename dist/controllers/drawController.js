@@ -5,8 +5,10 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteDraw = exports.updateDraw = exports.getAllDraws = exports.enterResults = exports.syncMbResultsToDienToan = exports.createDraw = exports.getDrawResults = exports.getActiveDraws = exports.ensureKienThietDraws = exports.getKienThietSchedule = void 0;
 const AdminLog_1 = __importDefault(require("../models/AdminLog"));
+const mongoose_1 = __importDefault(require("mongoose"));
 const Draw_1 = __importDefault(require("../models/Draw"));
 const Province_1 = __importDefault(require("../models/Province"));
+const Game_1 = __importDefault(require("../models/Game"));
 const prizeService_1 = require("../services/prizeService");
 const getKienThietSchedule = async (req, res) => {
     try {
@@ -339,7 +341,7 @@ const getActiveDraws = async (req, res) => {
                     }
                 }
             }
-            else if (game.code === 'lotto_535') {
+            else if (game.code === 'lotto_535' || game.code === 'lotto_570') {
                 const openDraws = await Draw_1.default.find({
                     game: game._id,
                     status: 'open',
@@ -357,9 +359,10 @@ const getActiveDraws = async (req, res) => {
                     const needed = 10 - openDraws.length;
                     let created = 0;
                     while (created < needed) {
+                        const prevDay = new Date(checkDay.getTime() - 24 * 3600 * 1000);
                         const cutoffs = [
-                            { close: getVNCutoffDate(checkDay, 12, 0), draw: getVNCutoffDate(checkDay, 13, 0) },
-                            { close: getVNCutoffDate(checkDay, 20, 0), draw: getVNCutoffDate(checkDay, 21, 0) }
+                            { close: getVNCutoffDate(checkDay, 12, 0), draw: getVNCutoffDate(checkDay, 13, 0), open: getVNCutoffDate(prevDay, 12, 0) },
+                            { close: getVNCutoffDate(checkDay, 20, 0), draw: getVNCutoffDate(checkDay, 21, 0), open: getVNCutoffDate(prevDay, 20, 0) }
                         ];
                         for (const item of cutoffs) {
                             if (item.close > now) {
@@ -370,7 +373,7 @@ const getActiveDraws = async (req, res) => {
                                     await Draw_1.default.create({
                                         game: game._id,
                                         drawCode,
-                                        openTime: new Date(item.close.getTime() - 8 * 3600 * 1000),
+                                        openTime: item.open,
                                         closeTime: item.close,
                                         drawTime: item.draw,
                                         status: 'open'
@@ -445,15 +448,10 @@ const getActiveDraws = async (req, res) => {
                     while (created < needed) {
                         const dayOfWeek = getVNDayOfWeek(checkDate);
                         if (drawDays.includes(dayOfWeek)) {
-                            const isLotto570 = game.code === 'lotto_570';
                             const isMbTimeGame = ['loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(game.code);
-                            const is18h15Game = ['dientoan_636', 'bao_636'].includes(game.code) || isMbTimeGame;
-                            const closeCutoff = isLotto570
-                                ? getVNCutoffDate(checkDate, 17, 0)
-                                : (isMbTimeGame ? getVNCutoffDate(checkDate, 18, 10) : getVNCutoffDate(checkDate, 17, 20));
-                            const drawCutoff = isLotto570
-                                ? getVNCutoffDate(checkDate, 17, 20)
-                                : (is18h15Game ? getVNCutoffDate(checkDate, 18, 15) : getVNCutoffDate(checkDate, 18, 0));
+                            const is18h15Game = ['dientoan_636', 'bao_636', 'dientoan_123'].includes(game.code) || isMbTimeGame;
+                            const closeCutoff = isMbTimeGame ? getVNCutoffDate(checkDate, 18, 10) : getVNCutoffDate(checkDate, 17, 20);
+                            const drawCutoff = is18h15Game ? getVNCutoffDate(checkDate, 18, 15) : getVNCutoffDate(checkDate, 18, 0);
                             if (closeCutoff > now) {
                                 lastDrawNum += 1;
                                 const drawCode = `#${String(lastDrawNum).padStart(4, "0")}`;
@@ -551,9 +549,27 @@ exports.getDrawResults = getDrawResults;
 // Admin: Tạo kỳ quay mới
 const createDraw = async (req, res) => {
     try {
-        const { gameId, drawCode, openTime, closeTime, jackpotAmount, provinceId } = req.body;
+        let { gameId, drawCode, openTime, closeTime, drawTime, jackpotAmount, provinceId } = req.body;
         if (!drawCode || !String(drawCode).trim()) {
             return res.status(400).json({ message: 'Mã kỳ quay không được để trống' });
+        }
+        if (!mongoose_1.default.Types.ObjectId.isValid(gameId)) {
+            let gDoc = await Game_1.default.findOne({ code: gameId });
+            if (!gDoc) {
+                try {
+                    const { ensureGameConfigs } = require('../services/cronService');
+                    if (ensureGameConfigs)
+                        await ensureGameConfigs();
+                    gDoc = await Game_1.default.findOne({ code: gameId });
+                }
+                catch (e) { }
+            }
+            if (gDoc) {
+                gameId = gDoc._id;
+            }
+            else {
+                return res.status(400).json({ message: 'Không tìm thấy loại game hợp lệ' });
+            }
         }
         const cleanDrawCode = String(drawCode).trim().startsWith('#')
             ? String(drawCode).trim()
@@ -571,6 +587,7 @@ const createDraw = async (req, res) => {
             drawCode: cleanDrawCode,
             openTime,
             closeTime,
+            drawTime: drawTime || closeTime,
             jackpotAmount,
             provinceId
         });
@@ -696,7 +713,33 @@ const getAllDraws = async (req, res) => {
         const { gameId, provinceId, status, search, date } = req.query;
         let query = {};
         if (gameId) {
-            query.game = gameId;
+            if (mongoose_1.default.Types.ObjectId.isValid(gameId)) {
+                query.game = gameId;
+            }
+            else {
+                let gDoc = await Game_1.default.findOne({ code: gameId });
+                if (!gDoc) {
+                    try {
+                        const { ensureGameConfigs, ensureUpcomingDraws } = require('../services/cronService');
+                        if (ensureGameConfigs)
+                            await ensureGameConfigs();
+                        gDoc = await Game_1.default.findOne({ code: gameId });
+                        if (gDoc && ensureUpcomingDraws) {
+                            ensureUpcomingDraws().catch((e) => console.error('ensureUpcomingDraws error:', e));
+                        }
+                    }
+                    catch (e) {
+                        console.error('Error auto-seeding game config:', e);
+                    }
+                }
+                if (gDoc) {
+                    query.game = gDoc._id;
+                }
+                else {
+                    // Trả về mảng rỗng nếu không tìm thấy loại game hợp lệ thay vì lỗi CastError 500
+                    return res.json({ data: [], total: 0, page, limit, totalPages: 0 });
+                }
+            }
         }
         if (provinceId && provinceId !== "all") {
             query.provinceId = provinceId;
