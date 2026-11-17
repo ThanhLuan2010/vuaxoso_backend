@@ -72,14 +72,16 @@ export const checkoutOrders = async (req: any, res: Response) => {
       } else {
         const cacheKey = `${gameType}_${drawId}_${provinceName || ""}_${drawDate || ""}`;
         if (!drawCache[cacheKey]) {
-          const searchGameCode = gameType.includes("max_3d") ? "max_3d" : ((gameType === "bao_keno" || gameType === "clln_keno") ? "keno" : gameType);
+          const searchGameCode = ['loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(gameType)
+            ? 'MB'
+            : (gameType.includes("max_3d") ? "max_3d" : ((gameType === "bao_keno" || gameType === "clln_keno") ? "keno" : gameType));
           if (!gameCache[searchGameCode]) {
             gameCache[searchGameCode] = await Game.findOne({ code: searchGameCode });
           }
           const gameDoc = gameCache[searchGameCode];
 
           let draw: any = null;
-          const isLodeOrRegion = ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn"].includes(searchGameCode);
+          const isLodeOrRegion = ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn"].includes(searchGameCode) || ['loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(gameType);
           const isScheduledDate = (typeof drawId === "string" && (drawId.startsWith("sched_") || /^\d{2}\/\d{2}\/\d{4}/.test(drawId))) || (drawDate && /^\d{2}\/\d{2}\/\d{4}/.test(drawDate));
 
           if (drawId === "DUMMY_DRAW_ID") {
@@ -487,10 +489,12 @@ export const createOrder = async (req: any, res: Response) => {
     } else {
       // For Vietlott / Dien Toan
       let draw;
-      const searchGameCode = gameType.includes('max_3d') ? 'max_3d' : ((gameType === 'bao_keno' || gameType === 'clln_keno') ? 'keno' : gameType);
+      const searchGameCode = ['loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(gameType)
+        ? 'MB'
+        : (gameType.includes('max_3d') ? 'max_3d' : ((gameType === 'bao_keno' || gameType === 'clln_keno') ? 'keno' : gameType));
       const gameDoc = await Game.findOne({ code: searchGameCode });
-      const isLodeOrRegion = ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn"].includes(searchGameCode);
-      const isMbDerivedDienToan = ['loto_235', 'loto_cap', 'bao_loto_2', 'truot_loto'].includes(searchGameCode);
+      const isLodeOrRegion = ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn"].includes(searchGameCode) || ['loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(gameType);
+      const isMbDerivedDienToan = ['loto_235', 'loto_cap', 'bao_loto_2', 'truot_loto'].includes(gameType);
       const isScheduledDate = (typeof drawId === "string" && (drawId.startsWith("sched_") || /^\d{2}\/\d{2}\/\d{4}/.test(drawId))) || (drawDate && /^\d{2}\/\d{2}\/\d{4}/.test(drawDate));
 
       if (isMbDerivedDienToan) {

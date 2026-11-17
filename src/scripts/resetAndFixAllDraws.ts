@@ -32,8 +32,6 @@ interface GameConfig {
 
 const GAME_CONFIGS: GameConfig[] = [
   { code: 'keno', name: 'KENO', type: 'vietlott', cronExpression: '*/8 * * * *', drawDurationMinutes: 8 },
-  { code: 'bao_keno', name: 'BAO KENO', type: 'vietlott', cronExpression: '*/8 * * * *', drawDurationMinutes: 8 },
-  { code: 'clln_keno', name: 'CẶN LỚN KENO', type: 'vietlott', cronExpression: '*/8 * * * *', drawDurationMinutes: 8 },
   { code: 'power_655', name: 'POWER 6/55', type: 'vietlott', cronExpression: '0 18 * * 2,4,6', drawDurationMinutes: 0, days: [2, 4, 6], baseNum: 1323, cutoffHour: 17, cutoffMin: 20 },
   { code: 'mega_645', name: 'MEGA 6/45', type: 'vietlott', cronExpression: '0 18 * * 3,5,0', drawDurationMinutes: 0, days: [3, 5, 0], baseNum: 1250, cutoffHour: 17, cutoffMin: 20 },
   { code: 'max_3d', name: 'MAX 3D', type: 'vietlott', cronExpression: '0 18 * * 1,3,5', drawDurationMinutes: 0, days: [1, 3, 5], baseNum: 850, cutoffHour: 17, cutoffMin: 20 },
