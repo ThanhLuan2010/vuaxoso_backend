@@ -74,15 +74,19 @@ export const ensureUpcomingDraws = async () => {
                 if (!exists && created < needed) {
                   lastDrawNum += 1;
                   const drawCode = `#${String(lastDrawNum).padStart(4, '0')}`;
-                  await Draw.create({
-                    game: game._id,
-                    drawCode,
-                    openTime: item.open,
-                    closeTime: item.close,
-                    drawTime: item.draw,
-                    status: 'open'
-                  });
-                  created++;
+                  try {
+                    await Draw.create({
+                      game: game._id,
+                      drawCode,
+                      openTime: item.open,
+                      closeTime: item.close,
+                      drawTime: item.draw,
+                      status: 'open'
+                    });
+                    created++;
+                  } catch (err: any) {
+                    if (err.code !== 11000) throw err;
+                  }
                 }
               }
             }
@@ -157,15 +161,25 @@ export const ensureUpcomingDraws = async () => {
                 openTime = new Date(closeCutoff.getTime() - 24 * 3600 * 1000);
               }
 
-              await Draw.create({
+              const exists = await Draw.findOne({
                 game: game._id,
-                drawCode,
-                openTime,
-                closeTime: closeCutoff,
-                drawTime: drawCutoff,
-                status: 'open'
+                $or: [{ drawCode }, { closeTime: closeCutoff }]
               });
-              created++;
+              if (!exists) {
+                try {
+                  await Draw.create({
+                    game: game._id,
+                    drawCode,
+                    openTime,
+                    closeTime: closeCutoff,
+                    drawTime: drawCutoff,
+                    status: 'open'
+                  });
+                  created++;
+                } catch (err: any) {
+                  if (err.code !== 11000) throw err;
+                }
+              }
             }
           }
           checkDate.setDate(checkDate.getDate() + 1);
@@ -209,13 +223,23 @@ export const ensureUpcomingDraws = async () => {
           lastDrawNum += 1;
           const drawCode = kg.code === 'bingo18' ? `#${String(lastDrawNum).padStart(5, '0')}` : `#${lastDrawNum}`;
 
-          await Draw.create({
+          const exists = await Draw.findOne({
             game: kg._id,
-            drawCode,
-            openTime,
-            closeTime,
-            status: 'open'
+            $or: [{ drawCode }, { closeTime }]
           });
+          if (!exists) {
+            try {
+              await Draw.create({
+                game: kg._id,
+                drawCode,
+                openTime,
+                closeTime,
+                status: 'open'
+              });
+            } catch (err: any) {
+              if (err.code !== 11000) throw err;
+            }
+          }
 
           lastCloseTime = closeTime;
         }
@@ -239,30 +263,6 @@ export const GAME_CONFIGS = [
     bgColor: '#FFF0F0',
     badge: '8p-1 kỳ',
     subtext: '🏆 2.000.000.000đ',
-    cronExpression: '*/8 * * * *',
-    drawDurationMinutes: 8,
-    autoRandomResult: true
-  },
-  {
-    code: 'bao_keno',
-    name: 'BAO KENO',
-    type: 'vietlott',
-    brandColor: '#FF6B00',
-    bgColor: '#FFF4EB',
-    badge: '8p-1 kỳ',
-    subtext: 'Bao số Keno',
-    cronExpression: '*/8 * * * *',
-    drawDurationMinutes: 8,
-    autoRandomResult: true
-  },
-  {
-    code: 'clln_keno',
-    name: 'KENO CHẴN LẺ LỚN NHỎ',
-    type: 'vietlott',
-    brandColor: '#2F80ED',
-    bgColor: '#EDF5FF',
-    badge: '8p-1 kỳ',
-    subtext: 'Chẵn - Lẻ - Lớn - Nhỏ',
     cronExpression: '*/8 * * * *',
     drawDurationMinutes: 8,
     autoRandomResult: true

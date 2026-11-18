@@ -19,7 +19,8 @@ const MOCK_GAMES: any[] = [
   { code: 'loto_cap', name: 'LÔ TÔ 2, 3, 4 Cặp', type: 'dientoan', brandColor: '#FF9A00', bgColor: '#FFF8F0', cronExpression: '15 18 * * *', drawDurationMinutes: 0 },
   { code: 'dientoan_636', name: 'ĐIỆN TOÁN 6x36', type: 'dientoan', brandColor: '#004F9F', bgColor: '#E6EEF7', badge: 'T4 & T7', cronExpression: '0 18 * * 3,6', drawDurationMinutes: 0 },
   { code: 'truot_loto', name: 'TRƯỢT LÔ TÔ (4-8-10 cặp)', type: 'dientoan', brandColor: '#FF4D15', bgColor: '#FFF2EE', cronExpression: '15 18 * * *', drawDurationMinutes: 0 },
-  { code: 'than_tai_4', name: 'Thần Tài 4 / ĐT 1-2-3', type: 'dientoan', brandColor: '#FF9A00', bgColor: '#FFF8F0', cronExpression: '0 18 * * *', drawDurationMinutes: 60 },
+  { code: 'than_tai_4', name: 'ĐIỆN TOÁN Thần Tài 4', type: 'dientoan', brandColor: '#FFB300', bgColor: '#FFF8E1', badge: '18h00 Hàng ngày', cronExpression: '0 18 * * *', drawDurationMinutes: 60 },
+  { code: 'dientoan_123', name: 'ĐIỆN TOÁN 1*2*3', type: 'dientoan', brandColor: '#E51F27', bgColor: '#FFF0F0', badge: '18h15 Hàng ngày', cronExpression: '15 18 * * *', drawDurationMinutes: 60 },
   { code: 'bao_636', name: 'BAO 6x36', type: 'dientoan', brandColor: '#D0021B', bgColor: '#FCE8EA', cronExpression: '15 18 * * 3,6', drawDurationMinutes: 0 },
   { code: 'bingo18', name: 'ĐIỆN TOÁN BINGO18 (111-666)', type: 'dientoan', brandColor: '#0055A5', bgColor: '#E6F0FA', badge: '8p-1 kỳ', cronExpression: '*/8 * * * *', drawDurationMinutes: 8, autoRandomResult: true },
 

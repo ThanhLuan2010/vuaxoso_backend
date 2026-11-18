@@ -369,13 +369,23 @@ export const getActiveDraws = async (req: any, res: Response) => {
             lastDrawNum += 1;
             const drawCode = `#${String(lastDrawNum).padStart(5, '0')}`;
 
-            await Draw.create({
+            const exists = await Draw.findOne({
               game: game._id,
-              drawCode,
-              openTime,
-              closeTime,
-              status: 'open'
+              $or: [{ drawCode }, { closeTime }]
             });
+            if (!exists) {
+              try {
+                await Draw.create({
+                  game: game._id,
+                  drawCode,
+                  openTime,
+                  closeTime,
+                  status: 'open'
+                });
+              } catch (err: any) {
+                if (err.code !== 11000) throw err;
+              }
+            }
 
             lastCloseTime = closeTime;
           }
@@ -410,15 +420,19 @@ export const getActiveDraws = async (req: any, res: Response) => {
                 if (!exists && created < needed) {
                   lastDrawNum += 1;
                   const drawCode = `#${String(lastDrawNum).padStart(4, '0')}`;
-                  await Draw.create({
-                    game: game._id,
-                    drawCode,
-                    openTime: item.open,
-                    closeTime: item.close,
-                    drawTime: item.draw,
-                    status: 'open'
-                  });
-                  created++;
+                  try {
+                    await Draw.create({
+                      game: game._id,
+                      drawCode,
+                      openTime: item.open,
+                      closeTime: item.close,
+                      drawTime: item.draw,
+                      status: 'open'
+                    });
+                    created++;
+                  } catch (err: any) {
+                    if (err.code !== 11000) throw err;
+                  }
                 }
               }
             }
@@ -510,15 +524,25 @@ export const getActiveDraws = async (req: any, res: Response) => {
                   openTime = new Date(closeCutoff.getTime() - 24 * 3600 * 1000);
                 }
 
-                await Draw.create({
+                const exists = await Draw.findOne({
                   game: game._id,
-                  drawCode,
-                  openTime,
-                  closeTime: closeCutoff,
-                  drawTime: drawCutoff,
-                  status: 'open'
+                  $or: [{ drawCode }, { closeTime: closeCutoff }]
                 });
-                created++;
+                if (!exists) {
+                  try {
+                    await Draw.create({
+                      game: game._id,
+                      drawCode,
+                      openTime,
+                      closeTime: closeCutoff,
+                      drawTime: drawCutoff,
+                      status: 'open'
+                    });
+                    created++;
+                  } catch (err: any) {
+                    if (err.code !== 11000) throw err;
+                  }
+                }
               }
             }
             checkDate.setDate(checkDate.getDate() + 1);

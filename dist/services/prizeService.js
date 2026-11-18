@@ -172,6 +172,35 @@ const processDrawResults = async (drawId) => {
         let orderConditions = [
             { drawId: { $in: possibleDrawIds } }
         ];
+        if (game.code === 'bingo18') {
+            const codeClean = (cleanDrawCode || rawDrawCode || '').replace(/^#+/, '');
+            const numOnly = codeClean.replace(/\D/g, '');
+            const intNum = numOnly ? parseInt(numOnly, 10).toString() : '';
+            const drawCodeVariants = [
+                draw.drawCode,
+                cleanDrawCode,
+                rawDrawCode,
+                codeClean ? `#${codeClean}` : '',
+                codeClean,
+                intNum ? `#${intNum}` : '',
+                intNum
+            ].filter(Boolean);
+            orderConditions.push({
+                $and: [
+                    { gameType: 'bingo18' },
+                    {
+                        $or: [
+                            { drawId: { $in: [...possibleDrawIds, ...drawCodeVariants] } },
+                            { drawDate: { $in: drawCodeVariants } },
+                            ...(codeClean ? [
+                                { drawDate: { $regex: new RegExp(codeClean, 'i') } },
+                                { drawId: { $regex: new RegExp(codeClean, 'i') } }
+                            ] : [])
+                        ]
+                    }
+                ]
+            });
+        }
         if (['loto_235', 'loto_cap', 'bao_loto_2', 'truot_loto'].includes(game.code)) {
             orderConditions.push({
                 $and: [
@@ -660,126 +689,123 @@ const processDrawResults = async (drawId) => {
                         });
                     }
                 }
-                else if (game.code === 'lotto_535') {
-                    const w = draw.winningNumbers;
-                    if (w && w.length >= 6) {
-                        const drawMain = w.slice(0, 5);
-                        const drawSpecial = w[5];
-                        allBoards.forEach((board) => {
-                            let boardPrize = 0;
-                            let subTickets = [];
-                            const mainPool = board.numbers || [];
-                            const specialPool = board.specialNumbers || [];
-                            if (mainPool.length === 4) {
-                                // Bao 4
-                                for (let i = 1; i <= 35; i++) {
-                                    const num = String(i).padStart(2, '0');
-                                    if (!mainPool.includes(num)) {
-                                        specialPool.forEach((s) => {
-                                            subTickets.push({ main: [...mainPool, num], special: s });
-                                        });
-                                    }
-                                }
-                            }
-                            else {
-                                // Cơ bản, Bao 6-15, Bao số ĐB
-                                const combinations = getCombinationsList(mainPool, 5);
-                                combinations.forEach((combo) => {
-                                    specialPool.forEach((s) => {
-                                        subTickets.push({ main: combo, special: s });
-                                    });
-                                });
-                            }
-                            subTickets.forEach((ticket) => {
-                                let matchCount = 0;
-                                let hasSpecial = ticket.special === drawSpecial;
-                                ticket.main.forEach((num) => {
-                                    if (drawMain.includes(num))
-                                        matchCount++;
-                                });
-                                if (matchCount === 5 && hasSpecial)
-                                    boardPrize += 3000000000;
-                                else if (matchCount === 5 && !hasSpecial)
-                                    boardPrize += 10000000;
-                                else if (matchCount === 4 && hasSpecial)
-                                    boardPrize += 5000000;
-                                else if (matchCount === 4 && !hasSpecial)
-                                    boardPrize += 500000;
-                                else if (matchCount === 3 && hasSpecial)
-                                    boardPrize += 100000;
-                                else if (matchCount === 3 && !hasSpecial)
-                                    boardPrize += 30000;
-                                else if (matchCount >= 0 && matchCount <= 2 && hasSpecial)
-                                    boardPrize += 10000;
-                            });
-                            if (boardPrize > 0) {
-                                isWinner = true;
-                                const multiplier = Math.floor(board.cost / (subTickets.length > 0 ? subTickets.length : 1) / 10000);
-                                prizeAmount += boardPrize * (multiplier > 0 ? multiplier : 1);
-                            }
-                        });
+                else if (game.code === 'lotto_535' || game.code === 'lotto_570') {
+                    const is570 = game.code === 'lotto_570';
+                    const maxNum = is570 ? 70 : 35;
+                    const jackpotBase = is570 ? 6000000000 : 3000000000;
+                    const jackpotPrize = (draw.jackpotAmount && draw.jackpotAmount > 0)
+                        ? Math.max(draw.jackpotAmount, jackpotBase)
+                        : jackpotBase;
+                    // Phân biệt rõ ràng 5 số thường (drawMain) và 1 số đặc biệt (drawSpecial)
+                    let drawMain = [];
+                    let drawSpecial = '';
+                    // 1. Ưu tiên lấy từ draw.specialNumbers nếu có
+                    if (draw.specialNumbers && draw.specialNumbers.length > 0) {
+                        drawSpecial = String(draw.specialNumbers[0]).trim().padStart(2, '0');
                     }
-                }
-                else if (game.code === 'lotto_570') {
-                    const w = draw.winningNumbers;
-                    if (w && w.length >= 6) {
-                        const drawMain = w.slice(0, 5);
-                        const drawSpecial = w[5];
+                    // 2. Làm sạch các số từ winningNumbers (loại bỏ ký tự phân cách như '|', '+', chỉ giữ số)
+                    const cleanW = (draw.winningNumbers || [])
+                        .map((n) => String(n).trim())
+                        .filter((n) => /^\d+$/.test(n))
+                        .map((n) => n.padStart(2, '0'));
+                    if (cleanW.length >= 6) {
+                        drawMain = cleanW.slice(0, 5);
+                        if (!drawSpecial)
+                            drawSpecial = cleanW[5];
+                    }
+                    else if (cleanW.length === 5 && drawSpecial) {
+                        drawMain = cleanW;
+                    }
+                    if (drawMain.length === 5 && drawSpecial) {
                         allBoards.forEach((board) => {
                             let boardPrize = 0;
                             let subTickets = [];
-                            const mainPool = board.numbers || [];
-                            const specialPool = board.specialNumbers || [];
+                            let mainPool = (board.numbers || [])
+                                .map((n) => String(n).trim())
+                                .filter((n) => /^\d+$/.test(n))
+                                .map((n) => n.padStart(2, '0'));
+                            let specialPool = (board.specialNumbers || [])
+                                .map((n) => String(n).trim())
+                                .filter((n) => /^\d+$/.test(n))
+                                .map((n) => n.padStart(2, '0'));
+                            // Nếu người chơi gửi 6 số trong mainPool và specialPool rỗng, tự động tách số thứ 6 làm số đặc biệt
+                            if (specialPool.length === 0 && mainPool.length >= 6) {
+                                specialPool = [mainPool[mainPool.length - 1]];
+                                mainPool = mainPool.slice(0, mainPool.length - 1);
+                            }
+                            // Luôn đảm bảo có pool số đặc biệt để duyệt (kể cả khi không có số ĐB thì vẫn tính giải số thường)
+                            const effectiveSpecialPool = specialPool.length > 0 ? specialPool : [''];
                             if (mainPool.length === 4) {
                                 // Bao 4
-                                for (let i = 1; i <= 70; i++) {
+                                for (let i = 1; i <= maxNum; i++) {
                                     const num = String(i).padStart(2, '0');
                                     if (!mainPool.includes(num)) {
-                                        specialPool.forEach((s) => {
+                                        effectiveSpecialPool.forEach((s) => {
                                             subTickets.push({ main: [...mainPool, num], special: s });
                                         });
                                     }
                                 }
                             }
-                            else {
-                                // Cơ bản, Bao 6-15, Bao số ĐB
+                            else if (mainPool.length >= 5) {
+                                // Cơ bản (5 số), Bao 6-15
                                 const combinations = getCombinationsList(mainPool, 5);
                                 combinations.forEach((combo) => {
-                                    specialPool.forEach((s) => {
+                                    effectiveSpecialPool.forEach((s) => {
                                         subTickets.push({ main: combo, special: s });
                                     });
                                 });
                             }
                             subTickets.forEach((ticket) => {
                                 let matchCount = 0;
-                                let hasSpecial = ticket.special === drawSpecial;
+                                const hasSpecial = Boolean(ticket.special && ticket.special === drawSpecial);
                                 ticket.main.forEach((num) => {
                                     if (drawMain.includes(num))
                                         matchCount++;
                                 });
-                                if (matchCount === 5 && hasSpecial)
-                                    boardPrize += 6000000000;
-                                else if (matchCount === 5 && !hasSpecial)
-                                    boardPrize += 10000000;
-                                else if (matchCount === 4 && hasSpecial)
-                                    boardPrize += 10000000;
-                                else if (matchCount === 4 && !hasSpecial)
-                                    boardPrize += 9000000;
-                                else if (matchCount === 3 && hasSpecial)
-                                    boardPrize += 5000000;
-                                else if (matchCount === 3 && !hasSpecial)
-                                    boardPrize += 5000000;
-                                else if (matchCount === 2 && hasSpecial)
-                                    boardPrize += 1000000;
-                                else if (matchCount === 1 && hasSpecial)
-                                    boardPrize += 100000;
-                                else if (matchCount === 0 && hasSpecial)
-                                    boardPrize += 10000;
+                                if (is570) {
+                                    // Cơ cấu thưởng Lotto 5/70 (Mega Millions)
+                                    if (matchCount === 5 && hasSpecial)
+                                        boardPrize += jackpotPrize;
+                                    else if (matchCount === 5 && !hasSpecial)
+                                        boardPrize += 10000000;
+                                    else if (matchCount === 4 && hasSpecial)
+                                        boardPrize += 10000000;
+                                    else if (matchCount === 4 && !hasSpecial)
+                                        boardPrize += 9000000;
+                                    else if (matchCount === 3 && hasSpecial)
+                                        boardPrize += 5000000;
+                                    else if (matchCount === 3 && !hasSpecial)
+                                        boardPrize += 5000000;
+                                    else if (matchCount === 2 && hasSpecial)
+                                        boardPrize += 1000000;
+                                    else if (matchCount === 1 && hasSpecial)
+                                        boardPrize += 100000;
+                                    else if (matchCount === 0 && hasSpecial)
+                                        boardPrize += 10000;
+                                }
+                                else {
+                                    // Cơ cấu thưởng Lotto 5/35
+                                    if (matchCount === 5 && hasSpecial)
+                                        boardPrize += jackpotPrize;
+                                    else if (matchCount === 5 && !hasSpecial)
+                                        boardPrize += 10000000;
+                                    else if (matchCount === 4 && hasSpecial)
+                                        boardPrize += 5000000;
+                                    else if (matchCount === 4 && !hasSpecial)
+                                        boardPrize += 500000;
+                                    else if (matchCount === 3 && hasSpecial)
+                                        boardPrize += 100000;
+                                    else if (matchCount === 3 && !hasSpecial)
+                                        boardPrize += 30000;
+                                    else if (matchCount >= 0 && matchCount <= 2 && hasSpecial)
+                                        boardPrize += 10000;
+                                }
                             });
                             if (boardPrize > 0) {
                                 isWinner = true;
-                                const multiplier = Math.floor(board.cost / (subTickets.length > 0 ? subTickets.length : 1) / 10000);
-                                prizeAmount += boardPrize * (multiplier > 0 ? multiplier : 1);
+                                const comboCount = Math.max(1, subTickets.length);
+                                const multiplier = Math.max(1, Math.round((board.cost || 10000) / comboCount / 10000));
+                                prizeAmount += boardPrize * multiplier;
                             }
                         });
                     }
@@ -1951,68 +1977,50 @@ const processDrawResults = async (drawId) => {
                     allBoards.forEach((board) => {
                         let boardPrize = 0;
                         const multiplier = Math.floor(board.cost / 10000);
-                        if (order.playType === 'Thần tài 4' || !order.playType) {
+                        if (order.playType === 'Điện toán 1-2-3') {
+                            const ticketStr = board.numbers.join('');
+                            if (ticketStr.length === 6 && w.length >= 3) {
+                                const ticketB1 = ticketStr[0];
+                                const ticketB2 = ticketStr.slice(1, 3);
+                                const ticketB3 = ticketStr.slice(3, 6);
+                                const wB1 = String(w[0] ?? '').trim();
+                                const wB2 = String(w[1] ?? '').trim().padStart(2, '0');
+                                const wB3 = String(w[2] ?? '').trim().padStart(3, '0');
+                                const match1 = (ticketB1 === wB1);
+                                const match2 = (ticketB2 === wB2);
+                                const match3 = (ticketB3 === wB3);
+                                if (match1 && match2 && match3) {
+                                    boardPrize = 400000000; // x40.000 lần
+                                }
+                                else if (match2 && match3) {
+                                    boardPrize = 10000000; // x1.000 lần
+                                }
+                                else if (match1 && match3) {
+                                    boardPrize = 1000000; // x100 lần
+                                }
+                                else if (match3) {
+                                    boardPrize = 500000; // x50 lần
+                                }
+                            }
+                        }
+                        else {
                             const ticketStr = board.numbers.join('');
                             const WXYZ = (w.length === 4 && w[0].length === 1) ? w.join('') : (w[0] || '');
                             if (ticketStr.length === 4 && WXYZ.length === 4) {
                                 const A = ticketStr[0], B = ticketStr[1], C = ticketStr[2], D = ticketStr[3];
                                 const W = WXYZ[0], X = WXYZ[1], Y = WXYZ[2], Z = WXYZ[3];
-                                // Helper để kiểm tra hoán vị
-                                const isPermutation = (s1, s2) => s1.split('').sort().join('') === s2.split('').sort().join('');
                                 if (ticketStr === WXYZ) {
-                                    boardPrize = 100000000;
-                                }
-                                else if (isPermutation(ticketStr, WXYZ)) {
-                                    boardPrize = 10000000;
-                                }
-                                else if (B === X && C === Y && D === Z) {
-                                    boardPrize = 1000000;
-                                }
-                                else if (isPermutation(B + C + D, X + Y + Z)) {
-                                    boardPrize = 100000;
+                                    boardPrize = 12200000; // Giải Nhất: x1.220 lần
                                 }
                                 else if (A === W && B === X && C === Y) {
-                                    boardPrize = 1000000;
+                                    boardPrize = 1100000; // Giải Nhì (trùng 3 số đầu): x110 lần
                                 }
-                                else if (isPermutation(A + B + C, W + X + Y)) {
-                                    boardPrize = 100000;
+                                else if (B === X && C === Y && D === Z) {
+                                    boardPrize = 1100000; // Giải Ba (trùng 3 số cuối): x110 lần
                                 }
-                                else if (C === Y && D === Z) {
-                                    boardPrize = 100000;
+                                else if ((A === W && B === X) || (C === Y && D === Z)) {
+                                    boardPrize = 100000; // Giải Khuyến khích (trùng 2 đầu hoặc 2 cuối): x10 lần
                                 }
-                                else if (A === W && B === X) {
-                                    boardPrize = 100000;
-                                }
-                                else if (D === Z || A === W) {
-                                    boardPrize = 10000;
-                                }
-                            }
-                        }
-                        else if (order.playType === 'Điện toán 1-2-3') {
-                            const ticketStr = board.numbers.join('');
-                            if (ticketStr.length === 6 && w.length >= 4) {
-                                const A = ticketStr[0], BC = ticketStr.slice(1, 3), DEF = ticketStr.slice(3, 6);
-                                const W = w[1][0] || w[1], XY = w[2].slice(-2), ZUV = w[3].slice(-3);
-                                let prize3 = 0, prize2 = 0, prize1 = 0;
-                                const isPerm = (s1, s2) => s1.split('').sort().join('') === s2.split('').sort().join('');
-                                // Bộ 3 số
-                                if (DEF === ZUV)
-                                    prize3 = 10000000;
-                                else if (isPerm(DEF, ZUV))
-                                    prize3 = 1000000;
-                                else if (DEF.slice(1) === ZUV.slice(1))
-                                    prize3 = 100000;
-                                else if (DEF.slice(2) === ZUV.slice(2))
-                                    prize3 = 50000;
-                                // Bộ 2 số
-                                if (BC === XY)
-                                    prize2 = 750000;
-                                else if (BC.slice(1) === XY.slice(1))
-                                    prize2 = 50000;
-                                // Bộ 1 số
-                                if (A === W)
-                                    prize1 = 50000;
-                                boardPrize = prize1 + prize2 + prize3;
                             }
                         }
                         if (boardPrize > 0) {
@@ -2030,34 +2038,27 @@ const processDrawResults = async (drawId) => {
                         const multiplier = Math.floor(board.cost / 10000);
                         const ticketStr = board.numbers.join('');
                         if (ticketStr.length === 6) {
-                            const A = ticketStr[0], BC = ticketStr.slice(1, 3), DEF = ticketStr.slice(3, 6);
-                            // w là [Bộ 1, Bộ 2, Bộ 3]
-                            const b1 = w.length === 3 ? w[0] : (w[1] || w[0]);
-                            const b2 = w.length === 3 ? w[1] : (w[2] || w[1]);
-                            const b3 = w.length === 3 ? w[2] : (w[3] || w[2]);
-                            const W = String(b1)[0] || '';
-                            const XY = String(b2).slice(-2);
-                            const ZUV = String(b3).slice(-3);
-                            let prize3 = 0, prize2 = 0, prize1 = 0;
-                            const isPerm = (s1, s2) => s1.split('').sort().join('') === s2.split('').sort().join('');
-                            // Bộ 3 số
-                            if (DEF === ZUV)
-                                prize3 = 10000000;
-                            else if (isPerm(DEF, ZUV))
-                                prize3 = 1000000;
-                            else if (DEF.slice(1) === ZUV.slice(1))
-                                prize3 = 100000;
-                            else if (DEF.slice(2) === ZUV.slice(2))
-                                prize3 = 50000;
-                            // Bộ 2 số
-                            if (BC === XY)
-                                prize2 = 750000;
-                            else if (BC.slice(1) === XY.slice(1))
-                                prize2 = 50000;
-                            // Bộ 1 số
-                            if (A === W)
-                                prize1 = 50000;
-                            boardPrize = prize1 + prize2 + prize3;
+                            const ticketB1 = ticketStr[0];
+                            const ticketB2 = ticketStr.slice(1, 3);
+                            const ticketB3 = ticketStr.slice(3, 6);
+                            const wB1 = String(w[0] ?? '').trim();
+                            const wB2 = String(w[1] ?? '').trim().padStart(2, '0');
+                            const wB3 = String(w[2] ?? '').trim().padStart(3, '0');
+                            const match1 = (ticketB1 === wB1);
+                            const match2 = (ticketB2 === wB2);
+                            const match3 = (ticketB3 === wB3);
+                            if (match1 && match2 && match3) {
+                                boardPrize = 400000000; // Giải Nhất: x40.000 lần
+                            }
+                            else if (match2 && match3) {
+                                boardPrize = 10000000; // Giải Nhì (Bộ 2 + Bộ 3): x1.000 lần
+                            }
+                            else if (match1 && match3) {
+                                boardPrize = 1000000; // Giải Ba (Bộ 1 + Bộ 3): x100 lần
+                            }
+                            else if (match3) {
+                                boardPrize = 500000; // Giải Tư (duy nhất Bộ 3): x50 lần
+                            }
                         }
                         if (boardPrize > 0) {
                             isWinner = true;
@@ -2068,14 +2069,27 @@ const processDrawResults = async (drawId) => {
             }
             else if (game.code === 'bingo18') {
                 const w = draw.winningNumbers;
-                if (w && w.length === 3) {
-                    const wInts = w.map(Number);
+                let wInts = [];
+                if (Array.isArray(w) && w.length === 3 && w.every(x => !isNaN(Number(x)))) {
+                    wInts = w.map(Number);
+                }
+                else if (Array.isArray(w) && w.length === 1 && String(w[0]).length === 3 && /^[1-6]{3}$/.test(String(w[0]))) {
+                    wInts = String(w[0]).split('').map(Number);
+                }
+                else if (Array.isArray(w) && w.length > 0) {
+                    const joinedDigits = w.join(' ').replace(/\D/g, '');
+                    if (joinedDigits.length >= 3) {
+                        wInts = joinedDigits.slice(0, 3).split('').map(Number);
+                    }
+                }
+                if (wInts.length === 3) {
                     const wSum = wInts.reduce((a, b) => a + b, 0);
                     allBoards.forEach((board) => {
                         let boardPrize = 0;
                         const multiplier = Math.floor(board.cost / 10000);
                         const bingoPType = (board.playType || order.playType || '').toLowerCase();
-                        board.numbers.forEach(bet => {
+                        board.numbers.forEach(rawBet => {
+                            const bet = String(rawBet).replace(/^dãy\s+[a-z]:\s*/i, '').trim();
                             if (bingoPType.includes('tổng') || bingoPType.includes('tong')) {
                                 const betSum = Number(bet);
                                 if (wSum === betSum) {
@@ -2092,7 +2106,7 @@ const processDrawResults = async (drawId) => {
                                     else if (wSum === 8 || wSum === 13)
                                         boardPrize += 60000;
                                     else if (wSum === 9 || wSum === 12)
-                                        boardPrize += 60000;
+                                        boardPrize += 50000;
                                     else if (wSum === 10 || wSum === 11)
                                         boardPrize += 50000;
                                 }
@@ -2101,24 +2115,23 @@ const processDrawResults = async (drawId) => {
                                 const taiRate = (game.payoutRates && (game.payoutRates['Tài'] || game.payoutRates['tai'])) ?? 2;
                                 const xiuRate = (game.payoutRates && (game.payoutRates['Xỉu'] || game.payoutRates['xiu'])) ?? 2;
                                 const hoaRate = (game.payoutRates && (game.payoutRates['Hoà'] || game.payoutRates['hoa'])) ?? 3;
-                                if ((bet === 'Tài' || bet.toLowerCase() === 'tai') && wSum >= 12 && wSum <= 18)
+                                if ((bet === 'Tài' || bet.toLowerCase() === 'tai') && (wSum >= 12 && wSum <= 18 || (wSum >= 11 && !(wInts[0] === wInts[1] && wInts[1] === wInts[2]))))
                                     boardPrize += Math.round(10000 * taiRate);
-                                else if ((bet === 'Xỉu' || bet.toLowerCase() === 'xiu') && wSum >= 3 && wSum <= 9)
+                                else if ((bet === 'Xỉu' || bet.toLowerCase() === 'xiu') && (wSum >= 3 && wSum <= 9 || (wSum <= 10 && !(wInts[0] === wInts[1] && wInts[1] === wInts[2]))))
                                     boardPrize += Math.round(10000 * xiuRate);
-                                else if ((bet === 'Hoà' || bet.toLowerCase() === 'hoa') && (wSum === 10 || wSum === 11))
+                                else if ((bet === 'Hoà' || bet.toLowerCase() === 'hoa') && (wSum === 10 || wSum === 11 || (wInts[0] === wInts[1] && wInts[1] === wInts[2])))
                                     boardPrize += Math.round(10000 * hoaRate);
                             }
                             else {
-                                // Cơ bản (1, 2, 3 số trùng)
+                                // Cơ bản (1, 2, 3 số trùng) theo bảng tỉ lệ hệ thống:
+                                // Một số: Trúng 1 số -> Tỉ lệ 2 (20.000đ / 10k)
+                                // Hai số trùng: Trúng 2 giống nhau -> Tỉ lệ 3 (30.000đ / 10k)
+                                // Ba số trùng: Trúng 3 giống nhau -> Tỉ lệ 4 (40.000đ / 10k)
                                 if (bet.length === 1) {
                                     const digit = Number(bet);
                                     const count = wInts.filter(n => n === digit).length;
-                                    if (count === 1)
+                                    if (count >= 1)
                                         boardPrize += 20000;
-                                    if (count === 2)
-                                        boardPrize += 30000;
-                                    if (count === 3)
-                                        boardPrize += 40000;
                                 }
                                 else if (bet.length === 2 && bet[0] === bet[1]) {
                                     const digit = Number(bet[0]);

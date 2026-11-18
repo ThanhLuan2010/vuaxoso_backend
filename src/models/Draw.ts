@@ -40,4 +40,8 @@ drawSchema.index({ status: 1, closeTime: 1 });
 drawSchema.index({ drawCode: 1 });
 drawSchema.index({ openTime: 1, closeTime: 1 });
 
+// Đảm bảo tính DUY NHẤT TUYỆT ĐỐI: Không bao giờ được phép có 2 kỳ quay trùng mã hoặc trùng giờ chốt trong cùng 1 game & đài
+drawSchema.index({ game: 1, drawCode: 1, provinceId: 1 }, { unique: true });
+drawSchema.index({ game: 1, provinceId: 1, closeTime: 1 }, { unique: true });
+
 export default mongoose.model<IDraw>('Draw', drawSchema);

@@ -105,6 +105,17 @@ const checkoutOrders = async (req, res) => {
                             draw = await Draw_1.default.findOne({ drawCode: { $in: [drawId, cleanCode] } });
                         }
                     }
+                    if (!draw && gameDoc && drawDate) {
+                        const matchCode = String(drawDate).match(/#\d+/);
+                        if (matchCode) {
+                            const codeVariant = matchCode[0];
+                            const rawNum = codeVariant.replace(/^#/, '');
+                            draw = await Draw_1.default.findOne({
+                                game: gameDoc._id,
+                                drawCode: { $in: [codeVariant, rawNum, `#${rawNum.padStart(5, '0')}`, rawNum.padStart(5, '0')] }
+                            });
+                        }
+                    }
                     // Khớp kỳ quay theo ngày và đài đối với Lô Đề / XSKT nếu chưa tìm thấy draw theo drawId
                     if (!draw && isLodeOrRegion) {
                         const targetDateStr = drawDate || (typeof drawId === "string" && /^\d{2}\/\d{2}\/\d{4}/.test(drawId) ? drawId : null);
@@ -422,6 +433,7 @@ const BalanceHistory_1 = __importDefault(require("../models/BalanceHistory"));
 const Transaction_1 = __importDefault(require("../models/Transaction"));
 const sendEmail_1 = require("../utils/sendEmail");
 const EncryptionHelper_1 = require("../utils/EncryptionHelper");
+const prizeService_1 = require("../services/prizeService");
 const createOrder = async (req, res) => {
     if (Array.isArray(req.body.orders)) {
         return (0, exports.checkoutOrders)(req, res);
@@ -504,6 +516,17 @@ const createOrder = async (req, res) => {
                 }
                 if (!draw) {
                     draw = await Draw_1.default.findOne({ drawCode: { $in: [drawId, cleanCode] } });
+                }
+                if (!draw && gameDoc && drawDate) {
+                    const matchCode = String(drawDate).match(/#\d+/);
+                    if (matchCode) {
+                        const codeVariant = matchCode[0];
+                        const rawNum = codeVariant.replace(/^#/, '');
+                        draw = await Draw_1.default.findOne({
+                            game: gameDoc._id,
+                            drawCode: { $in: [codeVariant, rawNum, `#${rawNum.padStart(5, '0')}`, rawNum.padStart(5, '0')] }
+                        });
+                    }
                 }
             }
             if (!draw && isMbDerivedDienToan && gameDoc) {
@@ -1012,14 +1035,24 @@ const getOrderById = async (req, res) => {
             order.draw = drawDoc;
             order.drawCode = drawDoc.drawCode;
             order.drawId = drawDoc.drawCode;
-            if ((!order.winningNumbers || order.winningNumbers.length === 0) && drawDoc.winningNumbers && drawDoc.winningNumbers.length > 0) {
-                order.winningNumbers = drawDoc.winningNumbers;
+            if (order.status === 'pending' && drawDoc.status === 'completed' && drawDoc.winningNumbers && drawDoc.winningNumbers.length > 0) {
+                await (0, prizeService_1.processDrawResults)(drawDoc._id.toString());
+                const fresh = await Order_1.default.findById(order._id).populate('user', 'name phone balance').lean();
+                if (fresh) {
+                    order = fresh;
+                    order.draw = drawDoc;
+                }
             }
-            const updateFields = { drawId: drawDoc.drawCode };
-            if (drawDoc.winningNumbers && drawDoc.winningNumbers.length > 0) {
-                updateFields.winningNumbers = drawDoc.winningNumbers;
+            else {
+                if ((!order.winningNumbers || order.winningNumbers.length === 0) && drawDoc.winningNumbers && drawDoc.winningNumbers.length > 0) {
+                    order.winningNumbers = drawDoc.winningNumbers;
+                }
+                const updateFields = { drawId: drawDoc.drawCode };
+                if (drawDoc.winningNumbers && drawDoc.winningNumbers.length > 0) {
+                    updateFields.winningNumbers = drawDoc.winningNumbers;
+                }
+                Order_1.default.updateOne({ _id: order._id }, { $set: updateFields }).catch(() => { });
             }
-            Order_1.default.updateOne({ _id: order._id }, { $set: updateFields }).catch(() => { });
         }
         res.json(order);
     }

@@ -452,6 +452,7 @@ import BalanceHistory from '../models/BalanceHistory';
 import Transaction from '../models/Transaction';
 import { sendEmail } from '../utils/sendEmail';
 import { EncryptionHelper } from '../utils/EncryptionHelper';
+import { processDrawResults } from '../services/prizeService';
 
 export const createOrder = async (req: any, res: Response) => {
   if (Array.isArray(req.body.orders)) {
@@ -1079,14 +1080,24 @@ export const getOrderById = async (req: any, res: Response) => {
       order.draw = drawDoc;
       order.drawCode = drawDoc.drawCode;
       order.drawId = drawDoc.drawCode;
-      if ((!order.winningNumbers || order.winningNumbers.length === 0) && drawDoc.winningNumbers && drawDoc.winningNumbers.length > 0) {
-        order.winningNumbers = drawDoc.winningNumbers;
+
+      if (order.status === 'pending' && drawDoc.status === 'completed' && drawDoc.winningNumbers && drawDoc.winningNumbers.length > 0) {
+        await processDrawResults(drawDoc._id.toString());
+        const fresh = await Order.findById(order._id).populate('user', 'name phone balance').lean();
+        if (fresh) {
+          order = fresh as any;
+          order.draw = drawDoc;
+        }
+      } else {
+        if ((!order.winningNumbers || order.winningNumbers.length === 0) && drawDoc.winningNumbers && drawDoc.winningNumbers.length > 0) {
+          order.winningNumbers = drawDoc.winningNumbers;
+        }
+        const updateFields: any = { drawId: drawDoc.drawCode };
+        if (drawDoc.winningNumbers && drawDoc.winningNumbers.length > 0) {
+          updateFields.winningNumbers = drawDoc.winningNumbers;
+        }
+        Order.updateOne({ _id: order._id }, { $set: updateFields }).catch(() => {});
       }
-      const updateFields: any = { drawId: drawDoc.drawCode };
-      if (drawDoc.winningNumbers && drawDoc.winningNumbers.length > 0) {
-        updateFields.winningNumbers = drawDoc.winningNumbers;
-      }
-      Order.updateOne({ _id: order._id }, { $set: updateFields }).catch(() => {});
     }
 
     res.json(order);

@@ -181,12 +181,16 @@ export const processDrawResults = async (drawId: string) => {
 
     if (game.code === 'bingo18') {
       const codeClean = (cleanDrawCode || rawDrawCode || '').replace(/^#+/, '');
+      const numOnly = codeClean.replace(/\D/g, '');
+      const intNum = numOnly ? parseInt(numOnly, 10).toString() : '';
       const drawCodeVariants = [
         draw.drawCode,
         cleanDrawCode,
         rawDrawCode,
         codeClean ? `#${codeClean}` : '',
-        codeClean
+        codeClean,
+        intNum ? `#${intNum}` : '',
+        intNum
       ].filter(Boolean);
 
       orderConditions.push({
