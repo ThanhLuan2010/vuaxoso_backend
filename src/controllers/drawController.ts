@@ -1,8 +1,11 @@
 import AdminLog from '../models/AdminLog';
 import { Response } from 'express';
+import mongoose from 'mongoose';
 import Draw from '../models/Draw';
 import Province from '../models/Province';
+import Game from '../models/Game';
 import { processDrawResults } from '../services/prizeService';
+import { parseBingo18WinningNumbers } from '../utils/bingo18Utils';
 
 export const getKienThietSchedule = async (req: any, res: Response) => {
   try {
@@ -303,7 +306,7 @@ export const getActiveDraws = async (req: any, res: Response) => {
             closeTime: { $gt: maxAllowedCloseTime }
           });
         }
-        
+
         // Tự động sinh kết quả và trả thưởng cho Keno và Bingo18 khi hết giờ
         const expiredDraws = await Draw.find({
           game: game._id,
@@ -367,18 +370,28 @@ export const getActiveDraws = async (req: any, res: Response) => {
             lastDrawNum += 1;
             const drawCode = `#${String(lastDrawNum).padStart(5, '0')}`;
 
-            await Draw.create({
+            const exists = await Draw.findOne({
               game: game._id,
-              drawCode,
-              openTime,
-              closeTime,
-              status: 'open'
+              $or: [{ drawCode }, { closeTime }]
             });
+            if (!exists) {
+              try {
+                await Draw.create({
+                  game: game._id,
+                  drawCode,
+                  openTime,
+                  closeTime,
+                  status: 'open'
+                });
+              } catch (err: any) {
+                if (err.code !== 11000) throw err;
+              }
+            }
 
             lastCloseTime = closeTime;
           }
         }
-      } else if (game.code === 'lotto_535') {
+      } else if (game.code === 'lotto_535' || game.code === 'lotto_570') {
         const openDraws = await Draw.find({
           game: game._id,
           status: 'open',
@@ -397,9 +410,10 @@ export const getActiveDraws = async (req: any, res: Response) => {
           const needed = 10 - openDraws.length;
           let created = 0;
           while (created < needed) {
+            const prevDay = new Date(checkDay.getTime() - 24 * 3600 * 1000);
             const cutoffs = [
-              { close: getVNCutoffDate(checkDay, 12, 0), draw: getVNCutoffDate(checkDay, 13, 0) },
-              { close: getVNCutoffDate(checkDay, 20, 0), draw: getVNCutoffDate(checkDay, 21, 0) }
+              { close: getVNCutoffDate(checkDay, 12, 0), draw: getVNCutoffDate(checkDay, 13, 0), open: getVNCutoffDate(prevDay, 12, 0) },
+              { close: getVNCutoffDate(checkDay, 20, 0), draw: getVNCutoffDate(checkDay, 21, 0), open: getVNCutoffDate(prevDay, 20, 0) }
             ];
             for (const item of cutoffs) {
               if (item.close > now) {
@@ -407,15 +421,19 @@ export const getActiveDraws = async (req: any, res: Response) => {
                 if (!exists && created < needed) {
                   lastDrawNum += 1;
                   const drawCode = `#${String(lastDrawNum).padStart(4, '0')}`;
-                  await Draw.create({
-                    game: game._id,
-                    drawCode,
-                    openTime: new Date(item.close.getTime() - 8 * 3600 * 1000),
-                    closeTime: item.close,
-                    drawTime: item.draw,
-                    status: 'open'
-                  });
-                  created++;
+                  try {
+                    await Draw.create({
+                      game: game._id,
+                      drawCode,
+                      openTime: item.open,
+                      closeTime: item.close,
+                      drawTime: item.draw,
+                      status: 'open'
+                    });
+                    created++;
+                  } catch (err: any) {
+                    if (err.code !== 11000) throw err;
+                  }
                 }
               }
             }
@@ -430,7 +448,7 @@ export const getActiveDraws = async (req: any, res: Response) => {
         game.code === 'max_4d' ||
         game.code === 'dientoan_636' ||
         game.code === 'bao_636' ||
-        (game.type === 'dientoan' && game.code !== 'bingo18') ||
+        (game.type === 'dientoan' && !['bingo18'].includes(game.code)) ||
         game.type === 'vietlott'
       ) {
         const openDraws = await Draw.find({
@@ -480,29 +498,52 @@ export const getActiveDraws = async (req: any, res: Response) => {
           while (created < needed) {
             const dayOfWeek = getVNDayOfWeek(checkDate);
             if (drawDays.includes(dayOfWeek)) {
-              const isLotto570 = game.code === 'lotto_570';
-              const isMbTimeGame = ['loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(game.code);
-              const is18h15Game = ['dientoan_636', 'bao_636'].includes(game.code) || isMbTimeGame;
+              const is18h10CloseGame = ['loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(game.code);
+              const is18h15Game = ['dientoan_123', 'loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(game.code);
 
-              const closeCutoff = isLotto570 
-                ? getVNCutoffDate(checkDate, 17, 0) 
-                : (isMbTimeGame ? getVNCutoffDate(checkDate, 18, 10) : getVNCutoffDate(checkDate, 17, 20));
-              const drawCutoff = isLotto570 
-                ? getVNCutoffDate(checkDate, 17, 20) 
-                : (is18h15Game ? getVNCutoffDate(checkDate, 18, 15) : getVNCutoffDate(checkDate, 18, 0));
+              const closeCutoff = is18h10CloseGame ? getVNCutoffDate(checkDate, 18, 10) : getVNCutoffDate(checkDate, 17, 20);
+              const drawCutoff = is18h15Game ? getVNCutoffDate(checkDate, 18, 15) : getVNCutoffDate(checkDate, 18, 0);
 
               if (closeCutoff > now) {
                 lastDrawNum += 1;
                 const drawCode = `#${String(lastDrawNum).padStart(4, "0")}`;
-                await Draw.create({
+
+                let openTime: Date;
+                const isPeriodicWeeklyGame = ['power_655', 'mega_645', 'max_3d', 'max_3d_pro', 'dientoan_636', 'bao_636'].includes(game.code);
+                if (isPeriodicWeeklyGame && drawDays.length < 7) {
+                  let prevDayOffset = 1;
+                  while (prevDayOffset <= 7) {
+                    const checkDow = (dayOfWeek - prevDayOffset + 7) % 7;
+                    if (drawDays.includes(checkDow)) {
+                      break;
+                    }
+                    prevDayOffset++;
+                  }
+                  const prevDate = new Date(checkDate.getTime() - prevDayOffset * 24 * 3600 * 1000);
+                  openTime = getVNCutoffDate(prevDate, 17, 20);
+                } else {
+                  openTime = new Date(closeCutoff.getTime() - 24 * 3600 * 1000);
+                }
+
+                const exists = await Draw.findOne({
                   game: game._id,
-                  drawCode,
-                  openTime: new Date(closeCutoff.getTime() - 24 * 3600 * 1000 + (isMbTimeGame ? 5 * 60 * 1000 : 0)),
-                  closeTime: closeCutoff,
-                  drawTime: drawCutoff,
-                  status: 'open'
+                  $or: [{ drawCode }, { closeTime: closeCutoff }]
                 });
-                created++;
+                if (!exists) {
+                  try {
+                    await Draw.create({
+                      game: game._id,
+                      drawCode,
+                      openTime,
+                      closeTime: closeCutoff,
+                      drawTime: drawCutoff,
+                      status: 'open'
+                    });
+                    created++;
+                  } catch (err: any) {
+                    if (err.code !== 11000) throw err;
+                  }
+                }
               }
             }
             checkDate.setDate(checkDate.getDate() + 1);
@@ -592,10 +633,26 @@ export const getDrawResults = async (req: any, res: Response) => {
 // Admin: Tạo kỳ quay mới
 export const createDraw = async (req: any, res: Response) => {
   try {
-    const { gameId, drawCode, openTime, closeTime, jackpotAmount, provinceId } = req.body;
+    let { gameId, drawCode, openTime, closeTime, drawTime, jackpotAmount, provinceId } = req.body;
 
     if (!drawCode || !String(drawCode).trim()) {
       return res.status(400).json({ message: 'Mã kỳ quay không được để trống' });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(gameId)) {
+      let gDoc = await Game.findOne({ code: gameId });
+      if (!gDoc) {
+        try {
+          const { ensureGameConfigs } = require('../services/cronService');
+          if (ensureGameConfigs) await ensureGameConfigs();
+          gDoc = await Game.findOne({ code: gameId });
+        } catch (e) { }
+      }
+      if (gDoc) {
+        gameId = gDoc._id;
+      } else {
+        return res.status(400).json({ message: 'Không tìm thấy loại game hợp lệ' });
+      }
     }
 
     const cleanDrawCode = String(drawCode).trim().startsWith('#')
@@ -617,6 +674,7 @@ export const createDraw = async (req: any, res: Response) => {
       drawCode: cleanDrawCode,
       openTime,
       closeTime,
+      drawTime: drawTime || closeTime,
       jackpotAmount,
       provinceId
     });
@@ -649,42 +707,178 @@ export const syncMbResultsToDienToan = async (mbDraw: any) => {
         closeTime: { $gte: startOfDay, $lte: endOfDay }
       });
 
-      if (!targetDraw) {
-        const closeTime = new Date(Date.UTC(y, m - 1, d, 18 - 7, 10, 0));
-        const drawTime = new Date(Date.UTC(y, m - 1, d, 18 - 7, 15, 0));
-        targetDraw = await Draw.create({
-          game: g._id,
-          drawCode: mbDraw.drawCode || ('#' + Date.now()),
-          openTime: new Date(closeTime.getTime() - 24 * 3600 * 1000 + 5 * 60 * 1000),
-          closeTime,
-          drawTime,
-          winningNumbers: mbDraw.winningNumbers,
-          status: 'completed'
-        });
-      } else {
+      if (targetDraw) {
         targetDraw.winningNumbers = mbDraw.winningNumbers;
         targetDraw.status = 'completed';
         await targetDraw.save();
+        await processDrawResults(targetDraw._id.toString());
+        console.log('syncMbResultsToDienToan: Đã cập nhật kết quả MB sang ' + g.code + ' (Kỳ ' + targetDraw.drawCode + ')');
       }
-
-      await processDrawResults(targetDraw._id.toString());
-      console.log('syncMbResultsToDienToan: Đã đồng bộ kết quả MB sang ' + g.code + ' (Kỳ ' + targetDraw.drawCode + ')');
     }
   } catch (err) {
     console.error('Lỗi khi syncMbResultsToDienToan:', err);
   }
 };
 
+export const normalizeDrawResults = (
+  gameCode: string,
+  winningNumbersInput: any,
+  specialNumbersInput?: any
+): { winningNumbers: string[]; specialNumbers?: string[] } => {
+  if (winningNumbersInput === undefined && specialNumbersInput === undefined) {
+    return { winningNumbers: [] };
+  }
+
+  // Parse raw special numbers if given
+  let specialList: string[] = [];
+  if (specialNumbersInput !== undefined && specialNumbersInput !== null) {
+    if (Array.isArray(specialNumbersInput)) {
+      specialList = specialNumbersInput.map((s: any) => String(s).trim()).filter(Boolean);
+    } else if (typeof specialNumbersInput === 'string') {
+      specialList = specialNumbersInput.split(/[\s,]+/).map((s: string) => s.trim()).filter(Boolean);
+    }
+  }
+
+  // Parse raw winning numbers
+  let rawList: string[] = [];
+  if (Array.isArray(winningNumbersInput)) {
+    rawList = winningNumbersInput.map((s: any) => String(s).trim()).filter(Boolean);
+  } else if (typeof winningNumbersInput === 'string') {
+    if (['lotto_535', 'lotto_570', 'power_655'].includes(gameCode) && (winningNumbersInput.includes('|') || winningNumbersInput.includes('+'))) {
+      const sep = winningNumbersInput.includes('|') ? '|' : '+';
+      const parts = winningNumbersInput.split(sep);
+      const mainPart = parts[0] || '';
+      const specialPart = parts.slice(1).join(' ') || '';
+      const mains = mainPart.split(/[\s,]+/).map((s: string) => s.trim()).filter(Boolean);
+      const specials = specialPart.split(/[\s,]+/).map((s: string) => s.trim()).filter(Boolean);
+      if (specials.length > 0 && specialList.length === 0) {
+        specialList = specials;
+      }
+      rawList = mains;
+    } else {
+      rawList = winningNumbersInput.split(/[\s,]+/).map((s: string) => s.trim()).filter(Boolean);
+    }
+  }
+
+  // Filter out any standalone separator tokens
+  const cleanTokens = rawList.filter(token => token !== '|' && token !== '+' && token !== '-');
+
+  const gCodeLower = (gameCode || '').toLowerCase();
+  if (gCodeLower === 'bingo18' || gCodeLower === 'bingo_18') {
+    const parsed = parseBingo18WinningNumbers(cleanTokens);
+    if (parsed.length === 3) {
+      return {
+        winningNumbers: parsed.map(String)
+      };
+    }
+    return {
+      winningNumbers: cleanTokens.slice(0, 3)
+    };
+  }
+
+  if (gameCode === 'max_3d' || gameCode === 'max_3d_pro') {
+    return {
+      winningNumbers: cleanTokens.map(n => n.padStart(3, '0')),
+      specialNumbers: specialList.length > 0 ? specialList : undefined
+    };
+  }
+
+  if (gameCode === 'max_4d') {
+    return {
+      winningNumbers: cleanTokens.map(n => n.padStart(4, '0')),
+      specialNumbers: specialList.length > 0 ? specialList : undefined
+    };
+  }
+
+  if (gameCode === 'than_tai_4' || gameCode === 'than_tai') {
+    let tokens = cleanTokens;
+    if (tokens.length === 1 && tokens[0].length === 4 && /^\d{4}$/.test(tokens[0])) {
+      tokens = tokens[0].split('');
+    }
+    return {
+      winningNumbers: tokens.slice(0, 4)
+    };
+  }
+
+  if (gameCode === 'dientoan_123' || gameCode === 'dt123') {
+    let tokens = cleanTokens;
+    if (tokens.length >= 3) {
+      tokens = [
+        tokens[0].slice(-1),
+        tokens[1].slice(-2).padStart(2, '0'),
+        tokens[2].slice(-3).padStart(3, '0')
+      ];
+    }
+    return {
+      winningNumbers: tokens
+    };
+  }
+
+  if (gameCode === 'lotto_535' || gameCode === 'lotto_570') {
+    // 5 số thường (01-35 hoặc 01-70) + 1 số đặc biệt
+    let mains: string[] = [];
+    let specialNum = '';
+
+    if (specialList.length > 0) {
+      specialNum = specialList[0].padStart(2, '0');
+      mains = cleanTokens.slice(0, 5).map(n => n.padStart(2, '0'));
+    } else if (cleanTokens.length >= 6) {
+      mains = cleanTokens.slice(0, 5).map(n => n.padStart(2, '0'));
+      specialNum = cleanTokens[5].padStart(2, '0');
+    } else {
+      mains = cleanTokens.map(n => n.padStart(2, '0'));
+    }
+
+    const finalWinning = specialNum ? [...mains, specialNum] : mains;
+    return {
+      winningNumbers: finalWinning,
+      specialNumbers: specialNum ? [specialNum] : []
+    };
+  }
+
+  if (gameCode === 'power_655') {
+    let mains: string[] = [];
+    let specialNum = '';
+
+    if (specialList.length > 0) {
+      specialNum = specialList[0].padStart(2, '0');
+      mains = cleanTokens.slice(0, 6).map(n => n.padStart(2, '0'));
+    } else if (cleanTokens.length >= 7) {
+      mains = cleanTokens.slice(0, 6).map(n => n.padStart(2, '0'));
+      specialNum = cleanTokens[6].padStart(2, '0');
+    } else {
+      mains = cleanTokens.map(n => n.padStart(2, '0'));
+    }
+
+    const finalWinning = specialNum ? [...mains, specialNum] : mains;
+    return {
+      winningNumbers: finalWinning,
+      specialNumbers: specialNum ? [specialNum] : []
+    };
+  }
+
+  return {
+    winningNumbers: cleanTokens,
+    specialNumbers: specialList.length > 0 ? specialList : undefined
+  };
+};
+
 export const enterResults = async (req: any, res: Response) => {
   try {
-    const { winningNumbers, provinceId } = req.body;
+    const { winningNumbers, specialNumbers, provinceId } = req.body;
     const draw = await Draw.findById(req.params.id).populate('game');
 
     if (!draw) {
       return res.status(404).json({ message: 'Không tìm thấy kỳ quay' });
     }
 
-    draw.winningNumbers = winningNumbers;
+    const gameCurrent = draw.game as any;
+    const gCode = gameCurrent?.code || '';
+    const normalized = normalizeDrawResults(gCode, winningNumbers, specialNumbers);
+    draw.winningNumbers = normalized.winningNumbers;
+    if (normalized.specialNumbers) {
+      draw.specialNumbers = normalized.specialNumbers;
+    }
     if (provinceId) draw.provinceId = provinceId;
     draw.status = 'completed';
     await draw.save();
@@ -693,8 +887,7 @@ export const enterResults = async (req: any, res: Response) => {
     await processDrawResults(draw._id.toString());
 
     // Nếu là kỳ quay Miền Bắc (MB), tự động đồng bộ kết quả cho 4 game điện toán theo KQ MB
-    const gameCurrent = draw.game as any;
-    if (gameCurrent && gameCurrent.code === 'MB' && winningNumbers && winningNumbers.length >= 27) {
+    if (gameCurrent && gameCurrent.code === 'MB' && draw.winningNumbers && draw.winningNumbers.length >= 27) {
       syncMbResultsToDienToan(draw).catch(e => console.error('enterResults syncMbResultsToDienToan error:', e));
     }
 
@@ -751,7 +944,30 @@ export const getAllDraws = async (req: any, res: Response) => {
 
     let query: any = {};
     if (gameId) {
-      query.game = gameId;
+      if (mongoose.Types.ObjectId.isValid(gameId)) {
+        query.game = gameId;
+      } else {
+        let gDoc = await Game.findOne({ code: gameId });
+        if (!gDoc) {
+          try {
+            const { ensureGameConfigs, ensureUpcomingDraws } = require('../services/cronService');
+            if (ensureGameConfigs) await ensureGameConfigs();
+            gDoc = await Game.findOne({ code: gameId });
+            if (gDoc && ensureUpcomingDraws) {
+              ensureUpcomingDraws().catch((e: any) => console.error('ensureUpcomingDraws error:', e));
+            }
+          } catch (e) {
+            console.error('Error auto-seeding game config:', e);
+          }
+        }
+
+        if (gDoc) {
+          query.game = gDoc._id;
+        } else {
+          // Trả về mảng rỗng nếu không tìm thấy loại game hợp lệ thay vì lỗi CastError 500
+          return res.json({ data: [], total: 0, page, limit, totalPages: 0 });
+        }
+      }
     }
     if (provinceId && provinceId !== "all") {
       query.provinceId = provinceId;
@@ -778,10 +994,17 @@ export const getAllDraws = async (req: any, res: Response) => {
     const skip = (page - 1) * limit;
     const isFiltered = Object.keys(query).length > 0;
 
+    let sortObj: any = { closeTime: -1, createdAt: -1 };
+    if (status === 'open') {
+      sortObj = { closeTime: 1 };
+    } else if (!status || status === 'all') {
+      sortObj = { status: -1, closeTime: 1 };
+    }
+
     const [draws, total] = await Promise.all([
       Draw.find(query)
         .populate("game")
-        .sort({ closeTime: -1, createdAt: -1 })
+        .sort(sortObj)
         .skip(skip)
         .limit(limit)
         .lean(),
@@ -798,9 +1021,9 @@ export const getAllDraws = async (req: any, res: Response) => {
 export const updateDraw = async (req: any, res: Response) => {
   try {
     const { id } = req.params;
-    const { drawCode, openTime, closeTime, drawTime, status, winningNumbers, jackpotAmount, provinceId } = req.body;
+    const { drawCode, openTime, closeTime, drawTime, status, winningNumbers, specialNumbers, jackpotAmount, provinceId } = req.body;
 
-    const draw = await Draw.findById(id);
+    const draw = await Draw.findById(id).populate('game');
     if (!draw) {
       return res.status(404).json({ message: 'Không tìm thấy kỳ quay' });
     }
@@ -823,20 +1046,29 @@ export const updateDraw = async (req: any, res: Response) => {
     if (closeTime !== undefined) draw.closeTime = new Date(closeTime);
     if (drawTime !== undefined) draw.drawTime = drawTime ? new Date(drawTime) : undefined;
     if (status !== undefined) draw.status = status;
-    if (winningNumbers !== undefined) {
-      if (Array.isArray(winningNumbers)) {
-        draw.winningNumbers = winningNumbers;
-      } else if (typeof winningNumbers === 'string') {
-        draw.winningNumbers = winningNumbers.split(',').map((s: string) => s.trim()).filter(Boolean);
+
+    const gameCurrent = draw.game as any;
+    const gCode = gameCurrent?.code || '';
+    if (winningNumbers !== undefined || specialNumbers !== undefined) {
+      const normalized = normalizeDrawResults(gCode, winningNumbers, specialNumbers);
+      draw.winningNumbers = normalized.winningNumbers;
+      if (normalized.specialNumbers) {
+        draw.specialNumbers = normalized.specialNumbers;
       }
     }
     if (jackpotAmount !== undefined) draw.jackpotAmount = jackpotAmount;
     if (provinceId !== undefined) draw.provinceId = provinceId;
 
+    if (draw.winningNumbers && draw.winningNumbers.length > 0 && status !== 'cancelled') {
+      draw.status = 'completed';
+    } else if (status !== undefined) {
+      draw.status = status;
+    }
+
     await draw.save();
 
     if (draw.winningNumbers && draw.winningNumbers.length > 0 && draw.status === 'completed') {
-      processDrawResults(draw._id.toString()).catch(e => console.error('updateDraw processDrawResults error:', e));
+      await processDrawResults(draw._id.toString());
 
       const gameCurrent = draw.game as any;
       if (gameCurrent && gameCurrent.code === 'MB' && draw.winningNumbers.length >= 27) {

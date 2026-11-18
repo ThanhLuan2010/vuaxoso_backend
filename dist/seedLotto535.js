@@ -41,31 +41,36 @@ const seedLotto535Draws = async () => {
         const cutoffs = [];
         let checkDay = new Date(now);
         while (cutoffs.length < 10) {
+            const prevDay = new Date(checkDay.getTime() - 24 * 3600 * 1000);
             const cutoff12 = getVNCutoffDate(checkDay, 12, 0);
+            const draw13 = getVNCutoffDate(checkDay, 13, 0);
+            const openPrev20 = getVNCutoffDate(prevDay, 20, 0);
             if (cutoff12 > now && cutoffs.length < 10) {
-                cutoffs.push(cutoff12);
+                cutoffs.push({ close: cutoff12, draw: draw13, open: openPrev20 });
             }
             const cutoff20 = getVNCutoffDate(checkDay, 20, 0);
+            const draw21 = getVNCutoffDate(checkDay, 21, 0);
+            const openSame12 = getVNCutoffDate(checkDay, 12, 0);
             if (cutoff20 > now && cutoffs.length < 10) {
-                cutoffs.push(cutoff20);
+                cutoffs.push({ close: cutoff20, draw: draw21, open: openSame12 });
             }
             checkDay.setDate(checkDay.getDate() + 1);
         }
         const baseNum = 1313;
         for (let i = 0; i < cutoffs.length; i++) {
-            const closeTime = cutoffs[i];
-            const openTime = i === 0 ? new Date(now.getTime() - 60000) : new Date(cutoffs[i - 1].getTime() + 1000);
+            const item = cutoffs[i];
             const drawCode = `#${String(baseNum + i).padStart(4, '0')}`;
             await Draw_1.default.create({
                 game: game._id,
                 drawCode,
-                openTime,
-                closeTime,
+                openTime: item.open,
+                closeTime: item.close,
+                drawTime: item.draw,
                 status: 'open'
             });
-            console.log(`Tạo kỳ quay LOTTO 5/35 ${drawCode}: Chốt vé lúc ${closeTime.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}`);
+            console.log(`Tạo kỳ quay LOTTO 5/35 ${drawCode}: Mở lúc ${item.open.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}, Chốt lúc ${item.close.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}, Xổ lúc ${item.draw.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}`);
         }
-        console.log('--- HOÀN THÀNH: Đã tạo 10 kỳ quay LOTTO 5/35 (Chốt 12h & 20h) ---');
+        console.log('--- HOÀN THÀNH: Đã tạo 10 kỳ quay LOTTO 5/35 (Đóng 12h/Xổ 13h & Đóng 20h/Xổ 21h) ---');
         process.exit(0);
     }
     catch (err) {

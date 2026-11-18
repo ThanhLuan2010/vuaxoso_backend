@@ -1,5 +1,5 @@
 import express from 'express';
-import { getGames, createGame, updateGame, updateGameRates } from '../controllers/gameController';
+import { getGames, createGame, updateGame, updateGameRates, deleteGame } from '../controllers/gameController';
 import { protect, admin } from '../middleware/authMiddleware';
 
 const router = express.Router();
@@ -10,5 +10,6 @@ router.get('/', getGames);
 router.post('/', protect, admin, createGame);
 router.put('/:id', protect, admin, updateGame);
 router.put('/:id/rates', protect, admin, updateGameRates);
+router.delete('/:id', protect, admin, deleteGame);
 
 export default router;

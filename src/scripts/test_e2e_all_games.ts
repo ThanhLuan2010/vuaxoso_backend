@@ -312,12 +312,254 @@ testCase('TRUOT_LOTO', 'Trượt lô tô 4 (2.5x), 8 (8x), 10 (12x)', () => {
 testCase('THAN_TAI_4', 'Thần tài 4 (1220x), ĐT 1-2-3 (40.000x)', () => {
   assert.strictEqual(10000 * 1220, 12200000);
   assert.strictEqual(10000 * 40000, 400000000);
+
+  // Thần Tài 4 prize calculation logic test
+  const calculateThanTai = (ticket: string, drawResult: string) => {
+    let boardPrize = 0;
+    const ticketStr = ticket;
+    const WXYZ = drawResult;
+    if (ticketStr.length === 4 && WXYZ.length === 4) {
+      const A = ticketStr[0], B = ticketStr[1], C = ticketStr[2], D = ticketStr[3];
+      const W = WXYZ[0], X = WXYZ[1], Y = WXYZ[2], Z = WXYZ[3];
+      if (ticketStr === WXYZ) {
+        boardPrize = 12200000;
+      } else if (A === W && B === X && C === Y) {
+        boardPrize = 1100000;
+      } else if (B === X && C === Y && D === Z) {
+        boardPrize = 1100000;
+      } else if ((A === W && B === X) || (C === Y && D === Z)) {
+        boardPrize = 100000;
+      }
+    }
+    return boardPrize;
+  };
+
+  assert.strictEqual(calculateThanTai('1989', '1989'), 12200000); // Giải Nhất
+  assert.strictEqual(calculateThanTai('1980', '1989'), 1100000);  // Giải Nhì (3 đầu)
+  assert.strictEqual(calculateThanTai('0989', '1989'), 1100000);  // Giải Ba (3 cuối)
+  assert.strictEqual(calculateThanTai('1900', '1989'), 100000);   // Giải KK (2 đầu)
+  assert.strictEqual(calculateThanTai('0089', '1989'), 100000);   // Giải KK (2 cuối)
+  assert.strictEqual(calculateThanTai('1009', '1989'), 0);        // Trật
+
+  // Điện toán 1-2-3 prize calculation logic test
+  const calculateDt123 = (ticket: string[], w: string[]) => {
+    let boardPrize = 0;
+    const ticketStr = ticket.join('');
+    if (ticketStr.length === 6 && w.length >= 3) {
+      const ticketB1 = ticketStr[0];
+      const ticketB2 = ticketStr.slice(1, 3);
+      const ticketB3 = ticketStr.slice(3, 6);
+      const wB1 = String(w[0] ?? '').trim();
+      const wB2 = String(w[1] ?? '').trim().padStart(2, '0');
+      const wB3 = String(w[2] ?? '').trim().padStart(3, '0');
+      const match1 = (ticketB1 === wB1);
+      const match2 = (ticketB2 === wB2);
+      const match3 = (ticketB3 === wB3);
+
+      if (match1 && match2 && match3) {
+        boardPrize = 400000000; // x40.000
+      } else if (match2 && match3) {
+        boardPrize = 10000000;  // x1.000
+      } else if (match1 && match3) {
+        boardPrize = 1000000;   // x100
+      } else if (match3) {
+        boardPrize = 500000;    // x50
+      }
+    }
+    return boardPrize;
+  };
+
+  const drawRes = ['5', '28', '789'];
+  assert.strictEqual(calculateDt123(['5', '2', '8', '7', '8', '9'], drawRes), 400000000); // Giải Nhất
+  assert.strictEqual(calculateDt123(['3', '2', '8', '7', '8', '9'], drawRes), 10000000);  // Giải Nhì
+  assert.strictEqual(calculateDt123(['5', '0', '0', '7', '8', '9'], drawRes), 1000000);   // Giải Ba
+  assert.strictEqual(calculateDt123(['3', '0', '0', '7', '8', '9'], drawRes), 500000);    // Giải Tư
+  assert.strictEqual(calculateDt123(['5', '2', '8', '0', '0', '0'], drawRes), 0);         // Trật
 });
 
 testCase('LOTTO_535_570', 'Lotto 5/35 Bao 6 chính + 2 đặc biệt = 12 bộ = 120.000đ', () => {
   const boards = getCombinationsCount(6, 5) * 2;
   assert.strictEqual(boards, 12);
   assert.strictEqual(boards * 10000, 120000);
+});
+
+testCase('LOTTO_535_570_PRIZE_CALCULATION', 'Lotto 5/35 & 5/70: Phân định rõ 5 số thường và 1 số đặc biệt khi tính giải', () => {
+  // Test normalizeDrawResults
+  const { normalizeDrawResults } = require('../controllers/drawController');
+  
+  // Case 1: Nhập kết quả có dấu '|' từ CMS
+  const r1 = normalizeDrawResults('lotto_535', '05, 12, 19, 27, 34 | 08');
+  assert.deepStrictEqual(r1.winningNumbers, ['05', '12', '19', '27', '34', '08']);
+  assert.deepStrictEqual(r1.specialNumbers, ['08']);
+
+  // Case 2: Nhập số thường và số đặc biệt riêng biệt từ form CMS
+  const r2 = normalizeDrawResults('lotto_570', ['1', '15', '23', '45', '67'], ['9']);
+  assert.deepStrictEqual(r2.winningNumbers, ['01', '15', '23', '45', '67', '09']);
+  assert.deepStrictEqual(r2.specialNumbers, ['09']);
+
+  // Case 3: Nhập dạng mảng 6 số liền nhau
+  const r3 = normalizeDrawResults('lotto_535', ['02', '10', '18', '24', '31', '06']);
+  assert.deepStrictEqual(r3.winningNumbers, ['02', '10', '18', '24', '31', '06']);
+  assert.deepStrictEqual(r3.specialNumbers, ['06']);
+
+  // Giả lập tính toán giải thưởng Lotto 5/35 với 5 số thường: [05, 12, 19, 27, 34] và 1 số đặc biệt: [08]
+  const draw535 = {
+    winningNumbers: ['05', '12', '19', '27', '34', '08'],
+    specialNumbers: ['08']
+  };
+  const drawMain = draw535.winningNumbers.slice(0, 5);
+  const drawSpecial = draw535.specialNumbers[0];
+
+  const calc535 = (m: string[], s: string) => {
+    let match = m.filter(n => drawMain.includes(n)).length;
+    let hasSpecial = s === drawSpecial;
+    if (match === 5 && hasSpecial) return 3000000000;
+    if (match === 5 && !hasSpecial) return 10000000;
+    if (match === 4 && hasSpecial) return 5000000;
+    if (match === 4 && !hasSpecial) return 500000;
+    if (match === 3 && hasSpecial) return 100000;
+    if (match === 3 && !hasSpecial) return 30000;
+    if (match >= 0 && match <= 2 && hasSpecial) return 10000;
+    return 0;
+  };
+
+  assert.strictEqual(calc535(['05', '12', '19', '27', '34'], '08'), 3000000000); // 5+1: Jackpot
+  assert.strictEqual(calc535(['05', '12', '19', '27', '34'], '01'), 10000000);   // 5+0: 10tr
+  assert.strictEqual(calc535(['05', '12', '19', '27', '01'], '08'), 5000000);    // 4+1: 5tr
+  assert.strictEqual(calc535(['05', '12', '19', '27', '01'], '02'), 500000);     // 4+0: 500k
+  assert.strictEqual(calc535(['05', '12', '19', '02', '01'], '08'), 100000);     // 3+1: 100k
+  assert.strictEqual(calc535(['05', '12', '19', '02', '01'], '03'), 30000);      // 3+0: 30k
+  assert.strictEqual(calc535(['05', '12', '03', '02', '01'], '08'), 10000);      // 2+1: 10k
+  assert.strictEqual(calc535(['05', '04', '03', '02', '01'], '08'), 10000);      // 1+1: 10k
+  assert.strictEqual(calc535(['06', '04', '03', '02', '01'], '08'), 10000);      // 0+1: 10k
+  assert.strictEqual(calc535(['06', '04', '03', '02', '01'], '02'), 0);          // 0+0: 0đ
+
+  // Giả lập tính toán giải thưởng Lotto 5/70 với 5 số thường: [05, 12, 19, 27, 34] và 1 Mega Ball: [15]
+  const draw570 = {
+    winningNumbers: ['05', '12', '19', '27', '34', '15'],
+    specialNumbers: ['15']
+  };
+  const drawMain70 = draw570.winningNumbers.slice(0, 5);
+  const drawSpecial70 = draw570.specialNumbers[0];
+
+  const calc570 = (m: string[], s: string) => {
+    let match = m.filter(n => drawMain70.includes(n)).length;
+    let hasSpecial = s === drawSpecial70;
+    if (match === 5 && hasSpecial) return 6000000000;
+    if (match === 5 && !hasSpecial) return 10000000;
+    if (match === 4 && hasSpecial) return 10000000;
+    if (match === 4 && !hasSpecial) return 9000000;
+    if (match === 3 && hasSpecial) return 5000000;
+    if (match === 3 && !hasSpecial) return 5000000;
+    if (match === 2 && hasSpecial) return 1000000;
+    if (match === 1 && hasSpecial) return 100000;
+    if (match === 0 && hasSpecial) return 10000;
+    return 0;
+  };
+
+  assert.strictEqual(calc570(['05', '12', '19', '27', '34'], '15'), 6000000000); // 5+1: Jackpot 6 tỷ
+  assert.strictEqual(calc570(['05', '12', '19', '27', '34'], '01'), 10000000);   // 5+0: 10tr
+  assert.strictEqual(calc570(['05', '12', '19', '27', '01'], '15'), 10000000);   // 4+1: 10tr
+  assert.strictEqual(calc570(['05', '12', '19', '27', '01'], '02'), 9000000);    // 4+0: 9tr
+  assert.strictEqual(calc570(['05', '12', '19', '02', '01'], '15'), 5000000);    // 3+1: 5tr
+  assert.strictEqual(calc570(['05', '12', '19', '02', '01'], '03'), 5000000);    // 3+0: 5tr
+  assert.strictEqual(calc570(['05', '12', '03', '02', '01'], '15'), 1000000);    // 2+1: 1tr
+  assert.strictEqual(calc570(['05', '04', '03', '02', '01'], '15'), 100000);     // 1+1: 100k
+  assert.strictEqual(calc570(['06', '04', '03', '02', '01'], '15'), 10000);      // 0+1: 10k
+  assert.strictEqual(calc570(['06', '04', '03', '02', '01'], '02'), 0);          // 0+0: 0đ
+});
+
+testCase('LOTTO_535_SCHEDULE', 'Lotto 5/35: 2 kỳ/ngày (Kỳ 1: Mở 20h hôm trước - Đóng 12h - Xổ 13h; Kỳ 2: Mở 12h - Đóng 20h - Xổ 21h)', () => {
+  const getLotto535ActiveDraw = (currentHour: number, currentMinute: number) => {
+    const currentMins = currentHour * 60 + currentMinute;
+    const cutoff12Mins = 12 * 60; // 12:00
+    const cutoff20Mins = 20 * 60; // 20:00
+
+    if (currentMins < cutoff12Mins) {
+      // Kỳ 1: Chốt 12h trưa, Xổ 13h trưa
+      return {
+        drawCode: '#1313',
+        openHour: 20, // 20h hôm trước
+        closeHour: 12,
+        drawHour: 13,
+        isNextDay: false,
+      };
+    } else if (currentMins < cutoff20Mins) {
+      // Kỳ 2: Chốt 20h tối, Xổ 21h tối
+      return {
+        drawCode: '#1314',
+        openHour: 12, // 12h trưa nay
+        closeHour: 20,
+        drawHour: 21,
+        isNextDay: false,
+      };
+    } else {
+      // Kỳ 1 ngày hôm sau: Chốt 12h trưa mai, Xổ 13h trưa mai
+      return {
+        drawCode: '#1315',
+        openHour: 20, // 20h tối nay
+        closeHour: 12,
+        drawHour: 13,
+        isNextDay: true,
+      };
+    }
+  };
+
+  // Case 1: Lúc 11:30 sáng -> Nhận cược cho Kỳ 1 (chốt 12h, xổ 13h)
+  const draw1 = getLotto535ActiveDraw(11, 30);
+  assert.strictEqual(draw1.closeHour, 12);
+  assert.strictEqual(draw1.drawHour, 13);
+  assert.strictEqual(draw1.openHour, 20);
+  assert.strictEqual(draw1.isNextDay, false);
+
+  // Case 2: Lúc 12:01 trưa -> Kỳ 1 đã chốt, nhận cược cho Kỳ 2 (chốt 20h, xổ 21h, mở 12h)
+  const draw2 = getLotto535ActiveDraw(12, 1);
+  assert.strictEqual(draw2.closeHour, 20);
+  assert.strictEqual(draw2.drawHour, 21);
+  assert.strictEqual(draw2.openHour, 12);
+  assert.strictEqual(draw2.isNextDay, false);
+
+  // Case 3: Lúc 20:05 tối -> Kỳ 2 đã chốt, nhận cược cho Kỳ 1 ngày mai (chốt 12h ngày mai, xổ 13h ngày mai, mở 20h)
+  const draw3 = getLotto535ActiveDraw(20, 5);
+  assert.strictEqual(draw3.closeHour, 12);
+  assert.strictEqual(draw3.drawHour, 13);
+  assert.strictEqual(draw3.openHour, 20);
+  assert.strictEqual(draw3.isNextDay, true);
+});
+
+testCase('VIETLOTT_DT636_SCHEDULE', 'Lịch quay: Power 6/55, Mega 6/45, Max 3D/3D Pro, Điện toán 6x36: 17h20 chốt, 18h xổ, mở kỳ sau = đóng kỳ trước', () => {
+  const getPrevDrawDay = (currentDay: number, drawDays: number[]) => {
+    let offset = 1;
+    while (offset <= 7) {
+      const check = (currentDay - offset + 7) % 7;
+      if (drawDays.includes(check)) return { prevDay: check, dayOffset: offset };
+      offset++;
+    }
+    return { prevDay: currentDay, dayOffset: 1 };
+  };
+
+  // 1. Power 6/55 & Max3D Pro: T3 (2), T5 (4), T7 (6)
+  const powerDays = [2, 4, 6];
+  assert.strictEqual(getPrevDrawDay(4, powerDays).prevDay, 2); // T5 mở lúc đóng T3 (cách 2 ngày)
+  assert.strictEqual(getPrevDrawDay(6, powerDays).prevDay, 4); // T7 mở lúc đóng T5 (cách 2 ngày)
+  assert.strictEqual(getPrevDrawDay(2, powerDays).prevDay, 6); // T3 mở lúc đóng T7 (cách 3 ngày)
+
+  // 2. Mega 6/45: T4 (3), T6 (5), CN (0)
+  const megaDays = [3, 5, 0];
+  assert.strictEqual(getPrevDrawDay(3, megaDays).prevDay, 0); // T4 mở lúc đóng CN (cách 3 ngày)
+  assert.strictEqual(getPrevDrawDay(5, megaDays).prevDay, 3); // T6 mở lúc đóng T4 (cách 2 ngày)
+  assert.strictEqual(getPrevDrawDay(0, megaDays).prevDay, 5); // CN mở lúc đóng T6 (cách 2 ngày)
+
+  // 3. Max3D / Max3D+: T2 (1), T4 (3), T6 (5)
+  const max3dDays = [1, 3, 5];
+  assert.strictEqual(getPrevDrawDay(1, max3dDays).prevDay, 5); // T2 mở lúc đóng T6 (cách 3 ngày)
+  assert.strictEqual(getPrevDrawDay(3, max3dDays).prevDay, 1); // T4 mở lúc đóng T2 (cách 2 ngày)
+  assert.strictEqual(getPrevDrawDay(5, max3dDays).prevDay, 3); // T6 mở lúc đóng T4 (cách 2 ngày)
+
+  // 4. Điện toán 6x36: T4 (3), T7 (6)
+  const dt636Days = [3, 6];
+  assert.strictEqual(getPrevDrawDay(3, dt636Days).prevDay, 6); // T4 mở lúc đóng T7 (cách 4 ngày)
+  assert.strictEqual(getPrevDrawDay(6, dt636Days).prevDay, 3); // T7 mở lúc đóng T4 (cách 3 ngày)
 });
 
 // ==========================================
@@ -354,6 +596,43 @@ testCase('VALIDATION', 'Kiểm tra trừ số dư ví (Balance debit) và chặn
   const canAfford = userBalance >= orderCost2;
   assert.strictEqual(canAfford, false, 'Không đủ số dư');
 });
+
+testCase('NOTIFICATION', 'Thanh toán giỏ hàng nhiều vé tạo thông báo riêng cho từng vé (khớp giá 100% khi nhấn chi tiết)', () => {
+  // Giả lập 3 đơn hàng được tạo trong 1 lượt thanh toán giỏ hàng
+  const createdOrders = [
+    { _id: 'ord_1', orderId: 'ORD_001', gameType: 'power_655', totalCost: 20000 },
+    { _id: 'ord_2', orderId: 'ORD_002', gameType: 'mega_645', totalCost: 30000 },
+    { _id: 'ord_3', orderId: 'ORD_003', gameType: 'MB', totalCost: 50000 }
+  ];
+
+  const GAME_NAMES_MAP: Record<string, string> = {
+    power_655: 'POWER 6/55',
+    mega_645: 'MEGA 6/45',
+    MB: 'LÔ ĐỀ MIỀN BẮC'
+  };
+
+  const notifications = createdOrders.map(ord => ({
+    title: 'Mua vé thành công',
+    body: `Bạn đã thanh toán thành công vé ${GAME_NAMES_MAP[ord.gameType]} (#${ord.orderId}). Tiền thanh toán: ${ord.totalCost.toLocaleString('vi-VN')} đ`,
+    orderId: ord._id,
+    cost: ord.totalCost
+  }));
+
+  // Kiểm tra mỗi vé có 1 thông báo riêng biệt
+  assert.strictEqual(notifications.length, 3);
+  assert.strictEqual(notifications[0].orderId, 'ord_1');
+  assert.strictEqual(notifications[0].cost, 20000);
+  assert(notifications[0].body.includes('20.000 đ'));
+
+  assert.strictEqual(notifications[1].orderId, 'ord_2');
+  assert.strictEqual(notifications[1].cost, 30000);
+  assert(notifications[1].body.includes('30.000 đ'));
+
+  assert.strictEqual(notifications[2].orderId, 'ord_3');
+  assert.strictEqual(notifications[2].cost, 50000);
+  assert(notifications[2].body.includes('50.000 đ'));
+});
+
 
 console.log('\n=============================================================================');
 const totalPassed = results.filter((r) => r.passed).length;

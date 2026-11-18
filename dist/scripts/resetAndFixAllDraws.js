@@ -21,8 +21,6 @@ function getVNDayOfWeek(date) {
 }
 const GAME_CONFIGS = [
     { code: 'keno', name: 'KENO', type: 'vietlott', cronExpression: '*/8 * * * *', drawDurationMinutes: 8 },
-    { code: 'bao_keno', name: 'BAO KENO', type: 'vietlott', cronExpression: '*/8 * * * *', drawDurationMinutes: 8 },
-    { code: 'clln_keno', name: 'CẶN LỚN KENO', type: 'vietlott', cronExpression: '*/8 * * * *', drawDurationMinutes: 8 },
     { code: 'power_655', name: 'POWER 6/55', type: 'vietlott', cronExpression: '0 18 * * 2,4,6', drawDurationMinutes: 0, days: [2, 4, 6], baseNum: 1323, cutoffHour: 17, cutoffMin: 20 },
     { code: 'mega_645', name: 'MEGA 6/45', type: 'vietlott', cronExpression: '0 18 * * 3,5,0', drawDurationMinutes: 0, days: [3, 5, 0], baseNum: 1250, cutoffHour: 17, cutoffMin: 20 },
     { code: 'max_3d', name: 'MAX 3D', type: 'vietlott', cronExpression: '0 18 * * 1,3,5', drawDurationMinutes: 0, days: [1, 3, 5], baseNum: 850, cutoffHour: 17, cutoffMin: 20 },
@@ -119,9 +117,19 @@ const resetAndFixAllDraws = async () => {
             const baseNum = cfg.baseNum || 1000;
             for (let i = 0; i < cutoffs.length; i++) {
                 const closeTime = cutoffs[i];
-                const openTime = i === 0 ? new Date(now.getTime() - 60000) : new Date(cutoffs[i - 1].getTime() + 1000);
+                let openTime = i === 0 ? new Date(now.getTime() - 60000) : new Date(cutoffs[i - 1].getTime() + 1000);
+                if (cfg.code === 'lotto_535') {
+                    const vnHour = (closeTime.getUTCHours() + 7) % 24;
+                    openTime = vnHour === 12
+                        ? new Date(closeTime.getTime() - 16 * 3600 * 1000)
+                        : new Date(closeTime.getTime() - 8 * 3600 * 1000);
+                }
                 const drawCode = `#${String(baseNum + i).padStart(4, '0')}`;
-                const drawTime = cfg.code === 'lotto_570' ? new Date(closeTime.getTime() + 20 * 60 * 1000) : (['MN', 'MT', 'MB'].includes(cfg.code) ? new Date(closeTime.getTime() + 5 * 60 * 1000) : undefined);
+                const drawTime = cfg.code === 'lotto_535'
+                    ? new Date(closeTime.getTime() + 60 * 60 * 1000)
+                    : cfg.code === 'lotto_570'
+                        ? new Date(closeTime.getTime() + 20 * 60 * 1000)
+                        : (['MN', 'MT', 'MB'].includes(cfg.code) ? new Date(closeTime.getTime() + 5 * 60 * 1000) : undefined);
                 await Draw_1.default.create({
                     game: game._id,
                     drawCode,

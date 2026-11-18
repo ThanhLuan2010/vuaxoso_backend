@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.updateOrderAdmin = exports.getOrderSummary = exports.getAllOrders = exports.getOrderById = exports.getMyOrders = exports.createOrder = exports.checkoutOrders = void 0;
+const orderIdGenerator_1 = require("../utils/orderIdGenerator");
 const checkoutOrders = async (req, res) => {
     try {
         const rawOrders = req.body.orders || req.body.items || [];
@@ -72,13 +73,15 @@ const checkoutOrders = async (req, res) => {
             else {
                 const cacheKey = `${gameType}_${drawId}_${provinceName || ""}_${drawDate || ""}`;
                 if (!drawCache[cacheKey]) {
-                    const searchGameCode = gameType.includes("max_3d") ? "max_3d" : ((gameType === "bao_keno" || gameType === "clln_keno") ? "keno" : gameType);
+                    const searchGameCode = ['loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(gameType)
+                        ? 'MB'
+                        : ((gameType === "bao_keno" || gameType === "clln_keno") ? "keno" : gameType);
                     if (!gameCache[searchGameCode]) {
                         gameCache[searchGameCode] = await Game_1.default.findOne({ code: searchGameCode });
                     }
                     const gameDoc = gameCache[searchGameCode];
                     let draw = null;
-                    const isLodeOrRegion = ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn"].includes(searchGameCode);
+                    const isLodeOrRegion = ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn"].includes(searchGameCode) || ['loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(gameType);
                     const isScheduledDate = (typeof drawId === "string" && (drawId.startsWith("sched_") || /^\d{2}\/\d{2}\/\d{4}/.test(drawId))) || (drawDate && /^\d{2}\/\d{2}\/\d{4}/.test(drawDate));
                     if (drawId === "DUMMY_DRAW_ID") {
                         if (gameDoc) {
@@ -101,6 +104,25 @@ const checkoutOrders = async (req, res) => {
                         if (!draw) {
                             draw = await Draw_1.default.findOne({ drawCode: { $in: [drawId, cleanCode] } });
                         }
+                    }
+                    if (!draw && gameDoc) {
+                        const rawSearchStr = `${drawId || ''} ${drawDate || ''}`;
+                        const matchCode = rawSearchStr.match(/#\d+/);
+                        if (matchCode) {
+                            const codeVariant = matchCode[0];
+                            const rawNum = codeVariant.replace(/^#/, '');
+                            draw = await Draw_1.default.findOne({
+                                game: gameDoc._id,
+                                drawCode: { $in: [codeVariant, rawNum, `#${rawNum.padStart(5, '0')}`, rawNum.padStart(5, '0')] }
+                            });
+                        }
+                    }
+                    if (!draw && (gameType === 'bingo18' || gameType === 'bingo_18') && gameDoc) {
+                        draw = await Draw_1.default.findOne({
+                            game: gameDoc._id,
+                            status: 'open',
+                            closeTime: { $gt: now }
+                        }).sort({ closeTime: 1 });
                     }
                     // Khớp kỳ quay theo ngày và đài đối với Lô Đề / XSKT nếu chưa tìm thấy draw theo drawId
                     if (!draw && isLodeOrRegion) {
@@ -184,11 +206,13 @@ const checkoutOrders = async (req, res) => {
         const rawIp = req.headers["x-forwarded-for"] || req.socket?.remoteAddress || req.ip || "";
         const ipAddress = Array.isArray(rawIp) ? rawIp[0] : (typeof rawIp === "string" ? rawIp.split(",")[0].trim() : rawIp);
         const loginDevice = req.headers["user-agent"] || "";
-        // Clear cart immediately
-        await Cart_1.default.findOneAndUpdate({ user: req.user.id }, { items: [] }).catch(() => { });
-        // Prepare all order documents
+        // Clear cart immediately ONLY if this checkout explicitly requested clearing cart (e.g. from Cart checkout)
+        if (req.body.clearCart === true) {
+            await Cart_1.default.findOneAndUpdate({ user: req.user.id }, { items: [] }).catch(() => { });
+        }
+        // Prepare all order documents with concise auto-incrementing orderId (a_0000001...)
+        const orderIds = await (0, orderIdGenerator_1.getNextOrderIds)(preparedOrders.length);
         let runningBalance = balanceBefore;
-        const timestamp = Date.now();
         const orderDocs = preparedOrders.map((ord, idx) => {
             const ordBefore = runningBalance;
             runningBalance -= ord.totalCost;
@@ -197,7 +221,7 @@ const checkoutOrders = async (req, res) => {
                 balanceBefore: ordBefore,
                 balanceAfter: ordAfter,
                 user: req.user.id,
-                orderId: `ORD_${timestamp}_${Math.floor(100 + Math.random() * 900)}_${idx + 1}`,
+                orderId: orderIds[idx],
                 gameType: ord.gameType,
                 playType: ord.playType,
                 drawId: ord.drawId,
@@ -249,41 +273,53 @@ const checkoutOrders = async (req, res) => {
                 console.error("Error updating tickets in checkoutOrders:", e);
             }
         })();
-        // Create 1 notification
-        await Notification_1.default.create({
-            user: user._id,
-            title: "Mua vé thành công",
-            body: `Bạn đã thanh toán thành công ${createdOrders.length} vé. Tổng tiền: ${totalBatchCost.toLocaleString("vi-VN")} đ`,
-            type: "order",
-            category: "important",
-            orderId: createdOrders[0]?._id?.toString()
-        }).catch(() => { });
+        const GAME_NAMES_MAP = {
+            power_655: "POWER 6/55",
+            mega_645: "MEGA 6/45",
+            keno: "KENO",
+            bao_keno: "BAO KENO",
+            clln_keno: "KENO CHẴN LẺ / LỚN NHỎ",
+            max_3d: "MAX 3D",
+            max_3d_pro: "MAX 3D PRO",
+            max_4d: "MAX 4D",
+            bingo18: "BINGO 18",
+            lotto_535: "LOTTO 5/35",
+            lotto_570: "LOTTO 5/70",
+            loto_235: "LÔ TÔ 2-3-5",
+            loto_cap: "LÔ TÔ CẶP SỐ",
+            dientoan_636: "ĐIỆN TOÁN 6X36",
+            than_tai_4: "ĐIỆN TOÁN THẦN TÀI",
+            dientoan_123: "ĐIỆN TOÁN 1*2*3",
+            truot_loto: "TRƯỢT LÔ TÔ",
+            MB: "LÔ ĐỀ MIỀN BẮC",
+            MT: "LÔ ĐỀ MIỀN TRUNG",
+            MN: "LÔ ĐỀ MIỀN NAM",
+        };
+        // Tạo thông báo riêng biệt cho từng vé đã mua, tránh việc gộp nhiều vé vào 1 thông báo
+        // nhưng khi nhấn vào chi tiết lại chỉ ra 1 vé có giá tiền khác gây hiểu lầm cho người dùng
+        for (const ord of createdOrders) {
+            let gameTitle = GAME_NAMES_MAP[ord.gameType] || ord.gameType;
+            if (ord.gameType && ord.gameType.startsWith("kienthiet_")) {
+                const provCode = ord.gameType.replace("kienthiet_", "").toUpperCase();
+                gameTitle = `XSKT ${ord.provinceName || provCode}`;
+            }
+            else if (gameCache[ord.gameType]?.name) {
+                gameTitle = gameCache[ord.gameType].name;
+            }
+            await Notification_1.default.create({
+                user: user._id,
+                title: "Mua vé thành công",
+                body: `Bạn đã thanh toán thành công vé ${gameTitle} (#${ord.orderId}). Tiền thanh toán: ${(ord.totalCost || 0).toLocaleString("vi-VN")} đ`,
+                type: "order",
+                category: "important",
+                orderId: ord._id.toString()
+            }).catch(() => { });
+        }
         // Send single email containing full, clearly separated details of each ticket in background
         (async () => {
             try {
                 const alertEmail = process.env.ADMIN_ALERT_EMAIL || "developervnteam@gmail.com";
                 const orderDateStr = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
-                const GAME_NAMES_MAP = {
-                    power_655: "POWER 6/55",
-                    mega_645: "MEGA 6/45",
-                    keno: "KENO",
-                    bao_keno: "BAO KENO",
-                    clln_keno: "KENO CHẴN LẺ / LỚN NHỎ",
-                    max_3d: "MAX 3D",
-                    max_3d_pro: "MAX 3D PRO",
-                    max_4d: "MAX 4D",
-                    bingo18: "BINGO 18",
-                    lotto_535: "LOTTO 5/35",
-                    lotto_570: "LOTTO 5/70",
-                    loto_235: "LÔ TÔ 2-3-5",
-                    loto_cap: "LÔ TÔ CẶP SỐ",
-                    dientoan_636: "ĐIỆN TOÁN 6X36",
-                    than_tai_4: "THẦN TÀI 4",
-                    truot_loto: "TRƯỢT LÔ TÔ",
-                    MB: "LÔ ĐỀ MIỀN BẮC",
-                    MT: "LÔ ĐỀ MIỀN TRUNG",
-                    MN: "LÔ ĐỀ MIỀN NAM",
-                };
                 const drawIdsToFetch = createdOrders
                     .map((o) => o.drawId)
                     .filter((d) => d && mongoose_1.default.Types.ObjectId.isValid(d));
@@ -405,6 +441,8 @@ const BalanceHistory_1 = __importDefault(require("../models/BalanceHistory"));
 const Transaction_1 = __importDefault(require("../models/Transaction"));
 const sendEmail_1 = require("../utils/sendEmail");
 const EncryptionHelper_1 = require("../utils/EncryptionHelper");
+const prizeService_1 = require("../services/prizeService");
+const bingo18Utils_1 = require("../utils/bingo18Utils");
 const createOrder = async (req, res) => {
     if (Array.isArray(req.body.orders)) {
         return (0, exports.checkoutOrders)(req, res);
@@ -419,13 +457,13 @@ const createOrder = async (req, res) => {
         const now = new Date();
         const vnTimeStr = now.toLocaleString("en-US", { timeZone: "Asia/Ho_Chi_Minh" });
         const vnDate = new Date(vnTimeStr);
+        const todayDay = String(vnDate.getDate()).padStart(2, '0');
+        const todayMonth = String(vnDate.getMonth() + 1).padStart(2, '0');
+        const todayYear = vnDate.getFullYear();
+        const todayStr = `${todayDay}/${todayMonth}/${todayYear}`;
         // For Kien Thiet
         if (gameType.startsWith('kienthiet_')) {
-            const provinceId = gameType.replace('kienthiet_', '');
-            const todayDay = String(vnDate.getDate()).padStart(2, '0');
-            const todayMonth = String(vnDate.getMonth() + 1).padStart(2, '0');
-            const todayYear = vnDate.getFullYear();
-            const todayStr = `${todayDay}/${todayMonth}/${todayYear}`; // e.g., "05/08/2026"
+            const provinceId = gameType.replace('kienthiet_', ''); // e.g., "05/08/2026"
             // The `drawId` from frontend for Kien Thiet is usually the date string e.g. "05/08/2026" (or "05/08/2026 (Hôm nay)")
             // Wait, the client sends "05/08/2026 (Hôm nay)" or just "05/08/2026" ?
             // Let's just extract the date part (first 10 chars)
@@ -450,10 +488,22 @@ const createOrder = async (req, res) => {
         else {
             // For Vietlott / Dien Toan
             let draw;
-            const searchGameCode = gameType.includes('max_3d') ? 'max_3d' : ((gameType === 'bao_keno' || gameType === 'clln_keno') ? 'keno' : gameType);
+            const searchGameCode = ['loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(gameType)
+                ? 'MB'
+                : ((gameType === 'bao_keno' || gameType === 'clln_keno') ? 'keno' : gameType);
             const gameDoc = await Game_1.default.findOne({ code: searchGameCode });
-            const isLodeOrRegion = ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn"].includes(searchGameCode);
+            const isLodeOrRegion = ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn"].includes(searchGameCode) || ['loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(gameType);
+            const isMbDerivedDienToan = ['loto_235', 'loto_cap', 'bao_loto_2', 'truot_loto'].includes(gameType);
             const isScheduledDate = (typeof drawId === "string" && (drawId.startsWith("sched_") || /^\d{2}\/\d{2}\/\d{4}/.test(drawId))) || (drawDate && /^\d{2}\/\d{2}\/\d{4}/.test(drawDate));
+            if (isMbDerivedDienToan) {
+                const targetDateStr = (drawDate || (typeof drawId === 'string' && /^\d{2}\/\d{2}\/\d{4}/.test(drawId) ? drawId : '')).substring(0, 10);
+                if (targetDateStr === todayStr) {
+                    const currentMinutes = vnDate.getHours() * 60 + vnDate.getMinutes();
+                    if (currentMinutes >= 18 * 60 + 10) {
+                        return res.status(400).json({ message: 'Đã quá thời gian chốt vé (18:10) của ngày hôm nay. Vui lòng mua vé cho kỳ quay kế tiếp.' });
+                    }
+                }
+            }
             if (drawId === 'DUMMY_DRAW_ID') {
                 if (!gameDoc) {
                     return res.status(400).json({ message: 'Không tìm thấy loại hình vé số này' });
@@ -475,6 +525,35 @@ const createOrder = async (req, res) => {
                 }
                 if (!draw) {
                     draw = await Draw_1.default.findOne({ drawCode: { $in: [drawId, cleanCode] } });
+                }
+                if (!draw && gameDoc && drawDate) {
+                    const matchCode = String(drawDate).match(/#\d+/);
+                    if (matchCode) {
+                        const codeVariant = matchCode[0];
+                        const rawNum = codeVariant.replace(/^#/, '');
+                        draw = await Draw_1.default.findOne({
+                            game: gameDoc._id,
+                            drawCode: { $in: [codeVariant, rawNum, `#${rawNum.padStart(5, '0')}`, rawNum.padStart(5, '0')] }
+                        });
+                    }
+                }
+            }
+            if (!draw && isMbDerivedDienToan && gameDoc) {
+                const targetDateStr = drawDate || (typeof drawId === 'string' && /^\d{2}\/\d{2}\/\d{4}/.test(drawId) ? drawId : null);
+                if (targetDateStr) {
+                    const dateParts = targetDateStr.substring(0, 10).split('/');
+                    if (dateParts.length === 3) {
+                        const day = parseInt(dateParts[0], 10);
+                        const month = parseInt(dateParts[1], 10);
+                        const year = parseInt(dateParts[2], 10);
+                        const startOfDay = new Date(Date.UTC(year, month - 1, day, 0 - 7, 0, 0));
+                        const endOfDay = new Date(Date.UTC(year, month - 1, day, 23 - 7, 59, 59, 999));
+                        draw = await Draw_1.default.findOne({
+                            game: gameDoc._id,
+                            status: 'open',
+                            closeTime: { $gte: startOfDay, $lte: endOfDay, $gt: now }
+                        }).sort({ closeTime: 1 });
+                    }
                 }
             }
             // Khớp kỳ quay theo ngày và đài đối với Lô Đề / XSKT nếu chưa tìm thấy draw theo drawId
@@ -609,11 +688,12 @@ const createOrder = async (req, res) => {
         const ipAddress = Array.isArray(rawIp) ? rawIp[0] : (typeof rawIp === 'string' ? rawIp.split(',')[0].trim() : rawIp);
         const loginDevice = req.headers['user-agent'] || '';
         await Cart_1.default.findOneAndUpdate({ user: req.user.id }, { items: [] }).catch(() => { });
+        const [nextOrderId] = await (0, orderIdGenerator_1.getNextOrderIds)(1);
         const order = await Order_1.default.create({
             balanceBefore,
             balanceAfter,
             user: req.user.id,
-            orderId: `ORD_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+            orderId: nextOrderId,
             gameType,
             playType,
             drawId,
@@ -679,7 +759,8 @@ const createOrder = async (req, res) => {
                 loto_235: 'LÔ TÔ 2-3-5',
                 loto_cap: 'LÔ TÔ CẶP SỐ',
                 dientoan_636: 'ĐIỆN TOÁN 6X36',
-                than_tai_4: 'THẦN TÀI 4',
+                than_tai_4: 'ĐIỆN TOÁN THẦN TÀI',
+                dientoan_123: 'ĐIỆN TOÁN 1*2*3',
                 truot_loto: 'TRƯỢT LÔ TÔ',
                 MB: 'LÔ ĐỀ MIỀN BẮC',
                 MT: 'LÔ ĐỀ MIỀN TRUNG',
@@ -785,12 +866,23 @@ const getMyOrders = async (req, res) => {
         const orders = await query;
         const drawIds = Array.from(new Set(orders.map((o) => o.drawId).filter((id) => id && mongoose_1.default.Types.ObjectId.isValid(id))));
         if (drawIds.length > 0) {
-            const draws = await Draw_1.default.find({ _id: { $in: drawIds } }).select("_id drawCode").lean();
-            const drawMap = new Map(draws.map((d) => [d._id.toString(), d.drawCode]));
+            const draws = await Draw_1.default.find({ _id: { $in: drawIds } }).select("_id drawCode status winningNumbers").lean();
+            const drawMap = new Map(draws.map((d) => [d._id.toString(), d]));
+            let needsRefresh = false;
             for (const order of orders) {
                 if (order.drawId && drawMap.has(order.drawId.toString())) {
-                    order.drawId = drawMap.get(order.drawId.toString());
+                    const d = drawMap.get(order.drawId.toString());
+                    order.drawId = d.drawCode;
+                    const isUnsettledOrLost = order.status === 'pending' || (!order.isWinner && (!order.prizeAmount || order.prizeAmount === 0));
+                    if (isUnsettledOrLost && d.status === 'completed' && d.winningNumbers && d.winningNumbers.length > 0) {
+                        await (0, prizeService_1.processDrawResults)(d._id.toString());
+                        needsRefresh = true;
+                    }
                 }
+            }
+            if (needsRefresh) {
+                const refreshedOrders = await Order_1.default.find(filter).lean().sort({ createdAt: -1 }).skip(page ? (page - 1) * limit : 0).limit(limit);
+                return res.json(refreshedOrders);
             }
         }
         // Tự động khôi phục số kỳ quay (#number) cho các đơn vé đang bị thiếu hoặc chỉ lưu ngày
@@ -851,75 +943,227 @@ const getMyOrders = async (req, res) => {
 exports.getMyOrders = getMyOrders;
 const getOrderById = async (req, res) => {
     try {
-        const idOrCode = req.params.id;
+        const rawId = req.params.id;
+        const cleanId = String(rawId || "").replace(/^#/, "").trim();
         let order = null;
-        if (mongoose_1.default.Types.ObjectId.isValid(idOrCode)) {
-            order = await Order_1.default.findById(idOrCode).lean();
+        if (mongoose_1.default.Types.ObjectId.isValid(cleanId)) {
+            order = await Order_1.default.findById(cleanId).lean();
         }
         if (!order) {
-            order = await Order_1.default.findOne({ orderId: idOrCode }).lean();
+            const escapedCleanId = cleanId.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
+            order = await Order_1.default.findOne({
+                $or: [
+                    { orderId: cleanId },
+                    { orderId: "#" + cleanId },
+                    { orderId: rawId },
+                    { orderId: new RegExp("^#?" + escapedCleanId + "$", "i") }
+                ]
+            }).lean();
         }
         if (!order) {
-            return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
+            return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
         }
         // Check if the user is authorized to view this order (either admin or owner)
-        if (order.user.toString() !== req.user.id && req.user.role !== 'admin') {
-            return res.status(403).json({ message: 'Không có quyền truy cập' });
+        const orderUserId = String(order.user?._id || order.user || "");
+        const currentUserId = String(req.user?._id || req.user?.id || "");
+        if (orderUserId && currentUserId && orderUserId !== currentUserId && req.user?.role !== "admin") {
+            return res.status(403).json({ message: "Không có quyền truy cập" });
         }
-        if (order.drawId && mongoose_1.default.Types.ObjectId.isValid(order.drawId)) {
-            const draw = await Draw_1.default.findById(order.drawId).lean();
-            if (draw)
-                order.drawId = draw.drawCode;
-        }
-        if (!order.drawId || !String(order.drawId).startsWith('#')) {
-            const targetDateStr = order.drawDate || (typeof order.drawId === 'string' && /^\d{2}\/\d{2}\/\d{4}/.test(order.drawId) ? order.drawId : null);
-            if (targetDateStr) {
-                const dateParts = targetDateStr.split('/');
-                if (dateParts.length === 3) {
-                    const day = parseInt(dateParts[0], 10);
-                    const month = parseInt(dateParts[1], 10);
-                    const year = parseInt(dateParts[2], 10);
-                    const startOfDay = new Date(Date.UTC(year, month - 1, day, 0 - 7, 0, 0));
-                    const endOfDay = new Date(Date.UTC(year, month - 1, day, 23 - 7, 59, 59, 999));
-                    const relatedGames = await Game_1.default.find({ code: { $in: ['xoso_3mien', 'lode', 'MB', 'MT', 'MN', 'mb', 'mt', 'mn'] } }).select('_id').lean();
-                    const relatedGameIds = relatedGames.map(g => g._id);
-                    let provId = null;
-                    if (order.provinceName) {
-                        const p = await Province_1.default.findOne({
-                            $or: [
-                                { name: new RegExp(`^${order.provinceName.trim()}$`, 'i') },
-                                { provinceId: new RegExp(`^${order.provinceName.trim()}$`, 'i') },
-                                { code: new RegExp(`^${order.provinceName.trim()}$`, 'i') }
-                            ]
-                        }).lean();
-                        if (p)
-                            provId = p.provinceId;
+        try {
+            let drawDoc = null;
+            if (order.drawId && mongoose_1.default.Types.ObjectId.isValid(order.drawId)) {
+                drawDoc = await Draw_1.default.findById(order.drawId).lean();
+            }
+            if (!drawDoc && order.drawId && String(order.drawId).startsWith("#")) {
+                const cleanCode = order.drawId.trim();
+                let query = { drawCode: cleanCode };
+                if (order.provinceName) {
+                    const escapedName = order.provinceName.trim().replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
+                    const prov = await Province_1.default.findOne({
+                        $or: [
+                            { name: new RegExp("^" + escapedName + "$", "i") },
+                            { provinceId: new RegExp("^" + escapedName + "$", "i") },
+                            { code: new RegExp("^" + escapedName + "$", "i") }
+                        ]
+                    }).lean();
+                    if (prov) {
+                        query.provinceId = prov.provinceId;
                     }
-                    let matchedDraw = null;
-                    if (provId) {
-                        matchedDraw = await Draw_1.default.findOne({
-                            game: { $in: relatedGameIds },
-                            provinceId: { $in: [provId, order.provinceName].filter(Boolean) },
-                            closeTime: { $gte: startOfDay, $lte: endOfDay }
-                        }).select('_id drawCode').lean();
+                }
+                drawDoc = await Draw_1.default.findOne(query).sort({ closeTime: -1, createdAt: -1 }).lean();
+                if (!drawDoc) {
+                    drawDoc = await Draw_1.default.findOne({ drawCode: cleanCode }).sort({ closeTime: -1, createdAt: -1 }).lean();
+                }
+            }
+            if (!drawDoc) {
+                let targetDateStr = order.drawDate || null;
+                if (!targetDateStr && typeof order.drawId === "string") {
+                    const matchIso = order.drawId.match(/(\d{4})(\d{2})(\d{2})/);
+                    if (matchIso) {
+                        targetDateStr = matchIso[3] + "/" + matchIso[2] + "/" + matchIso[1];
                     }
-                    if (!matchedDraw) {
-                        matchedDraw = await Draw_1.default.findOne({
-                            game: { $in: relatedGameIds },
-                            closeTime: { $gte: startOfDay, $lte: endOfDay }
-                        }).select('_id drawCode').lean();
+                    else if (/^\d{2}\/\d{2}\/\d{4}/.test(order.drawId)) {
+                        targetDateStr = order.drawId.substring(0, 10);
                     }
-                    if (matchedDraw && matchedDraw.drawCode) {
-                        order.drawId = matchedDraw.drawCode;
-                        Order_1.default.updateOne({ _id: order._id }, { $set: { drawId: matchedDraw.drawCode } }).catch(() => { });
+                }
+                if (targetDateStr) {
+                    const dateParts = targetDateStr.split("/");
+                    if (dateParts.length === 3) {
+                        const day = parseInt(dateParts[0], 10);
+                        const month = parseInt(dateParts[1], 10);
+                        const year = parseInt(dateParts[2], 10);
+                        const startOfDay = new Date(Date.UTC(year, month - 1, day, 0 - 7, 0, 0));
+                        const endOfDay = new Date(Date.UTC(year, month - 1, day, 23 - 7, 59, 59, 999));
+                        const candidateCodes = ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn", "loto_235", "loto_cap", "bao_loto_2", "truot_loto"];
+                        if (order.gameType)
+                            candidateCodes.push(order.gameType);
+                        const relatedGames = await Game_1.default.find({ code: { $in: candidateCodes } }).select("_id code").lean();
+                        const isLotoDerivedMb = ["loto_235", "loto_cap", "bao_loto_2", "truot_loto"].includes(order.gameType);
+                        const mbGame = relatedGames.find(g => g.code === "MB");
+                        const targetGame = isLotoDerivedMb ? mbGame : relatedGames.find(g => g.code === order.gameType);
+                        const relatedGameIds = targetGame ? [targetGame._id] : (isLotoDerivedMb && mbGame ? [mbGame._id] : relatedGames.map(g => g._id));
+                        let provId = null;
+                        if (order.provinceName) {
+                            const escapedProv = order.provinceName.trim().replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
+                            const p = await Province_1.default.findOne({
+                                $or: [
+                                    { name: new RegExp("^" + escapedProv + "$", "i") },
+                                    { provinceId: new RegExp("^" + escapedProv + "$", "i") },
+                                    { code: new RegExp("^" + escapedProv + "$", "i") }
+                                ]
+                            }).lean();
+                            if (p)
+                                provId = p.provinceId;
+                        }
+                        if (provId) {
+                            drawDoc = await Draw_1.default.findOne({
+                                game: { $in: relatedGameIds },
+                                provinceId: { $in: [provId, order.provinceName].filter(Boolean) },
+                                closeTime: { $gte: startOfDay, $lte: endOfDay }
+                            }).lean();
+                        }
+                        if (!drawDoc) {
+                            drawDoc = await Draw_1.default.findOne({
+                                game: { $in: relatedGameIds },
+                                closeTime: { $gte: startOfDay, $lte: endOfDay }
+                            }).lean();
+                        }
                     }
                 }
             }
+            if (drawDoc) {
+                // Gắn province detail nếu có
+                if (drawDoc.provinceId && !drawDoc.province) {
+                    const escapedPid = String(drawDoc.provinceId).trim().replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
+                    const p = await Province_1.default.findOne({
+                        $or: [
+                            { provinceId: drawDoc.provinceId },
+                            { code: drawDoc.provinceId },
+                            { name: new RegExp("^" + escapedPid + "$", "i") }
+                        ]
+                    }).lean();
+                    if (p)
+                        drawDoc.province = p;
+                }
+                order.draw = drawDoc;
+                order.drawCode = drawDoc.drawCode;
+                order.drawId = drawDoc.drawCode;
+                const isUnsettledOrLost = order.status === "pending" || (!order.isWinner && (!order.prizeAmount || order.prizeAmount === 0));
+                if (isUnsettledOrLost && drawDoc.status === "completed" && drawDoc.winningNumbers && drawDoc.winningNumbers.length > 0) {
+                    try {
+                        await (0, prizeService_1.processDrawResults)(drawDoc._id.toString());
+                    }
+                    catch (pe) {
+                        console.error("Error processing draw results in getOrderById:", pe);
+                    }
+                    const fresh = await Order_1.default.findById(order._id).populate("user", "name phone balance").lean();
+                    if (fresh) {
+                        order = fresh;
+                        order.draw = drawDoc;
+                    }
+                    // Lớp bảo vệ dự phòng cấp 2: Nếu order vẫn chưa được tính trúng dù drawDoc đã completed
+                    if (order.status === "pending" || (!order.isWinner && (!order.prizeAmount || order.prizeAmount === 0))) {
+                        let isWin = false;
+                        let prize = 0;
+                        if (order.gameType === "bingo18" || order.gameType === "bingo_18") {
+                            const gameDoc = await Game_1.default.findOne({ code: { $in: ["bingo18", "bingo_18"] } }).lean();
+                            const calc = (0, bingo18Utils_1.calculateBingo18Prize)(order, drawDoc.winningNumbers, gameDoc?.payoutRates);
+                            if (calc.isWinner) {
+                                isWin = true;
+                                prize = calc.prizeAmount;
+                            }
+                        }
+                        if (isWin && prize > 0) {
+                            try {
+                                const existingTx = await Transaction_1.default.findOne({ txId: order.orderId });
+                                if (!existingTx) {
+                                    const u = await User_1.default.findById(order.user?._id || order.user);
+                                    if (u) {
+                                        const bBefore = u.balance;
+                                        u.balance += prize;
+                                        const bAfter = u.balance;
+                                        await u.save();
+                                        await BalanceHistory_1.default.create({
+                                            user: u._id,
+                                            type: "win",
+                                            amount: prize,
+                                            balanceBefore: bBefore,
+                                            balanceAfter: bAfter,
+                                            description: "Trả thưởng cược vé " + order.orderId,
+                                            reference: order._id.toString()
+                                        });
+                                        await Transaction_1.default.create({
+                                            user: u._id,
+                                            type: "win",
+                                            txId: order.orderId,
+                                            amount: prize,
+                                            status: "approved",
+                                            balanceBefore: bBefore,
+                                            balanceAfter: bAfter,
+                                            note: "Thắng cược vé " + order.orderId
+                                        });
+                                    }
+                                }
+                            }
+                            catch (txErr) {
+                                console.error("Error recording win transaction in getOrderById:", txErr);
+                            }
+                        }
+                        await Order_1.default.updateOne({ _id: order._id }, {
+                            $set: {
+                                status: "completed",
+                                isWinner: isWin,
+                                prizeAmount: prize,
+                                winningNumbers: drawDoc.winningNumbers,
+                                drawId: drawDoc.drawCode
+                            }
+                        });
+                        order.status = "completed";
+                        order.isWinner = isWin;
+                        order.prizeAmount = prize;
+                        order.winningNumbers = drawDoc.winningNumbers;
+                    }
+                }
+                else {
+                    if ((!order.winningNumbers || order.winningNumbers.length === 0) && drawDoc.winningNumbers && drawDoc.winningNumbers.length > 0) {
+                        order.winningNumbers = drawDoc.winningNumbers;
+                    }
+                    const updateFields = { drawId: drawDoc.drawCode };
+                    if (drawDoc.winningNumbers && drawDoc.winningNumbers.length > 0) {
+                        updateFields.winningNumbers = drawDoc.winningNumbers;
+                    }
+                    Order_1.default.updateOne({ _id: order._id }, { $set: updateFields }).catch(() => { });
+                }
+            }
         }
-        res.json(order);
+        catch (drawErr) {
+            console.error("Error resolving draw or settlement in getOrderById:", drawErr);
+        }
+        return res.json(order);
     }
     catch (error) {
-        res.status(500).json({ message: error.message });
+        console.error("getOrderById error:", error);
+        return res.status(500).json({ message: error.message });
     }
 };
 exports.getOrderById = getOrderById;
@@ -1011,7 +1255,7 @@ const getAllOrders = async (req, res) => {
         const drawIds = Array.from(new Set(orders.map((o) => o.drawId).filter((id) => id && mongoose_1.default.Types.ObjectId.isValid(id))));
         const drawMap = new Map();
         if (drawIds.length > 0) {
-            const draws = await Draw_1.default.find({ _id: { $in: drawIds } }).select("_id drawCode drawTime closeTime").lean();
+            const draws = await Draw_1.default.find({ _id: { $in: drawIds } }).select("_id drawCode drawTime closeTime winningNumbers").lean();
             draws.forEach((d) => drawMap.set(d._id.toString(), d));
         }
         for (const order of orders) {
@@ -1030,6 +1274,9 @@ const getAllOrders = async (req, res) => {
                 if (!order.drawDate && (draw.drawTime || draw.closeTime)) {
                     const timeToDisplay = draw.drawTime || draw.closeTime;
                     order.drawDate = new Date(timeToDisplay).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
+                }
+                if ((!order.winningNumbers || order.winningNumbers.length === 0) && draw.winningNumbers && draw.winningNumbers.length > 0) {
+                    order.winningNumbers = draw.winningNumbers;
                 }
             }
         }

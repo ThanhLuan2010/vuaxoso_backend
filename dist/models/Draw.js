@@ -42,6 +42,7 @@ const drawSchema = new mongoose_1.Schema({
     drawTime: { type: Date },
     status: { type: String, enum: ['open', 'closed', 'completed'], default: 'open' },
     winningNumbers: [{ type: String }],
+    specialNumbers: [{ type: String }],
     jackpotAmount: { type: Number },
     provinceId: { type: String }, // For Kien Thiet MT/MN specific draws
 }, { timestamps: true });
@@ -49,6 +50,10 @@ drawSchema.index({ closeTime: -1, createdAt: -1 });
 drawSchema.index({ game: 1, closeTime: -1 });
 drawSchema.index({ game: 1, provinceId: 1, closeTime: -1 });
 drawSchema.index({ status: 1, closeTime: -1 });
+drawSchema.index({ status: 1, closeTime: 1 });
 drawSchema.index({ drawCode: 1 });
 drawSchema.index({ openTime: 1, closeTime: 1 });
+// Đảm bảo tính DUY NHẤT TUYỆT ĐỐI: Không bao giờ được phép có 2 kỳ quay trùng mã hoặc trùng giờ chốt trong cùng 1 game & đài
+drawSchema.index({ game: 1, drawCode: 1, provinceId: 1 }, { unique: true });
+drawSchema.index({ game: 1, provinceId: 1, closeTime: 1 }, { unique: true });
 exports.default = mongoose_1.default.model('Draw', drawSchema);
