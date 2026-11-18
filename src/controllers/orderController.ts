@@ -981,242 +981,267 @@ export const getMyOrders = async (req: any, res: Response) => {
 
 export const getOrderById = async (req: any, res: Response) => {
   try {
-    const idOrCode = req.params.id;
+    const rawId = req.params.id;
+    const cleanId = String(rawId || "").replace(/^#/, "").trim();
     let order: any = null;
-    if (mongoose.Types.ObjectId.isValid(idOrCode)) {
-      order = await Order.findById(idOrCode).lean();
+    if (mongoose.Types.ObjectId.isValid(cleanId)) {
+      order = await Order.findById(cleanId).lean();
     }
     if (!order) {
-      order = await Order.findOne({ orderId: idOrCode }).lean();
+      order = await Order.findOne({
+        $or: [
+          { orderId: cleanId },
+          { orderId: "#" + cleanId },
+          { orderId: rawId }
+        ]
+      }).lean();
     }
     if (!order) {
-      return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
+      return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
     }
 
     // Check if the user is authorized to view this order (either admin or owner)
-    const orderUserId = String(order.user?._id || order.user || '');
-    const currentUserId = String(req.user?._id || req.user?.id || '');
-    if (orderUserId && currentUserId && orderUserId !== currentUserId && req.user?.role !== 'admin') {
-      return res.status(403).json({ message: 'Không có quyền truy cập' });
+    const orderUserId = String(order.user?._id || order.user || "");
+    const currentUserId = String(req.user?._id || req.user?.id || "");
+    if (orderUserId && currentUserId && orderUserId !== currentUserId && req.user?.role !== "admin") {
+      return res.status(403).json({ message: "Không có quyền truy cập" });
     }
 
-    let drawDoc: any = null;
-    if (order.drawId && mongoose.Types.ObjectId.isValid(order.drawId)) {
-      drawDoc = await Draw.findById(order.drawId).lean();
-    }
+    try {
+      let drawDoc: any = null;
+      if (order.drawId && mongoose.Types.ObjectId.isValid(order.drawId)) {
+        drawDoc = await Draw.findById(order.drawId).lean();
+      }
 
-    if (!drawDoc && order.drawId && String(order.drawId).startsWith('#')) {
-      const cleanCode = order.drawId.trim();
-      let query: any = { drawCode: cleanCode };
-      if (order.provinceName) {
-        const prov = await Province.findOne({
-          $or: [
-            { name: new RegExp(`^${order.provinceName.trim()}$`, 'i') },
-            { provinceId: new RegExp(`^${order.provinceName.trim()}$`, 'i') },
-            { code: new RegExp(`^${order.provinceName.trim()}$`, 'i') }
-          ]
-        }).lean();
-        if (prov) {
-          query.provinceId = prov.provinceId;
+      if (!drawDoc && order.drawId && String(order.drawId).startsWith("#")) {
+        const cleanCode = order.drawId.trim();
+        let query: any = { drawCode: cleanCode };
+        if (order.provinceName) {
+          const escapedName = order.provinceName.trim().replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
+          const prov = await Province.findOne({
+            $or: [
+              { name: new RegExp("^" + escapedName + "$", "i") },
+              { provinceId: new RegExp("^" + escapedName + "$", "i") },
+              { code: new RegExp("^" + escapedName + "$", "i") }
+            ]
+          }).lean();
+          if (prov) {
+            query.provinceId = prov.provinceId;
+          }
+        }
+        drawDoc = await Draw.findOne(query).sort({ closeTime: -1, createdAt: -1 }).lean();
+        if (!drawDoc) {
+          drawDoc = await Draw.findOne({ drawCode: cleanCode }).sort({ closeTime: -1, createdAt: -1 }).lean();
         }
       }
-      drawDoc = await Draw.findOne(query).sort({ closeTime: -1, createdAt: -1 }).lean();
+
       if (!drawDoc) {
-        drawDoc = await Draw.findOne({ drawCode: cleanCode }).sort({ closeTime: -1, createdAt: -1 }).lean();
-      }
-    }
-
-    if (!drawDoc) {
-      let targetDateStr = order.drawDate || null;
-      if (!targetDateStr && typeof order.drawId === 'string') {
-        const matchIso = order.drawId.match(/(\d{4})(\d{2})(\d{2})/);
-        if (matchIso) {
-          targetDateStr = `${matchIso[3]}/${matchIso[2]}/${matchIso[1]}`;
-        } else if (/^\d{2}\/\d{2}\/\d{4}/.test(order.drawId)) {
-          targetDateStr = order.drawId.substring(0, 10);
+        let targetDateStr = order.drawDate || null;
+        if (!targetDateStr && typeof order.drawId === "string") {
+          const matchIso = order.drawId.match(/(\d{4})(\d{2})(\d{2})/);
+          if (matchIso) {
+            targetDateStr = matchIso[3] + "/" + matchIso[2] + "/" + matchIso[1];
+          } else if (/^\d{2}\/\d{2}\/\d{4}/.test(order.drawId)) {
+            targetDateStr = order.drawId.substring(0, 10);
+          }
         }
-      }
 
-      if (targetDateStr) {
-        const dateParts = targetDateStr.split('/');
-        if (dateParts.length === 3) {
-          const day = parseInt(dateParts[0], 10);
-          const month = parseInt(dateParts[1], 10);
-          const year = parseInt(dateParts[2], 10);
-          const startOfDay = new Date(Date.UTC(year, month - 1, day, 0 - 7, 0, 0));
-          const endOfDay = new Date(Date.UTC(year, month - 1, day, 23 - 7, 59, 59, 999));
+        if (targetDateStr) {
+          const dateParts = targetDateStr.split("/");
+          if (dateParts.length === 3) {
+            const day = parseInt(dateParts[0], 10);
+            const month = parseInt(dateParts[1], 10);
+            const year = parseInt(dateParts[2], 10);
+            const startOfDay = new Date(Date.UTC(year, month - 1, day, 0 - 7, 0, 0));
+            const endOfDay = new Date(Date.UTC(year, month - 1, day, 23 - 7, 59, 59, 999));
 
-          const candidateCodes = ['xoso_3mien', 'lode', 'MB', 'MT', 'MN', 'mb', 'mt', 'mn', 'loto_235', 'loto_cap', 'bao_loto_2', 'truot_loto'];
-          if (order.gameType) candidateCodes.push(order.gameType);
-          const relatedGames = await Game.find({ code: { $in: candidateCodes } }).select('_id code').lean();
-          const isLotoDerivedMb = ['loto_235', 'loto_cap', 'bao_loto_2', 'truot_loto'].includes(order.gameType);
-          const mbGame = relatedGames.find(g => g.code === 'MB');
-          const targetGame = isLotoDerivedMb ? mbGame : relatedGames.find(g => g.code === order.gameType);
-          const relatedGameIds = targetGame ? [targetGame._id] : (isLotoDerivedMb && mbGame ? [mbGame._id] : relatedGames.map(g => g._id));
+            const candidateCodes = ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn", "loto_235", "loto_cap", "bao_loto_2", "truot_loto"];
+            if (order.gameType) candidateCodes.push(order.gameType);
+            const relatedGames = await Game.find({ code: { $in: candidateCodes } }).select("_id code").lean();
+            const isLotoDerivedMb = ["loto_235", "loto_cap", "bao_loto_2", "truot_loto"].includes(order.gameType);
+            const mbGame = relatedGames.find(g => g.code === "MB");
+            const targetGame = isLotoDerivedMb ? mbGame : relatedGames.find(g => g.code === order.gameType);
+            const relatedGameIds = targetGame ? [targetGame._id] : (isLotoDerivedMb && mbGame ? [mbGame._id] : relatedGames.map(g => g._id));
 
-          let provId = null;
-          if (order.provinceName) {
-            const p = await Province.findOne({
-              $or: [
-                { name: new RegExp(`^${order.provinceName.trim()}$`, 'i') },
-                { provinceId: new RegExp(`^${order.provinceName.trim()}$`, 'i') },
-                { code: new RegExp(`^${order.provinceName.trim()}$`, 'i') }
-              ]
-            }).lean();
-            if (p) provId = p.provinceId;
-          }
+            let provId = null;
+            if (order.provinceName) {
+              const escapedProv = order.provinceName.trim().replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
+              const p = await Province.findOne({
+                $or: [
+                  { name: new RegExp("^" + escapedProv + "$", "i") },
+                  { provinceId: new RegExp("^" + escapedProv + "$", "i") },
+                  { code: new RegExp("^" + escapedProv + "$", "i") }
+                ]
+              }).lean();
+              if (p) provId = p.provinceId;
+            }
 
-          if (provId) {
-            drawDoc = await Draw.findOne({
-              game: { $in: relatedGameIds },
-              provinceId: { $in: [provId, order.provinceName].filter(Boolean) as string[] },
-              closeTime: { $gte: startOfDay, $lte: endOfDay }
-            }).lean();
-          }
-          if (!drawDoc) {
-            drawDoc = await Draw.findOne({
-              game: { $in: relatedGameIds },
-              closeTime: { $gte: startOfDay, $lte: endOfDay }
-            }).lean();
+            if (provId) {
+              drawDoc = await Draw.findOne({
+                game: { $in: relatedGameIds },
+                provinceId: { $in: [provId, order.provinceName].filter(Boolean) as string[] },
+                closeTime: { $gte: startOfDay, $lte: endOfDay }
+              }).lean();
+            }
+            if (!drawDoc) {
+              drawDoc = await Draw.findOne({
+                game: { $in: relatedGameIds },
+                closeTime: { $gte: startOfDay, $lte: endOfDay }
+              }).lean();
+            }
           }
         }
       }
-    }
 
-    if (drawDoc) {
-      // Gắn province detail nếu có
-      if (drawDoc.provinceId && !drawDoc.province) {
-        const p = await Province.findOne({
-          $or: [
-            { provinceId: drawDoc.provinceId },
-            { code: drawDoc.provinceId },
-            { name: new RegExp(`^${drawDoc.provinceId}$`, 'i') }
-          ]
-        }).lean();
-        if (p) drawDoc.province = p;
-      }
-
-      order.draw = drawDoc;
-      order.drawCode = drawDoc.drawCode;
-      order.drawId = drawDoc.drawCode;
-
-      if (order.status === 'pending' && drawDoc.status === 'completed' && drawDoc.winningNumbers && drawDoc.winningNumbers.length > 0) {
-        await processDrawResults(drawDoc._id.toString());
-        const fresh = await Order.findById(order._id).populate('user', 'name phone balance').lean();
-        if (fresh) {
-          order = fresh as any;
-          order.draw = drawDoc;
+      if (drawDoc) {
+        // Gắn province detail nếu có
+        if (drawDoc.provinceId && !drawDoc.province) {
+          const escapedPid = String(drawDoc.provinceId).trim().replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
+          const p = await Province.findOne({
+            $or: [
+              { provinceId: drawDoc.provinceId },
+              { code: drawDoc.provinceId },
+              { name: new RegExp("^" + escapedPid + "$", "i") }
+            ]
+          }).lean();
+          if (p) drawDoc.province = p;
         }
 
-        // Lớp bảo vệ dự phòng cấp 2: Nếu order vẫn pending dù drawDoc đã completed
-        if (order.status === 'pending') {
-          let isWin = false;
-          let prize = 0;
-          if (order.gameType === 'bingo18' || order.gameType === 'bingo_18') {
-            const wDigits = drawDoc.winningNumbers.map(Number);
-            const wSum = wDigits.reduce((a: number, b: number) => a + b, 0);
-            const boards = order.items && order.items.length > 0 ? order.items : [{ numbers: order.numbers || [], cost: order.totalCost }];
-            boards.forEach((b: any) => {
-              const bPType = (b.playType || order.playType || '').toLowerCase();
-              const mult = Math.floor((b.cost || 10000) / 10000);
-              (b.numbers || []).forEach((rBet: string) => {
-                const bet = String(rBet).replace(/^dãy\s+[a-z]:\s*/i, '').trim();
-                const betDigits = bet.replace(/\D/g, '') || bet;
-                if (bPType.includes('tổng') || bPType.includes('tong')) {
-                  const betSum = Number(bet);
-                  if (wSum === betSum) {
-                    if (wSum === 3 || wSum === 18) prize += 1200000 * mult;
-                    else if (wSum === 4 || wSum === 17) prize += 400000 * mult;
-                    else if (wSum === 5 || wSum === 16) prize += 200000 * mult;
-                    else if (wSum === 6 || wSum === 15) prize += 120000 * mult;
-                    else if (wSum === 7 || wSum === 14) prize += 80000 * mult;
-                    else if (wSum === 8 || wSum === 13) prize += 60000 * mult;
-                    else if (wSum === 9 || wSum === 12) prize += 50000 * mult;
-                    else if (wSum === 10 || wSum === 11) prize += 50000 * mult;
+        order.draw = drawDoc;
+        order.drawCode = drawDoc.drawCode;
+        order.drawId = drawDoc.drawCode;
+
+        if (order.status === "pending" && drawDoc.status === "completed" && drawDoc.winningNumbers && drawDoc.winningNumbers.length > 0) {
+          try {
+            await processDrawResults(drawDoc._id.toString());
+          } catch (pe) {
+            console.error("Error processing draw results in getOrderById:", pe);
+          }
+          const fresh = await Order.findById(order._id).populate("user", "name phone balance").lean();
+          if (fresh) {
+            order = fresh as any;
+            order.draw = drawDoc;
+          }
+
+          // Lớp bảo vệ dự phòng cấp 2: Nếu order vẫn pending dù drawDoc đã completed
+          if (order.status === "pending") {
+            let isWin = false;
+            let prize = 0;
+            if (order.gameType === "bingo18" || order.gameType === "bingo_18") {
+              const wDigits = drawDoc.winningNumbers.map(Number);
+              const wSum = wDigits.reduce((a: number, b: number) => a + b, 0);
+              const boards = order.items && order.items.length > 0 ? order.items : [{ numbers: order.numbers || [], cost: order.totalCost }];
+              boards.forEach((b: any) => {
+                const bPType = (b.playType || order.playType || "").toLowerCase();
+                const mult = Math.floor((b.cost || 10000) / 10000);
+                (b.numbers || []).forEach((rBet: string) => {
+                  const bet = String(rBet).replace(/^dãy\s+[a-z]:\s*/i, "").trim();
+                  const betDigits = bet.replace(/\D/g, "") || bet;
+                  if (bPType.includes("tổng") || bPType.includes("tong")) {
+                    const betSum = Number(bet);
+                    if (wSum === betSum) {
+                      if (wSum === 3 || wSum === 18) prize += 1200000 * mult;
+                      else if (wSum === 4 || wSum === 17) prize += 400000 * mult;
+                      else if (wSum === 5 || wSum === 16) prize += 200000 * mult;
+                      else if (wSum === 6 || wSum === 15) prize += 120000 * mult;
+                      else if (wSum === 7 || wSum === 14) prize += 80000 * mult;
+                      else if (wSum === 8 || wSum === 13) prize += 60000 * mult;
+                      else if (wSum === 9 || wSum === 12) prize += 50000 * mult;
+                      else if (wSum === 10 || wSum === 11) prize += 50000 * mult;
+                    }
+                  } else if (bPType.includes("tài") || bPType.includes("tai") || bPType.includes("xỉu") || bPType.includes("xiu") || bPType.includes("hoà") || bPType.includes("hoa")) {
+                    if ((bet === "Tài" || bet.toLowerCase() === "tai") && (wSum >= 12 && wSum <= 18 || (wSum >= 11 && !(wDigits[0] === wDigits[1] && wDigits[1] === wDigits[2])))) prize += 20000 * mult;
+                    else if ((bet === "Xỉu" || bet.toLowerCase() === "xiu") && (wSum >= 3 && wSum <= 9 || (wSum <= 10 && !(wDigits[0] === wDigits[1] && wDigits[1] === wDigits[2])))) prize += 20000 * mult;
+                    else if ((bet === "Hoà" || bet.toLowerCase() === "hoa") && (wSum === 10 || wSum === 11 || (wDigits[0] === wDigits[1] && wDigits[1] === wDigits[2]))) prize += 30000 * mult;
+                  } else {
+                    if (betDigits.length === 1) {
+                      const d = Number(betDigits);
+                      if (wDigits.filter((n: number) => n === d).length >= 1) prize += 20000 * mult;
+                    } else if (betDigits.length === 2 && betDigits[0] === betDigits[1]) {
+                      const d = Number(betDigits[0]);
+                      if (wDigits.filter((n: number) => n === d).length >= 2) prize += 30000 * mult;
+                    } else if (betDigits.length === 3 && betDigits[0] === betDigits[1] && betDigits[1] === betDigits[2]) {
+                      const d = Number(betDigits[0]);
+                      if (wDigits.filter((n: number) => n === d).length === 3) prize += 40000 * mult;
+                    }
                   }
-                } else if (bPType.includes('tài') || bPType.includes('tai') || bPType.includes('xỉu') || bPType.includes('xiu') || bPType.includes('hoà') || bPType.includes('hoa')) {
-                  if ((bet === 'Tài' || bet.toLowerCase() === 'tai') && (wSum >= 12 && wSum <= 18 || (wSum >= 11 && !(wDigits[0] === wDigits[1] && wDigits[1] === wDigits[2])))) prize += 20000 * mult;
-                  else if ((bet === 'Xỉu' || bet.toLowerCase() === 'xiu') && (wSum >= 3 && wSum <= 9 || (wSum <= 10 && !(wDigits[0] === wDigits[1] && wDigits[1] === wDigits[2])))) prize += 20000 * mult;
-                  else if ((bet === 'Hoà' || bet.toLowerCase() === 'hoa') && (wSum === 10 || wSum === 11 || (wDigits[0] === wDigits[1] && wDigits[1] === wDigits[2]))) prize += 30000 * mult;
-                } else {
-                  if (betDigits.length === 1) {
-                    const d = Number(betDigits);
-                    if (wDigits.filter((n: number) => n === d).length >= 1) prize += 20000 * mult;
-                  } else if (betDigits.length === 2 && betDigits[0] === betDigits[1]) {
-                    const d = Number(betDigits[0]);
-                    if (wDigits.filter((n: number) => n === d).length >= 2) prize += 30000 * mult;
-                  } else if (betDigits.length === 3 && betDigits[0] === betDigits[1] && betDigits[1] === betDigits[2]) {
-                    const d = Number(betDigits[0]);
-                    if (wDigits.filter((n: number) => n === d).length === 3) prize += 40000 * mult;
+                });
+              });
+              if (prize > 0) isWin = true;
+            }
+
+            if (isWin && prize > 0) {
+              try {
+                const existingTx = await Transaction.findOne({ txId: order.orderId });
+                if (!existingTx) {
+                  const u = await User.findById(order.user?._id || order.user);
+                  if (u) {
+                    const bBefore = u.balance;
+                    u.balance += prize;
+                    const bAfter = u.balance;
+                    await u.save();
+                    await BalanceHistory.create({
+                      user: u._id,
+                      type: "win",
+                      amount: prize,
+                      balanceBefore: bBefore,
+                      balanceAfter: bAfter,
+                      description: "Trả thưởng cược vé " + order.orderId,
+                      reference: order._id.toString()
+                    });
+                    await Transaction.create({
+                      user: u._id,
+                      type: "win",
+                      txId: order.orderId,
+                      amount: prize,
+                      status: "approved",
+                      balanceBefore: bBefore,
+                      balanceAfter: bAfter,
+                      note: "Thắng cược vé " + order.orderId
+                    });
                   }
                 }
-              });
-            });
-            if (prize > 0) isWin = true;
-          }
-
-          if (isWin && prize > 0) {
-            const u = await User.findById(order.user?._id || order.user);
-            if (u) {
-              const bBefore = u.balance;
-              u.balance += prize;
-              const bAfter = u.balance;
-              await u.save();
-              await BalanceHistory.create({
-                user: u._id,
-                type: 'win',
-                amount: prize,
-                balanceBefore: bBefore,
-                balanceAfter: bAfter,
-                description: `Trả thưởng cược vé ${order.orderId}`,
-                reference: order._id.toString()
-              });
-              await Transaction.create({
-                user: u._id,
-                type: 'win',
-                txId: order.orderId,
-                amount: prize,
-                status: 'approved',
-                balanceBefore: bBefore,
-                balanceAfter: bAfter,
-                note: `Thắng cược vé ${order.orderId}`
-              });
-            }
-          }
-
-          await Order.updateOne(
-            { _id: order._id },
-            {
-              $set: {
-                status: 'completed',
-                isWinner: isWin,
-                prizeAmount: prize,
-                winningNumbers: drawDoc.winningNumbers,
-                drawId: drawDoc.drawCode
+              } catch (txErr) {
+                console.error("Error recording win transaction in getOrderById:", txErr);
               }
             }
-          );
-          order.status = 'completed';
-          order.isWinner = isWin;
-          order.prizeAmount = prize;
-          order.winningNumbers = drawDoc.winningNumbers;
+
+            await Order.updateOne(
+              { _id: order._id },
+              {
+                $set: {
+                  status: "completed",
+                  isWinner: isWin,
+                  prizeAmount: prize,
+                  winningNumbers: drawDoc.winningNumbers,
+                  drawId: drawDoc.drawCode
+                }
+              }
+            );
+            order.status = "completed";
+            order.isWinner = isWin;
+            order.prizeAmount = prize;
+            order.winningNumbers = drawDoc.winningNumbers;
+          }
+        } else {
+          if ((!order.winningNumbers || order.winningNumbers.length === 0) && drawDoc.winningNumbers && drawDoc.winningNumbers.length > 0) {
+            order.winningNumbers = drawDoc.winningNumbers;
+          }
+          const updateFields: any = { drawId: drawDoc.drawCode };
+          if (drawDoc.winningNumbers && drawDoc.winningNumbers.length > 0) {
+            updateFields.winningNumbers = drawDoc.winningNumbers;
+          }
+          Order.updateOne({ _id: order._id }, { $set: updateFields }).catch(() => {});
         }
-      } else {
-        if ((!order.winningNumbers || order.winningNumbers.length === 0) && drawDoc.winningNumbers && drawDoc.winningNumbers.length > 0) {
-          order.winningNumbers = drawDoc.winningNumbers;
-        }
-        const updateFields: any = { drawId: drawDoc.drawCode };
-        if (drawDoc.winningNumbers && drawDoc.winningNumbers.length > 0) {
-          updateFields.winningNumbers = drawDoc.winningNumbers;
-        }
-        Order.updateOne({ _id: order._id }, { $set: updateFields }).catch(() => {});
       }
+    } catch (drawErr) {
+      console.error("Error resolving draw or settlement in getOrderById:", drawErr);
     }
 
-    res.json(order);
+    return res.json(order);
   } catch (error: any) {
-    console.error('getOrderById error:', error);
-    res.status(500).json({ message: error.message });
+    console.error("getOrderById error:", error);
+    return res.status(500).json({ message: error.message });
   }
 };
 
