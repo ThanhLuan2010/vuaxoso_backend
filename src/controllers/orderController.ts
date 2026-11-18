@@ -74,7 +74,7 @@ export const checkoutOrders = async (req: any, res: Response) => {
         if (!drawCache[cacheKey]) {
           const searchGameCode = ['loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(gameType)
             ? 'MB'
-            : (gameType.includes("max_3d") ? "max_3d" : ((gameType === "bao_keno" || gameType === "clln_keno") ? "keno" : gameType));
+            : ((gameType === "bao_keno" || gameType === "clln_keno") ? "keno" : gameType);
           if (!gameCache[searchGameCode]) {
             gameCache[searchGameCode] = await Game.findOne({ code: searchGameCode });
           }
@@ -504,7 +504,7 @@ export const createOrder = async (req: any, res: Response) => {
       let draw;
       const searchGameCode = ['loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(gameType)
         ? 'MB'
-        : (gameType.includes('max_3d') ? 'max_3d' : ((gameType === 'bao_keno' || gameType === 'clln_keno') ? 'keno' : gameType));
+        : ((gameType === 'bao_keno' || gameType === 'clln_keno') ? 'keno' : gameType);
       const gameDoc = await Game.findOne({ code: searchGameCode });
       const isLodeOrRegion = ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn"].includes(searchGameCode) || ['loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(gameType);
       const isMbDerivedDienToan = ['loto_235', 'loto_cap', 'bao_loto_2', 'truot_loto'].includes(gameType);
@@ -895,12 +895,22 @@ export const getMyOrders = async (req: any, res: Response) => {
     const orders = await query;
     const drawIds = Array.from(new Set(orders.map((o: any) => o.drawId).filter((id: any) => id && mongoose.Types.ObjectId.isValid(id))));
     if (drawIds.length > 0) {
-      const draws = await Draw.find({ _id: { $in: drawIds } }).select("_id drawCode").lean();
-      const drawMap = new Map(draws.map((d: any) => [d._id.toString(), d.drawCode]));
+      const draws = await Draw.find({ _id: { $in: drawIds } }).select("_id drawCode status winningNumbers").lean();
+      const drawMap = new Map(draws.map((d: any) => [d._id.toString(), d]));
+      let needsRefresh = false;
       for (const order of orders) {
         if (order.drawId && drawMap.has(order.drawId.toString())) {
-          order.drawId = drawMap.get(order.drawId.toString());
+          const d = drawMap.get(order.drawId.toString())!;
+          order.drawId = d.drawCode;
+          if (order.status === 'pending' && d.status === 'completed' && d.winningNumbers && d.winningNumbers.length > 0) {
+            await processDrawResults(d._id.toString());
+            needsRefresh = true;
+          }
         }
+      }
+      if (needsRefresh) {
+        const refreshedOrders = await Order.find(filter).lean().sort({ createdAt: -1 }).skip(page ? (page - 1) * limit : 0).limit(limit);
+        return res.json(refreshedOrders);
       }
     }
 

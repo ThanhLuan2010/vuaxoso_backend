@@ -75,7 +75,7 @@ const checkoutOrders = async (req, res) => {
                 if (!drawCache[cacheKey]) {
                     const searchGameCode = ['loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(gameType)
                         ? 'MB'
-                        : (gameType.includes("max_3d") ? "max_3d" : ((gameType === "bao_keno" || gameType === "clln_keno") ? "keno" : gameType));
+                        : ((gameType === "bao_keno" || gameType === "clln_keno") ? "keno" : gameType);
                     if (!gameCache[searchGameCode]) {
                         gameCache[searchGameCode] = await Game_1.default.findOne({ code: searchGameCode });
                     }
@@ -481,7 +481,7 @@ const createOrder = async (req, res) => {
             let draw;
             const searchGameCode = ['loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(gameType)
                 ? 'MB'
-                : (gameType.includes('max_3d') ? 'max_3d' : ((gameType === 'bao_keno' || gameType === 'clln_keno') ? 'keno' : gameType));
+                : ((gameType === 'bao_keno' || gameType === 'clln_keno') ? 'keno' : gameType);
             const gameDoc = await Game_1.default.findOne({ code: searchGameCode });
             const isLodeOrRegion = ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn"].includes(searchGameCode) || ['loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'].includes(gameType);
             const isMbDerivedDienToan = ['loto_235', 'loto_cap', 'bao_loto_2', 'truot_loto'].includes(gameType);
@@ -857,12 +857,22 @@ const getMyOrders = async (req, res) => {
         const orders = await query;
         const drawIds = Array.from(new Set(orders.map((o) => o.drawId).filter((id) => id && mongoose_1.default.Types.ObjectId.isValid(id))));
         if (drawIds.length > 0) {
-            const draws = await Draw_1.default.find({ _id: { $in: drawIds } }).select("_id drawCode").lean();
-            const drawMap = new Map(draws.map((d) => [d._id.toString(), d.drawCode]));
+            const draws = await Draw_1.default.find({ _id: { $in: drawIds } }).select("_id drawCode status winningNumbers").lean();
+            const drawMap = new Map(draws.map((d) => [d._id.toString(), d]));
+            let needsRefresh = false;
             for (const order of orders) {
                 if (order.drawId && drawMap.has(order.drawId.toString())) {
-                    order.drawId = drawMap.get(order.drawId.toString());
+                    const d = drawMap.get(order.drawId.toString());
+                    order.drawId = d.drawCode;
+                    if (order.status === 'pending' && d.status === 'completed' && d.winningNumbers && d.winningNumbers.length > 0) {
+                        await (0, prizeService_1.processDrawResults)(d._id.toString());
+                        needsRefresh = true;
+                    }
                 }
+            }
+            if (needsRefresh) {
+                const refreshedOrders = await Order_1.default.find(filter).lean().sort({ createdAt: -1 }).skip(page ? (page - 1) * limit : 0).limit(limit);
+                return res.json(refreshedOrders);
             }
         }
         // Tự động khôi phục số kỳ quay (#number) cho các đơn vé đang bị thiếu hoặc chỉ lưu ngày

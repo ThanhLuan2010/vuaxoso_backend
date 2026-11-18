@@ -968,10 +968,17 @@ export const getAllDraws = async (req: any, res: Response) => {
     const skip = (page - 1) * limit;
     const isFiltered = Object.keys(query).length > 0;
 
+    let sortObj: any = { closeTime: -1, createdAt: -1 };
+    if (status === 'open') {
+      sortObj = { closeTime: 1 };
+    } else if (!status || status === 'all') {
+      sortObj = { status: -1, closeTime: 1 };
+    }
+
     const [draws, total] = await Promise.all([
       Draw.find(query)
         .populate("game")
-        .sort({ closeTime: -1, createdAt: -1 })
+        .sort(sortObj)
         .skip(skip)
         .limit(limit)
         .lean(),
@@ -1026,10 +1033,16 @@ export const updateDraw = async (req: any, res: Response) => {
     if (jackpotAmount !== undefined) draw.jackpotAmount = jackpotAmount;
     if (provinceId !== undefined) draw.provinceId = provinceId;
 
+    if (draw.winningNumbers && draw.winningNumbers.length > 0 && status !== 'cancelled') {
+      draw.status = 'completed';
+    } else if (status !== undefined) {
+      draw.status = status;
+    }
+
     await draw.save();
 
     if (draw.winningNumbers && draw.winningNumbers.length > 0 && draw.status === 'completed') {
-      processDrawResults(draw._id.toString()).catch(e => console.error('updateDraw processDrawResults error:', e));
+      await processDrawResults(draw._id.toString());
 
       const gameCurrent = draw.game as any;
       if (gameCurrent && gameCurrent.code === 'MB' && draw.winningNumbers.length >= 27) {

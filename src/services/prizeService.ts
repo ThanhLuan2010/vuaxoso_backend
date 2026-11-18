@@ -179,6 +179,11 @@ export const processDrawResults = async (drawId: string) => {
       { drawId: { $in: possibleDrawIds } }
     ];
 
+    if (rawDrawCode) {
+      orderConditions.push({ drawId: { $regex: new RegExp(`(#|^|\\b)${rawDrawCode}(\\b|\\s|$)`, 'i') } });
+      orderConditions.push({ drawDate: { $regex: new RegExp(`(#|^|\\b)${rawDrawCode}(\\b|\\s|$)`, 'i') } });
+    }
+
     if (game.code === 'bingo18') {
       const codeClean = (cleanDrawCode || rawDrawCode || '').replace(/^#+/, '');
       const numOnly = codeClean.replace(/\D/g, '');
@@ -320,6 +325,12 @@ export const processDrawResults = async (drawId: string) => {
       };
     } else if (game.code === 'keno' || game.code === 'bao_keno' || game.code === 'clln_keno') {
       orderQuery.gameType = { $in: ['keno', 'bao_keno', 'clln_keno'] };
+    } else if (game.code === 'max_3d' || game.code === 'max_3d_pro' || game.code === 'max_3d_plus') {
+      orderQuery.gameType = { $in: ['max_3d', 'max_3d_pro', 'max_3d_plus'] };
+    } else if (game.code === 'dientoan_636' || game.code === 'bao_636') {
+      orderQuery.gameType = { $in: ['dientoan_636', 'bao_636'] };
+    } else if (game.code === 'than_tai_4') {
+      orderQuery.gameType = { $in: ['than_tai_4', 'than_tai'] };
     } else {
       orderQuery.gameType = game.code;
     }
