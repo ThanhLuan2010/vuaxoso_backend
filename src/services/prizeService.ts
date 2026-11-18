@@ -184,7 +184,7 @@ export const processDrawResults = async (drawId: string) => {
       orderConditions.push({ drawDate: { $regex: new RegExp(`(#|^|\\b)${rawDrawCode}(\\b|\\s|$)`, 'i') } });
     }
 
-    if (game.code === 'bingo18') {
+    if (game.code === 'bingo18' || game.code === 'bingo_18') {
       const codeClean = (cleanDrawCode || rawDrawCode || '').replace(/^#+/, '');
       const numOnly = codeClean.replace(/\D/g, '');
       const intNum = numOnly ? parseInt(numOnly, 10).toString() : '';
@@ -198,17 +198,33 @@ export const processDrawResults = async (drawId: string) => {
         intNum
       ].filter(Boolean);
 
+      const closeDt = new Date(draw.closeTime || draw.drawTime || draw.createdAt);
+      const closeHrs = String(closeDt.getHours()).padStart(2, '0');
+      const closeMins = String(closeDt.getMinutes()).padStart(2, '0');
+      const timeSlotVariants = [
+        `bingo18_${cleanDateCompact}_${closeHrs}${closeMins}`,
+        `bingo18_${cleanDateCompact}`,
+        `${closeHrs}:${closeMins}`,
+        `${closeHrs}${closeMins}`
+      ];
+
       orderConditions.push({
         $and: [
-          { gameType: 'bingo18' },
+          { gameType: { $in: ['bingo18', 'bingo_18'] } },
           {
             $or: [
-              { drawId: { $in: [...possibleDrawIds, ...drawCodeVariants] } },
-              { drawDate: { $in: drawCodeVariants } },
+              { drawId: { $in: [...possibleDrawIds, ...drawCodeVariants, ...timeSlotVariants] } },
+              { drawDate: { $in: [...drawCodeVariants, ...timeSlotVariants] } },
               ...(codeClean ? [
                 { drawDate: { $regex: new RegExp(codeClean, 'i') } },
                 { drawId: { $regex: new RegExp(codeClean, 'i') } }
-              ] : [])
+              ] : []),
+              {
+                createdAt: {
+                  $gte: new Date(closeTimeDate.getTime() - 20 * 60 * 1000),
+                  $lte: new Date(closeTimeDate.getTime() + 20 * 60 * 1000)
+                }
+              }
             ]
           }
         ]
@@ -331,6 +347,8 @@ export const processDrawResults = async (drawId: string) => {
       orderQuery.gameType = { $in: ['dientoan_636', 'bao_636'] };
     } else if (game.code === 'than_tai_4') {
       orderQuery.gameType = { $in: ['than_tai_4', 'than_tai'] };
+    } else if (game.code === 'bingo18' || game.code === 'bingo_18') {
+      orderQuery.gameType = { $in: ['bingo18', 'bingo_18'] };
     } else {
       orderQuery.gameType = game.code;
     }
@@ -1965,7 +1983,7 @@ export const processDrawResults = async (drawId: string) => {
             }
           });
         }
-      } else if (game.code === 'bingo18') {
+      } else if (game.code === 'bingo18' || game.code === 'bingo_18' || order.gameType === 'bingo18' || order.gameType === 'bingo_18') {
         const w = draw.winningNumbers;
         let wInts: number[] = [];
         if (Array.isArray(w) && w.length === 3 && w.every(x => !isNaN(Number(x)))) {
@@ -2013,16 +2031,17 @@ export const processDrawResults = async (drawId: string) => {
                 // Một số: Trúng 1 số -> Tỉ lệ 2 (20.000đ / 10k)
                 // Hai số trùng: Trúng 2 giống nhau -> Tỉ lệ 3 (30.000đ / 10k)
                 // Ba số trùng: Trúng 3 giống nhau -> Tỉ lệ 4 (40.000đ / 10k)
-                if (bet.length === 1) {
-                   const digit = Number(bet);
+                const betDigits = bet.replace(/\D/g, '') || bet;
+                if (betDigits.length === 1) {
+                   const digit = Number(betDigits);
                    const count = wInts.filter(n => n === digit).length;
                    if (count >= 1) boardPrize += 20000;
-                } else if (bet.length === 2 && bet[0] === bet[1]) {
-                   const digit = Number(bet[0]);
+                } else if (betDigits.length === 2 && betDigits[0] === betDigits[1]) {
+                   const digit = Number(betDigits[0]);
                    const count = wInts.filter(n => n === digit).length;
                    if (count >= 2) boardPrize += 30000;
-                } else if (bet.length === 3 && bet[0] === bet[1] && bet[1] === bet[2]) {
-                   const digit = Number(bet[0]);
+                } else if (betDigits.length === 3 && betDigits[0] === betDigits[1] && betDigits[1] === betDigits[2]) {
+                   const digit = Number(betDigits[0]);
                    const count = wInts.filter(n => n === digit).length;
                    if (count === 3) boardPrize += 40000;
                 }
