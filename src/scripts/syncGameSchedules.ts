@@ -26,8 +26,8 @@ const syncGameSchedules = async () => {
     await Game.updateOne({ code: 'loto_cap' }, { $set: { cronExpression: '15 18 * * *', drawDurationMinutes: 0 } });
     await Game.updateOne({ code: 'truot_loto' }, { $set: { cronExpression: '15 18 * * *', drawDurationMinutes: 0 } });
     await Game.updateOne({ code: 'bao_loto_2' }, { $set: { cronExpression: '15 18 * * *', drawDurationMinutes: 0 } });
-    await Game.updateOne({ code: 'lotto_570' }, { $set: { name: 'Mega Millions (USA)', cronExpression: '20 17 * * *', drawDurationMinutes: 0 } });
-    await Game.updateOne({ code: 'lotto_535' }, { $set: { cronExpression: '0 13,21 * * *', drawDurationMinutes: 0 } });
+    await Game.updateOne({ code: 'lotto_570' }, { $set: { name: 'Mega Millions (USA)', cronExpression: '45 12,20 * * *', drawDurationMinutes: 0, badge: '12h45 & 20h45' } });
+    await Game.updateOne({ code: 'lotto_535' }, { $set: { cronExpression: '0 13,21 * * *', drawDurationMinutes: 0, badge: '13h & 21h' } });
 
     console.log('Đã cập nhật cấu hình Game chuẩn trong DB.');
 

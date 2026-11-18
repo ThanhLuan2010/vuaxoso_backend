@@ -27,8 +27,8 @@ const syncGameSchedules = async () => {
         await Game_1.default.updateOne({ code: 'loto_cap' }, { $set: { cronExpression: '15 18 * * *', drawDurationMinutes: 0 } });
         await Game_1.default.updateOne({ code: 'truot_loto' }, { $set: { cronExpression: '15 18 * * *', drawDurationMinutes: 0 } });
         await Game_1.default.updateOne({ code: 'bao_loto_2' }, { $set: { cronExpression: '15 18 * * *', drawDurationMinutes: 0 } });
-        await Game_1.default.updateOne({ code: 'lotto_570' }, { $set: { name: 'Mega Millions (USA)', cronExpression: '20 17 * * *', drawDurationMinutes: 0 } });
-        await Game_1.default.updateOne({ code: 'lotto_535' }, { $set: { cronExpression: '0 13,21 * * *', drawDurationMinutes: 0 } });
+        await Game_1.default.updateOne({ code: 'lotto_570' }, { $set: { name: 'Mega Millions (USA)', cronExpression: '45 12,20 * * *', drawDurationMinutes: 0, badge: '12h45 & 20h45' } });
+        await Game_1.default.updateOne({ code: 'lotto_535' }, { $set: { cronExpression: '0 13,21 * * *', drawDurationMinutes: 0, badge: '13h & 21h' } });
         console.log('Đã cập nhật cấu hình Game chuẩn trong DB.');
         // 2. Cập nhật danh sách Tỉnh/Đài theo đúng hình 2, 3, 4
         console.log('\n--- 2. CẬP NHẬT TỈNH/ĐÀI (PROVINCES) ---');
