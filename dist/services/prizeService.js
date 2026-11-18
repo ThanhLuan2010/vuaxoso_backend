@@ -13,6 +13,7 @@ const BalanceHistory_1 = __importDefault(require("../models/BalanceHistory"));
 const Notification_1 = __importDefault(require("../models/Notification"));
 const AdminLog_1 = __importDefault(require("../models/AdminLog"));
 const EncryptionHelper_1 = require("../utils/EncryptionHelper");
+const bingo18Utils_1 = require("../utils/bingo18Utils");
 const getCombinationsList = (array, k) => {
     const result = [];
     const helper = (start, combo) => {
@@ -176,7 +177,7 @@ const processDrawResults = async (drawId) => {
             orderConditions.push({ drawId: { $regex: new RegExp(`(#|^|\\b)${rawDrawCode}(\\b|\\s|$)`, 'i') } });
             orderConditions.push({ drawDate: { $regex: new RegExp(`(#|^|\\b)${rawDrawCode}(\\b|\\s|$)`, 'i') } });
         }
-        if (game.code === 'bingo18') {
+        if (game.code === 'bingo18' || game.code === 'bingo_18') {
             const codeClean = (cleanDrawCode || rawDrawCode || '').replace(/^#+/, '');
             const numOnly = codeClean.replace(/\D/g, '');
             const intNum = numOnly ? parseInt(numOnly, 10).toString() : '';
@@ -189,17 +190,32 @@ const processDrawResults = async (drawId) => {
                 intNum ? `#${intNum}` : '',
                 intNum
             ].filter(Boolean);
+            const closeDt = new Date(draw.closeTime || draw.drawTime || draw.createdAt);
+            const closeHrs = String(closeDt.getHours()).padStart(2, '0');
+            const closeMins = String(closeDt.getMinutes()).padStart(2, '0');
+            const timeSlotVariants = [
+                `bingo18_${cleanDateCompact}_${closeHrs}${closeMins}`,
+                `bingo18_${cleanDateCompact}`,
+                `${closeHrs}:${closeMins}`,
+                `${closeHrs}${closeMins}`
+            ];
             orderConditions.push({
                 $and: [
-                    { gameType: 'bingo18' },
+                    { gameType: { $in: ['bingo18', 'bingo_18'] } },
                     {
                         $or: [
-                            { drawId: { $in: [...possibleDrawIds, ...drawCodeVariants] } },
-                            { drawDate: { $in: drawCodeVariants } },
+                            { drawId: { $in: [...possibleDrawIds, ...drawCodeVariants, ...timeSlotVariants] } },
+                            { drawDate: { $in: [...drawCodeVariants, ...timeSlotVariants] } },
                             ...(codeClean ? [
                                 { drawDate: { $regex: new RegExp(codeClean, 'i') } },
                                 { drawId: { $regex: new RegExp(codeClean, 'i') } }
-                            ] : [])
+                            ] : []),
+                            {
+                                createdAt: {
+                                    $gte: new Date(closeTimeDate.getTime() - 20 * 60 * 1000),
+                                    $lte: new Date(closeTimeDate.getTime() + 20 * 60 * 1000)
+                                }
+                            }
                         ]
                     }
                 ]
@@ -321,6 +337,9 @@ const processDrawResults = async (drawId) => {
         }
         else if (game.code === 'than_tai_4') {
             orderQuery.gameType = { $in: ['than_tai_4', 'than_tai'] };
+        }
+        else if (game.code === 'bingo18' || game.code === 'bingo_18') {
+            orderQuery.gameType = { $in: ['bingo18', 'bingo_18'] };
         }
         else {
             orderQuery.gameType = game.code;
@@ -2080,91 +2099,11 @@ const processDrawResults = async (drawId) => {
                     });
                 }
             }
-            else if (game.code === 'bingo18') {
-                const w = draw.winningNumbers;
-                let wInts = [];
-                if (Array.isArray(w) && w.length === 3 && w.every(x => !isNaN(Number(x)))) {
-                    wInts = w.map(Number);
-                }
-                else if (Array.isArray(w) && w.length === 1 && String(w[0]).length === 3 && /^[1-6]{3}$/.test(String(w[0]))) {
-                    wInts = String(w[0]).split('').map(Number);
-                }
-                else if (Array.isArray(w) && w.length > 0) {
-                    const joinedDigits = w.join(' ').replace(/\D/g, '');
-                    if (joinedDigits.length >= 3) {
-                        wInts = joinedDigits.slice(0, 3).split('').map(Number);
-                    }
-                }
-                if (wInts.length === 3) {
-                    const wSum = wInts.reduce((a, b) => a + b, 0);
-                    allBoards.forEach((board) => {
-                        let boardPrize = 0;
-                        const multiplier = Math.floor(board.cost / 10000);
-                        const bingoPType = (board.playType || order.playType || '').toLowerCase();
-                        board.numbers.forEach(rawBet => {
-                            const bet = String(rawBet).replace(/^dãy\s+[a-z]:\s*/i, '').trim();
-                            if (bingoPType.includes('tổng') || bingoPType.includes('tong')) {
-                                const betSum = Number(bet);
-                                if (wSum === betSum) {
-                                    if (wSum === 3 || wSum === 18)
-                                        boardPrize += 1200000;
-                                    else if (wSum === 4 || wSum === 17)
-                                        boardPrize += 400000;
-                                    else if (wSum === 5 || wSum === 16)
-                                        boardPrize += 200000;
-                                    else if (wSum === 6 || wSum === 15)
-                                        boardPrize += 120000;
-                                    else if (wSum === 7 || wSum === 14)
-                                        boardPrize += 80000;
-                                    else if (wSum === 8 || wSum === 13)
-                                        boardPrize += 60000;
-                                    else if (wSum === 9 || wSum === 12)
-                                        boardPrize += 50000;
-                                    else if (wSum === 10 || wSum === 11)
-                                        boardPrize += 50000;
-                                }
-                            }
-                            else if (bingoPType.includes('tài') || bingoPType.includes('tai') || bingoPType.includes('xỉu') || bingoPType.includes('xiu') || bingoPType.includes('hoà') || bingoPType.includes('hoa')) {
-                                const taiRate = (game.payoutRates && (game.payoutRates['Tài'] || game.payoutRates['tai'])) ?? 2;
-                                const xiuRate = (game.payoutRates && (game.payoutRates['Xỉu'] || game.payoutRates['xiu'])) ?? 2;
-                                const hoaRate = (game.payoutRates && (game.payoutRates['Hoà'] || game.payoutRates['hoa'])) ?? 3;
-                                if ((bet === 'Tài' || bet.toLowerCase() === 'tai') && (wSum >= 12 && wSum <= 18 || (wSum >= 11 && !(wInts[0] === wInts[1] && wInts[1] === wInts[2]))))
-                                    boardPrize += Math.round(10000 * taiRate);
-                                else if ((bet === 'Xỉu' || bet.toLowerCase() === 'xiu') && (wSum >= 3 && wSum <= 9 || (wSum <= 10 && !(wInts[0] === wInts[1] && wInts[1] === wInts[2]))))
-                                    boardPrize += Math.round(10000 * xiuRate);
-                                else if ((bet === 'Hoà' || bet.toLowerCase() === 'hoa') && (wSum === 10 || wSum === 11 || (wInts[0] === wInts[1] && wInts[1] === wInts[2])))
-                                    boardPrize += Math.round(10000 * hoaRate);
-                            }
-                            else {
-                                // Cơ bản (1, 2, 3 số trùng) theo bảng tỉ lệ hệ thống:
-                                // Một số: Trúng 1 số -> Tỉ lệ 2 (20.000đ / 10k)
-                                // Hai số trùng: Trúng 2 giống nhau -> Tỉ lệ 3 (30.000đ / 10k)
-                                // Ba số trùng: Trúng 3 giống nhau -> Tỉ lệ 4 (40.000đ / 10k)
-                                if (bet.length === 1) {
-                                    const digit = Number(bet);
-                                    const count = wInts.filter(n => n === digit).length;
-                                    if (count >= 1)
-                                        boardPrize += 20000;
-                                }
-                                else if (bet.length === 2 && bet[0] === bet[1]) {
-                                    const digit = Number(bet[0]);
-                                    const count = wInts.filter(n => n === digit).length;
-                                    if (count >= 2)
-                                        boardPrize += 30000;
-                                }
-                                else if (bet.length === 3 && bet[0] === bet[1] && bet[1] === bet[2]) {
-                                    const digit = Number(bet[0]);
-                                    const count = wInts.filter(n => n === digit).length;
-                                    if (count === 3)
-                                        boardPrize += 40000;
-                                }
-                            }
-                        });
-                        if (boardPrize > 0) {
-                            isWinner = true;
-                            prizeAmount += boardPrize * (multiplier > 0 ? multiplier : 1);
-                        }
-                    });
+            else if (game.code === 'bingo18' || game.code === 'bingo_18' || order.gameType === 'bingo18' || order.gameType === 'bingo_18') {
+                const bingoCalc = (0, bingo18Utils_1.calculateBingo18Prize)(order, draw.winningNumbers, game.payoutRates);
+                if (bingoCalc.isWinner) {
+                    isWinner = true;
+                    prizeAmount = bingoCalc.prizeAmount;
                 }
             }
             // --- CẬP NHẬT TRẠNG THÁI ---

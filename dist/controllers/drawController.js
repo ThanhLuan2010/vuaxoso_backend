@@ -10,6 +10,7 @@ const Draw_1 = __importDefault(require("../models/Draw"));
 const Province_1 = __importDefault(require("../models/Province"));
 const Game_1 = __importDefault(require("../models/Game"));
 const prizeService_1 = require("../services/prizeService");
+const bingo18Utils_1 = require("../utils/bingo18Utils");
 const getKienThietSchedule = async (req, res) => {
     try {
         const daysOfWeek = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
@@ -716,16 +717,16 @@ const normalizeDrawResults = (gameCode, winningNumbersInput, specialNumbersInput
     }
     // Filter out any standalone separator tokens
     const cleanTokens = rawList.filter(token => token !== '|' && token !== '+' && token !== '-');
-    if (gameCode === 'bingo18') {
-        let tokens = cleanTokens;
-        if (tokens.length === 1 && tokens[0].length === 3 && /^[1-6]{3}$/.test(tokens[0])) {
-            tokens = tokens[0].split('');
-        }
-        else if (tokens.length > 3) {
-            tokens = tokens.slice(0, 3);
+    const gCodeLower = (gameCode || '').toLowerCase();
+    if (gCodeLower === 'bingo18' || gCodeLower === 'bingo_18') {
+        const parsed = (0, bingo18Utils_1.parseBingo18WinningNumbers)(cleanTokens);
+        if (parsed.length === 3) {
+            return {
+                winningNumbers: parsed.map(String)
+            };
         }
         return {
-            winningNumbers: tokens
+            winningNumbers: cleanTokens.slice(0, 3)
         };
     }
     if (gameCode === 'max_3d' || gameCode === 'max_3d_pro') {

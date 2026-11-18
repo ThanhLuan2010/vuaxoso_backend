@@ -462,6 +462,7 @@ import Transaction from '../models/Transaction';
 import { sendEmail } from '../utils/sendEmail';
 import { EncryptionHelper } from '../utils/EncryptionHelper';
 import { processDrawResults } from '../services/prizeService';
+import { calculateBingo18Prize } from '../utils/bingo18Utils';
 
 export const createOrder = async (req: any, res: Response) => {
   if (Array.isArray(req.body.orders)) {
@@ -1128,46 +1129,12 @@ export const getOrderById = async (req: any, res: Response) => {
             let isWin = false;
             let prize = 0;
             if (order.gameType === "bingo18" || order.gameType === "bingo_18") {
-              const wDigits = drawDoc.winningNumbers.map(Number);
-              const wSum = wDigits.reduce((a: number, b: number) => a + b, 0);
-              const boards = order.items && order.items.length > 0 ? order.items : [{ numbers: order.numbers || [], cost: order.totalCost }];
-              boards.forEach((b: any) => {
-                const bPType = (b.playType || order.playType || "").toLowerCase();
-                const mult = Math.floor((b.cost || 10000) / 10000);
-                (b.numbers || []).forEach((rBet: string) => {
-                  const bet = String(rBet).replace(/^dãy\s+[a-z]:\s*/i, "").trim();
-                  const betDigits = bet.replace(/\D/g, "") || bet;
-                  if (bPType.includes("tổng") || bPType.includes("tong")) {
-                    const betSum = Number(bet);
-                    if (wSum === betSum) {
-                      if (wSum === 3 || wSum === 18) prize += 1200000 * mult;
-                      else if (wSum === 4 || wSum === 17) prize += 400000 * mult;
-                      else if (wSum === 5 || wSum === 16) prize += 200000 * mult;
-                      else if (wSum === 6 || wSum === 15) prize += 120000 * mult;
-                      else if (wSum === 7 || wSum === 14) prize += 80000 * mult;
-                      else if (wSum === 8 || wSum === 13) prize += 60000 * mult;
-                      else if (wSum === 9 || wSum === 12) prize += 50000 * mult;
-                      else if (wSum === 10 || wSum === 11) prize += 50000 * mult;
-                    }
-                  } else if (bPType.includes("tài") || bPType.includes("tai") || bPType.includes("xỉu") || bPType.includes("xiu") || bPType.includes("hoà") || bPType.includes("hoa")) {
-                    if ((bet === "Tài" || bet.toLowerCase() === "tai") && (wSum >= 12 && wSum <= 18 || (wSum >= 11 && !(wDigits[0] === wDigits[1] && wDigits[1] === wDigits[2])))) prize += 20000 * mult;
-                    else if ((bet === "Xỉu" || bet.toLowerCase() === "xiu") && (wSum >= 3 && wSum <= 9 || (wSum <= 10 && !(wDigits[0] === wDigits[1] && wDigits[1] === wDigits[2])))) prize += 20000 * mult;
-                    else if ((bet === "Hoà" || bet.toLowerCase() === "hoa") && (wSum === 10 || wSum === 11 || (wDigits[0] === wDigits[1] && wDigits[1] === wDigits[2]))) prize += 30000 * mult;
-                  } else {
-                    if (betDigits.length === 1) {
-                      const d = Number(betDigits);
-                      if (wDigits.filter((n: number) => n === d).length >= 1) prize += 20000 * mult;
-                    } else if (betDigits.length === 2 && betDigits[0] === betDigits[1]) {
-                      const d = Number(betDigits[0]);
-                      if (wDigits.filter((n: number) => n === d).length >= 2) prize += 30000 * mult;
-                    } else if (betDigits.length === 3 && betDigits[0] === betDigits[1] && betDigits[1] === betDigits[2]) {
-                      const d = Number(betDigits[0]);
-                      if (wDigits.filter((n: number) => n === d).length === 3) prize += 40000 * mult;
-                    }
-                  }
-                });
-              });
-              if (prize > 0) isWin = true;
+              const gameDoc = await Game.findOne({ code: { $in: ["bingo18", "bingo_18"] } }).lean();
+              const calc = calculateBingo18Prize(order, drawDoc.winningNumbers, gameDoc?.payoutRates);
+              if (calc.isWinner) {
+                isWin = true;
+                prize = calc.prizeAmount;
+              }
             }
 
             if (isWin && prize > 0) {

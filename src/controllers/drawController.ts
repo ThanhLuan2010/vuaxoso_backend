@@ -5,6 +5,7 @@ import Draw from '../models/Draw';
 import Province from '../models/Province';
 import Game from '../models/Game';
 import { processDrawResults } from '../services/prizeService';
+import { parseBingo18WinningNumbers } from '../utils/bingo18Utils';
 
 export const getKienThietSchedule = async (req: any, res: Response) => {
   try {
@@ -762,15 +763,16 @@ export const normalizeDrawResults = (
   // Filter out any standalone separator tokens
   const cleanTokens = rawList.filter(token => token !== '|' && token !== '+' && token !== '-');
 
-  if (gameCode === 'bingo18') {
-    let tokens = cleanTokens;
-    if (tokens.length === 1 && tokens[0].length === 3 && /^[1-6]{3}$/.test(tokens[0])) {
-      tokens = tokens[0].split('');
-    } else if (tokens.length > 3) {
-      tokens = tokens.slice(0, 3);
+  const gCodeLower = (gameCode || '').toLowerCase();
+  if (gCodeLower === 'bingo18' || gCodeLower === 'bingo_18') {
+    const parsed = parseBingo18WinningNumbers(cleanTokens);
+    if (parsed.length === 3) {
+      return {
+        winningNumbers: parsed.map(String)
+      };
     }
     return {
-      winningNumbers: tokens
+      winningNumbers: cleanTokens.slice(0, 3)
     };
   }
 

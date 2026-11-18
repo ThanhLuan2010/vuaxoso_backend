@@ -92,13 +92,28 @@ const DEFAULT_RATES_BAO_LOTO_2 = {
     'Bao 2 số': 99
 };
 const DEFAULT_RATES_BINGO18 = {
-    'Một số (1 trùng)': 1.2,
-    'Một số (2 trùng)': 2.1,
-    'Một số (3 trùng)': 3,
-    'Hai số trùng': 7.5,
+    'Một số': 2,
+    'Hai số trùng': 3,
+    'Ba số trùng': 4,
     'Tài': 2,
     'Xỉu': 2,
-    'Hoà': 3
+    'Hoà': 3,
+    'Tổng 3': 120,
+    'Tổng 4': 40,
+    'Tổng 5': 20,
+    'Tổng 6': 12,
+    'Tổng 7': 8,
+    'Tổng 8': 6,
+    'Tổng 9': 5,
+    'Tổng 10': 5,
+    'Tổng 11': 5,
+    'Tổng 12': 5,
+    'Tổng 13': 6,
+    'Tổng 14': 8,
+    'Tổng 15': 12,
+    'Tổng 16': 20,
+    'Tổng 17': 40,
+    'Tổng 18': 120
 };
 const DEFAULT_RATES_TRUOT_LOTO = {
     'Trượt 4': 2.5,
