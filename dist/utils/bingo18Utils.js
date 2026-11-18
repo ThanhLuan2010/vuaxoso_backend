@@ -105,26 +105,29 @@ const calculateBingo18Prize = (order, winningNumbers, payoutRates) => {
             }
             else {
                 // Cơ bản (Một số: x2, Hai số trùng: x3, Ba số trùng: x4)
+                const rateMotSo = rates['Một số'] ?? rates['mot_so'] ?? rates['1 số'] ?? 2;
+                const rateHaiSo = rates['Hai số trùng'] ?? rates['hai_so_trung'] ?? rates['2 số trùng'] ?? 3;
+                const rateBaSo = rates['Ba số trùng'] ?? rates['ba_so_trung'] ?? rates['3 số trùng'] ?? 4;
                 const betDigits = bet.replace(/\D/g, '') || bet;
                 if (betDigits.length === 1) {
                     const digit = Number(betDigits);
                     const count = wInts.filter(n => n === digit).length;
                     if (count >= 1) {
-                        boardPrize += 10000 * (rates['Một số'] ?? 2);
+                        boardPrize += 10000 * rateMotSo;
                     }
                 }
                 else if (betDigits.length === 2 && betDigits[0] === betDigits[1]) {
                     const digit = Number(betDigits[0]);
                     const count = wInts.filter(n => n === digit).length;
                     if (count >= 2) {
-                        boardPrize += 10000 * (rates['Hai số trùng'] ?? 3);
+                        boardPrize += 10000 * rateHaiSo;
                     }
                 }
                 else if (betDigits.length === 3 && betDigits[0] === betDigits[1] && betDigits[1] === betDigits[2]) {
                     const digit = Number(betDigits[0]);
                     const count = wInts.filter(n => n === digit).length;
                     if (count === 3) {
-                        boardPrize += 10000 * (rates['Ba số trùng'] ?? 4);
+                        boardPrize += 10000 * rateBaSo;
                     }
                 }
             }

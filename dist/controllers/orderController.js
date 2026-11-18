@@ -873,7 +873,8 @@ const getMyOrders = async (req, res) => {
                 if (order.drawId && drawMap.has(order.drawId.toString())) {
                     const d = drawMap.get(order.drawId.toString());
                     order.drawId = d.drawCode;
-                    if (order.status === 'pending' && d.status === 'completed' && d.winningNumbers && d.winningNumbers.length > 0) {
+                    const isUnsettledOrLost = order.status === 'pending' || (!order.isWinner && (!order.prizeAmount || order.prizeAmount === 0));
+                    if (isUnsettledOrLost && d.status === 'completed' && d.winningNumbers && d.winningNumbers.length > 0) {
                         await (0, prizeService_1.processDrawResults)(d._id.toString());
                         needsRefresh = true;
                     }
@@ -949,11 +950,13 @@ const getOrderById = async (req, res) => {
             order = await Order_1.default.findById(cleanId).lean();
         }
         if (!order) {
+            const escapedCleanId = cleanId.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
             order = await Order_1.default.findOne({
                 $or: [
                     { orderId: cleanId },
                     { orderId: "#" + cleanId },
-                    { orderId: rawId }
+                    { orderId: rawId },
+                    { orderId: new RegExp("^#?" + escapedCleanId + "$", "i") }
                 ]
             }).lean();
         }
@@ -1065,7 +1068,8 @@ const getOrderById = async (req, res) => {
                 order.draw = drawDoc;
                 order.drawCode = drawDoc.drawCode;
                 order.drawId = drawDoc.drawCode;
-                if (order.status === "pending" && drawDoc.status === "completed" && drawDoc.winningNumbers && drawDoc.winningNumbers.length > 0) {
+                const isUnsettledOrLost = order.status === "pending" || (!order.isWinner && (!order.prizeAmount || order.prizeAmount === 0));
+                if (isUnsettledOrLost && drawDoc.status === "completed" && drawDoc.winningNumbers && drawDoc.winningNumbers.length > 0) {
                     try {
                         await (0, prizeService_1.processDrawResults)(drawDoc._id.toString());
                     }
@@ -1077,8 +1081,8 @@ const getOrderById = async (req, res) => {
                         order = fresh;
                         order.draw = drawDoc;
                     }
-                    // Lớp bảo vệ dự phòng cấp 2: Nếu order vẫn pending dù drawDoc đã completed
-                    if (order.status === "pending") {
+                    // Lớp bảo vệ dự phòng cấp 2: Nếu order vẫn chưa được tính trúng dù drawDoc đã completed
+                    if (order.status === "pending" || (!order.isWinner && (!order.prizeAmount || order.prizeAmount === 0))) {
                         let isWin = false;
                         let prize = 0;
                         if (order.gameType === "bingo18" || order.gameType === "bingo_18") {

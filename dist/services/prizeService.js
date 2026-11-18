@@ -392,8 +392,15 @@ const processDrawResults = async (drawId) => {
             else if (order.numbers && order.numbers.length > 0) {
                 allBoards = [{ numbers: order.numbers, cost: order.totalCost, playType: order.playType }];
             }
-            // --- LOGIC DÒ VÉ KENO / BAO KENO / CHẴN LẺ LỚN NHỎ ---
-            if (game.code === 'keno' || game.code === 'bao_keno' || game.code === 'clln_keno') {
+            // --- LOGIC DÒ VÉ BINGO 18 (111 - 666) ---
+            if (game.code === 'bingo18' || game.code === 'bingo_18' || order.gameType === 'bingo18' || order.gameType === 'bingo_18') {
+                const bingoCalc = (0, bingo18Utils_1.calculateBingo18Prize)(order, draw.winningNumbers, game.payoutRates);
+                if (bingoCalc.isWinner) {
+                    isWinner = true;
+                    prizeAmount = bingoCalc.prizeAmount;
+                }
+            }
+            else if (game.code === 'keno' || game.code === 'bao_keno' || game.code === 'clln_keno') {
                 const isBaoKeno = order.gameType === 'bao_keno' || (order.playType && order.playType.includes('Bao'));
                 if (isBaoKeno) {
                     // BAO KENO LOGIC (Theo bảng tỷ lệ thưởng chuẩn)
@@ -591,7 +598,7 @@ const processDrawResults = async (drawId) => {
                     });
                 }
             }
-            else if (game.type === 'vietlott') {
+            else if (game.type === 'vietlott' && game.code !== 'bingo18' && game.code !== 'bingo_18') {
                 if (game.code === 'max_3d' || game.code === 'max_3d_pro') {
                     const w = draw.winningNumbers;
                     if (w && w.length >= 20) {
@@ -2097,13 +2104,6 @@ const processDrawResults = async (drawId) => {
                             prizeAmount += boardPrize * (multiplier > 0 ? multiplier : 1);
                         }
                     });
-                }
-            }
-            else if (game.code === 'bingo18' || game.code === 'bingo_18' || order.gameType === 'bingo18' || order.gameType === 'bingo_18') {
-                const bingoCalc = (0, bingo18Utils_1.calculateBingo18Prize)(order, draw.winningNumbers, game.payoutRates);
-                if (bingoCalc.isWinner) {
-                    isWinner = true;
-                    prizeAmount = bingoCalc.prizeAmount;
                 }
             }
             // --- CẬP NHẬT TRẠNG THÁI ---
