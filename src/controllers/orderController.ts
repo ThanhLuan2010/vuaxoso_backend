@@ -104,8 +104,9 @@ export const checkoutOrders = async (req: any, res: Response) => {
             }
           }
 
-          if (!draw && gameDoc && drawDate) {
-            const matchCode = String(drawDate).match(/#\d+/);
+          if (!draw && gameDoc) {
+            const rawSearchStr = `${drawId || ''} ${drawDate || ''}`;
+            const matchCode = rawSearchStr.match(/#\d+/);
             if (matchCode) {
               const codeVariant = matchCode[0];
               const rawNum = codeVariant.replace(/^#/, '');
@@ -114,6 +115,14 @@ export const checkoutOrders = async (req: any, res: Response) => {
                 drawCode: { $in: [codeVariant, rawNum, `#${rawNum.padStart(5, '0')}`, rawNum.padStart(5, '0')] }
               });
             }
+          }
+
+          if (!draw && (gameType === 'bingo18' || gameType === 'bingo_18') && gameDoc) {
+            draw = await Draw.findOne({
+              game: gameDoc._id,
+              status: 'open',
+              closeTime: { $gt: now }
+            }).sort({ closeTime: 1 });
           }
 
           // Khớp kỳ quay theo ngày và đài đối với Lô Đề / XSKT nếu chưa tìm thấy draw theo drawId
@@ -1097,6 +1106,100 @@ export const getOrderById = async (req: any, res: Response) => {
         if (fresh) {
           order = fresh as any;
           order.draw = drawDoc;
+        }
+
+        // Lớp bảo vệ dự phòng cấp 2: Nếu order vẫn pending dù drawDoc đã completed
+        if (order.status === 'pending') {
+          let isWin = false;
+          let prize = 0;
+          if (order.gameType === 'bingo18' || order.gameType === 'bingo_18') {
+            const wDigits = drawDoc.winningNumbers.map(Number);
+            const wSum = wDigits.reduce((a: number, b: number) => a + b, 0);
+            const boards = order.items && order.items.length > 0 ? order.items : [{ numbers: order.numbers || [], cost: order.totalCost }];
+            boards.forEach((b: any) => {
+              const bPType = (b.playType || order.playType || '').toLowerCase();
+              const mult = Math.floor((b.cost || 10000) / 10000);
+              (b.numbers || []).forEach((rBet: string) => {
+                const bet = String(rBet).replace(/^dãy\s+[a-z]:\s*/i, '').trim();
+                const betDigits = bet.replace(/\D/g, '') || bet;
+                if (bPType.includes('tổng') || bPType.includes('tong')) {
+                  const betSum = Number(bet);
+                  if (wSum === betSum) {
+                    if (wSum === 3 || wSum === 18) prize += 1200000 * mult;
+                    else if (wSum === 4 || wSum === 17) prize += 400000 * mult;
+                    else if (wSum === 5 || wSum === 16) prize += 200000 * mult;
+                    else if (wSum === 6 || wSum === 15) prize += 120000 * mult;
+                    else if (wSum === 7 || wSum === 14) prize += 80000 * mult;
+                    else if (wSum === 8 || wSum === 13) prize += 60000 * mult;
+                    else if (wSum === 9 || wSum === 12) prize += 50000 * mult;
+                    else if (wSum === 10 || wSum === 11) prize += 50000 * mult;
+                  }
+                } else if (bPType.includes('tài') || bPType.includes('tai') || bPType.includes('xỉu') || bPType.includes('xiu') || bPType.includes('hoà') || bPType.includes('hoa')) {
+                  if ((bet === 'Tài' || bet.toLowerCase() === 'tai') && (wSum >= 12 && wSum <= 18 || (wSum >= 11 && !(wDigits[0] === wDigits[1] && wDigits[1] === wDigits[2])))) prize += 20000 * mult;
+                  else if ((bet === 'Xỉu' || bet.toLowerCase() === 'xiu') && (wSum >= 3 && wSum <= 9 || (wSum <= 10 && !(wDigits[0] === wDigits[1] && wDigits[1] === wDigits[2])))) prize += 20000 * mult;
+                  else if ((bet === 'Hoà' || bet.toLowerCase() === 'hoa') && (wSum === 10 || wSum === 11 || (wDigits[0] === wDigits[1] && wDigits[1] === wDigits[2]))) prize += 30000 * mult;
+                } else {
+                  if (betDigits.length === 1) {
+                    const d = Number(betDigits);
+                    if (wDigits.filter((n: number) => n === d).length >= 1) prize += 20000 * mult;
+                  } else if (betDigits.length === 2 && betDigits[0] === betDigits[1]) {
+                    const d = Number(betDigits[0]);
+                    if (wDigits.filter((n: number) => n === d).length >= 2) prize += 30000 * mult;
+                  } else if (betDigits.length === 3 && betDigits[0] === betDigits[1] && betDigits[1] === betDigits[2]) {
+                    const d = Number(betDigits[0]);
+                    if (wDigits.filter((n: number) => n === d).length === 3) prize += 40000 * mult;
+                  }
+                }
+              });
+            });
+            if (prize > 0) isWin = true;
+          }
+
+          if (isWin && prize > 0) {
+            const u = await User.findById(order.user?._id || order.user);
+            if (u) {
+              const bBefore = u.balance;
+              u.balance += prize;
+              const bAfter = u.balance;
+              await u.save();
+              await BalanceHistory.create({
+                user: u._id,
+                type: 'win',
+                amount: prize,
+                balanceBefore: bBefore,
+                balanceAfter: bAfter,
+                description: `Trả thưởng cược vé ${order.orderId}`,
+                reference: order._id.toString()
+              });
+              await Transaction.create({
+                user: u._id,
+                type: 'win',
+                txId: order.orderId,
+                amount: prize,
+                status: 'approved',
+                balanceBefore: bBefore,
+                balanceAfter: bAfter,
+                note: `Thắng cược vé ${order.orderId}`
+              });
+            }
+          }
+
+          await Order.updateOne(
+            { _id: order._id },
+            {
+              $set: {
+                status: 'completed',
+                isWinner: isWin,
+                prizeAmount: prize,
+                winningNumbers: drawDoc.winningNumbers,
+                drawId: drawDoc.drawCode
+              }
+            }
+          );
+          order.status = 'completed';
+          order.isWinner = isWin;
+          order.prizeAmount = prize;
+          order.winningNumbers = drawDoc.winningNumbers;
         }
       } else {
         if ((!order.winningNumbers || order.winningNumbers.length === 0) && drawDoc.winningNumbers && drawDoc.winningNumbers.length > 0) {
