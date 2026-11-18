@@ -37,9 +37,9 @@ async function run() {
         process.exit(1);
     }
     // Cập nhật cấu hình game: 2 lần/ngày (13h & 21h)
-    game.cronExpression = '0 13,21 * * *';
+    game.cronExpression = '45 12,20 * * *';
     game.drawDurationMinutes = 0;
-    game.badge = '2 kỳ/ngày';
+    game.badge = '12h45 & 20h45';
     await game.save();
     console.log(`[OK] Đã cập nhật game ${game.name} (${game.code}): cronExpression="0 13,21 * * *", badge="2 kỳ/ngày"`);
     // 2. Tìm tất cả kỳ quay status="open" hiện tại
@@ -93,16 +93,16 @@ async function run() {
         const prevDay = new Date(checkDay.getTime() - 24 * 3600 * 1000);
         const shifts = [
             {
-                name: 'Ca 1 (12h-13h)',
-                close: getVNCutoffDate(checkDay, 12, 0),
-                draw: getVNCutoffDate(checkDay, 13, 0),
-                open: getVNCutoffDate(prevDay, 12, 0)
+                name: 'Ca 1 (12h30-12h45)',
+                close: getVNCutoffDate(checkDay, 12, 30),
+                draw: getVNCutoffDate(checkDay, 12, 45),
+                open: getVNCutoffDate(prevDay, 12, 30)
             },
             {
-                name: 'Ca 2 (20h-21h)',
-                close: getVNCutoffDate(checkDay, 20, 0),
-                draw: getVNCutoffDate(checkDay, 21, 0),
-                open: getVNCutoffDate(prevDay, 20, 0)
+                name: 'Ca 2 (20h30-20h45)',
+                close: getVNCutoffDate(checkDay, 20, 30),
+                draw: getVNCutoffDate(checkDay, 20, 45),
+                open: getVNCutoffDate(prevDay, 20, 30)
             }
         ];
         for (const shift of shifts) {

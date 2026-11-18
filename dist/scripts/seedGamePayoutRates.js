@@ -44,6 +44,18 @@ const DEFAULT_RATES_MB = {
     '4 Càng đầu giải 1': 9000,
     'Xiên 4 càng ĐB': 2.4,
     'Xiên 4 càng giải 1': 2.4,
+    '3C Đảo ĐB': 158,
+    '3C Đảo G1': 158,
+    '3C Đảo Đầu ĐB': 158,
+    '3C Đảo Đầu G1': 158,
+    '3 Càng Đảo ĐB': 158,
+    '3 Càng Đảo G1': 158,
+    '3 Càng Đảo Đầu ĐB': 158,
+    '3 Càng Đảo Đầu G1': 158,
+    'Đảo ĐB': 4.9,
+    'Đảo G1': 4.9,
+    'Đảo Đầu ĐB': 4.9,
+    'Đảo Đầu G1': 4.9,
     'Lô Trượt Xiên 4': 2.3,
     'Lô Trượt Xiên 6': 4.5,
     'Lô Trượt Xiên 8': 8,
@@ -83,6 +95,18 @@ const DEFAULT_RATES_MN_MT = {
     '4 Càng đầu giải 1': 9000,
     'Xiên 4 càng ĐB': 2.4,
     'Xiên 4 càng giải 1': 2.4,
+    '3C Đảo ĐB': 165,
+    '3C Đảo G1': 165,
+    '3C Đảo Đầu ĐB': 165,
+    '3C Đảo Đầu G1': 165,
+    '3 Càng Đảo ĐB': 165,
+    '3 Càng Đảo G1': 165,
+    '3 Càng Đảo Đầu ĐB': 165,
+    '3 Càng Đảo Đầu G1': 165,
+    'Đảo ĐB': 4.9,
+    'Đảo G1': 4.9,
+    'Đảo Đầu ĐB': 4.9,
+    'Đảo Đầu G1': 4.9,
     'Lô Trượt Xiên 4': 1.8,
     'Lô Trượt Xiên 6': 2.5,
     'Lô Trượt Xiên 8': 3.3,
@@ -116,8 +140,8 @@ const DEFAULT_RATES_BINGO18 = {
     'Tổng 18': 120
 };
 const DEFAULT_RATES_TRUOT_LOTO = {
-    'Trượt 4': 2.5,
-    'Trượt 8': 8.5,
+    'Trượt 4': 2.3,
+    'Trượt 8': 8,
     'Trượt 10': 12
 };
 const DEFAULT_RATES_LOTO_CAP = {

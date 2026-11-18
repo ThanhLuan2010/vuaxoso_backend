@@ -59,10 +59,16 @@ const ensureUpcomingDraws = async () => {
                     let created = 0;
                     while (created < needed) {
                         const prevDay = new Date(checkDay.getTime() - 24 * 3600 * 1000);
-                        const cutoffs = [
-                            { close: getVNCutoffDate(checkDay, 12, 0), draw: getVNCutoffDate(checkDay, 13, 0), open: getVNCutoffDate(prevDay, 12, 0) },
-                            { close: getVNCutoffDate(checkDay, 20, 0), draw: getVNCutoffDate(checkDay, 21, 0), open: getVNCutoffDate(prevDay, 20, 0) }
-                        ];
+                        const is570 = game.code === 'lotto_570';
+                        const cutoffs = is570
+                            ? [
+                                { close: getVNCutoffDate(checkDay, 12, 30), draw: getVNCutoffDate(checkDay, 12, 45), open: getVNCutoffDate(prevDay, 12, 30) },
+                                { close: getVNCutoffDate(checkDay, 20, 30), draw: getVNCutoffDate(checkDay, 20, 45), open: getVNCutoffDate(prevDay, 20, 30) }
+                            ]
+                            : [
+                                { close: getVNCutoffDate(checkDay, 12, 0), draw: getVNCutoffDate(checkDay, 13, 0), open: getVNCutoffDate(prevDay, 12, 0) },
+                                { close: getVNCutoffDate(checkDay, 20, 0), draw: getVNCutoffDate(checkDay, 21, 0), open: getVNCutoffDate(prevDay, 20, 0) }
+                            ];
                         for (const item of cutoffs) {
                             if (item.close > now) {
                                 const exists = await Draw_1.default.findOne({ game: game._id, closeTime: item.close });
@@ -421,7 +427,7 @@ exports.GAME_CONFIGS = [
         cronExpression: '15 18 * * *',
         drawDurationMinutes: 0,
         autoRandomResult: false,
-        payoutRates: { 'Trượt 4': 2.5, 'Trượt 8': 8.5, 'Trượt 10': 12 }
+        payoutRates: { 'Trượt 4': 2.3, 'Trượt 8': 8, 'Trượt 10': 12 }
     },
     {
         code: 'bao_loto_2',
@@ -453,9 +459,9 @@ exports.GAME_CONFIGS = [
         type: 'vietlott',
         brandColor: '#6A1B9A',
         bgColor: '#EDE7F6',
-        badge: '13h & 21h',
+        badge: '12h45 & 20h45',
         subtext: '🏆 Jackpot',
-        cronExpression: '0 13,21 * * *',
+        cronExpression: '45 12,20 * * *',
         drawDurationMinutes: 0,
         autoRandomResult: false
     },

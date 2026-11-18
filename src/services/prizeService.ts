@@ -872,10 +872,10 @@ export const processDrawResults = async (drawId: string) => {
                  else reqCount = 4;
                }
 
-               let defaultRate = 2.5;
+               let defaultRate = 2.3;
                if (reqCount === 10) defaultRate = 12;
-               else if (reqCount === 8) defaultRate = 8.5;
-               else defaultRate = 2.5;
+               else if (reqCount === 8) defaultRate = 8;
+               else defaultRate = 2.3;
 
                const rateKey = reqCount === 10 ? 'Trượt 10' : reqCount === 8 ? 'Trượt 8' : 'Trượt 4';
                const rate = (game.payoutRates && (game.payoutRates[rateKey] || game.payoutRates[rateKey.toLowerCase()])) ?? defaultRate;
