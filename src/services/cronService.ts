@@ -131,7 +131,7 @@ export const ensureUpcomingDraws = async () => {
         while (created < needed) {
           const dayOfWeek = getVNDayOfWeek(checkDate);
           if (drawDays.includes(dayOfWeek)) {
-            const is18h15Game = ['dientoan_636', 'bao_636', 'dientoan_123'].includes(game.code);
+            const is18h15Game = ['dientoan_123'].includes(game.code);
 
             const closeCutoff = getVNCutoffDate(checkDate, 17, 20);
             const drawCutoff = is18h15Game ? getVNCutoffDate(checkDate, 18, 15) : getVNCutoffDate(checkDate, 18, 0);
@@ -139,10 +139,28 @@ export const ensureUpcomingDraws = async () => {
             if (closeCutoff > now) {
               lastDrawNum += 1;
               const drawCode = `#${String(lastDrawNum).padStart(4, "0")}`;
+
+              let openTime: Date;
+              const isPeriodicWeeklyGame = ['power_655', 'mega_645', 'max_3d', 'max_3d_pro', 'dientoan_636', 'bao_636'].includes(game.code);
+              if (isPeriodicWeeklyGame && drawDays.length < 7) {
+                let prevDayOffset = 1;
+                while (prevDayOffset <= 7) {
+                  const checkDow = (dayOfWeek - prevDayOffset + 7) % 7;
+                  if (drawDays.includes(checkDow)) {
+                    break;
+                  }
+                  prevDayOffset++;
+                }
+                const prevDate = new Date(checkDate.getTime() - prevDayOffset * 24 * 3600 * 1000);
+                openTime = getVNCutoffDate(prevDate, 17, 20);
+              } else {
+                openTime = new Date(closeCutoff.getTime() - 24 * 3600 * 1000);
+              }
+
               await Draw.create({
                 game: game._id,
                 drawCode,
-                openTime: new Date(closeCutoff.getTime() - 24 * 3600 * 1000),
+                openTime,
                 closeTime: closeCutoff,
                 drawTime: drawCutoff,
                 status: 'open'
@@ -327,9 +345,9 @@ export const GAME_CONFIGS = [
     type: 'dientoan',
     brandColor: '#00897B',
     bgColor: '#E0F2F1',
-    badge: '18h15 T4-T7',
+    badge: 'T4 & T7',
     subtext: '🏆 Jackpot',
-    cronExpression: '15 18 * * 3,6',
+    cronExpression: '0 18 * * 3,6',
     drawDurationMinutes: 0,
     autoRandomResult: false
   },
@@ -339,9 +357,9 @@ export const GAME_CONFIGS = [
     type: 'dientoan',
     brandColor: '#00897B',
     bgColor: '#E0F2F1',
-    badge: '18h15 T4-T7',
-    subtext: 'Bao số Điện toán',
-    cronExpression: '15 18 * * 3,6',
+    badge: 'T4 & T7',
+    subtext: '🏆 Jackpot',
+    cronExpression: '0 18 * * 3,6',
     drawDurationMinutes: 0,
     autoRandomResult: false
   },

@@ -527,6 +527,41 @@ testCase('LOTTO_535_SCHEDULE', 'Lotto 5/35: 2 kỳ/ngày (Kỳ 1: Mở 20h hôm 
   assert.strictEqual(draw3.isNextDay, true);
 });
 
+testCase('VIETLOTT_DT636_SCHEDULE', 'Lịch quay: Power 6/55, Mega 6/45, Max 3D/3D Pro, Điện toán 6x36: 17h20 chốt, 18h xổ, mở kỳ sau = đóng kỳ trước', () => {
+  const getPrevDrawDay = (currentDay: number, drawDays: number[]) => {
+    let offset = 1;
+    while (offset <= 7) {
+      const check = (currentDay - offset + 7) % 7;
+      if (drawDays.includes(check)) return { prevDay: check, dayOffset: offset };
+      offset++;
+    }
+    return { prevDay: currentDay, dayOffset: 1 };
+  };
+
+  // 1. Power 6/55 & Max3D Pro: T3 (2), T5 (4), T7 (6)
+  const powerDays = [2, 4, 6];
+  assert.strictEqual(getPrevDrawDay(4, powerDays).prevDay, 2); // T5 mở lúc đóng T3 (cách 2 ngày)
+  assert.strictEqual(getPrevDrawDay(6, powerDays).prevDay, 4); // T7 mở lúc đóng T5 (cách 2 ngày)
+  assert.strictEqual(getPrevDrawDay(2, powerDays).prevDay, 6); // T3 mở lúc đóng T7 (cách 3 ngày)
+
+  // 2. Mega 6/45: T4 (3), T6 (5), CN (0)
+  const megaDays = [3, 5, 0];
+  assert.strictEqual(getPrevDrawDay(3, megaDays).prevDay, 0); // T4 mở lúc đóng CN (cách 3 ngày)
+  assert.strictEqual(getPrevDrawDay(5, megaDays).prevDay, 3); // T6 mở lúc đóng T4 (cách 2 ngày)
+  assert.strictEqual(getPrevDrawDay(0, megaDays).prevDay, 5); // CN mở lúc đóng T6 (cách 2 ngày)
+
+  // 3. Max3D / Max3D+: T2 (1), T4 (3), T6 (5)
+  const max3dDays = [1, 3, 5];
+  assert.strictEqual(getPrevDrawDay(1, max3dDays).prevDay, 5); // T2 mở lúc đóng T6 (cách 3 ngày)
+  assert.strictEqual(getPrevDrawDay(3, max3dDays).prevDay, 1); // T4 mở lúc đóng T2 (cách 2 ngày)
+  assert.strictEqual(getPrevDrawDay(5, max3dDays).prevDay, 3); // T6 mở lúc đóng T4 (cách 2 ngày)
+
+  // 4. Điện toán 6x36: T4 (3), T7 (6)
+  const dt636Days = [3, 6];
+  assert.strictEqual(getPrevDrawDay(3, dt636Days).prevDay, 6); // T4 mở lúc đóng T7 (cách 4 ngày)
+  assert.strictEqual(getPrevDrawDay(6, dt636Days).prevDay, 3); // T7 mở lúc đóng T4 (cách 3 ngày)
+});
+
 // ==========================================
 // 7. KIỂM TRA CUTOFF VÀ VALIDATION
 // ==========================================
