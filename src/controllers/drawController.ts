@@ -738,6 +738,18 @@ export const normalizeDrawResults = (
   // Filter out any standalone separator tokens
   const cleanTokens = rawList.filter(token => token !== '|' && token !== '+' && token !== '-');
 
+  if (gameCode === 'bingo18') {
+    let tokens = cleanTokens;
+    if (tokens.length === 1 && tokens[0].length === 3 && /^[1-6]{3}$/.test(tokens[0])) {
+      tokens = tokens[0].split('');
+    } else if (tokens.length > 3) {
+      tokens = tokens.slice(0, 3);
+    }
+    return {
+      winningNumbers: tokens
+    };
+  }
+
   if (gameCode === 'max_3d' || gameCode === 'max_3d_pro') {
     return {
       winningNumbers: cleanTokens.map(n => n.padStart(3, '0')),

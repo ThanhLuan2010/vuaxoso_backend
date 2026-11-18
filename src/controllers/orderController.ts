@@ -104,6 +104,18 @@ export const checkoutOrders = async (req: any, res: Response) => {
             }
           }
 
+          if (!draw && gameDoc && drawDate) {
+            const matchCode = String(drawDate).match(/#\d+/);
+            if (matchCode) {
+              const codeVariant = matchCode[0];
+              const rawNum = codeVariant.replace(/^#/, '');
+              draw = await Draw.findOne({
+                game: gameDoc._id,
+                drawCode: { $in: [codeVariant, rawNum, `#${rawNum.padStart(5, '0')}`, rawNum.padStart(5, '0')] }
+              });
+            }
+          }
+
           // Khớp kỳ quay theo ngày và đài đối với Lô Đề / XSKT nếu chưa tìm thấy draw theo drawId
           if (!draw && isLodeOrRegion) {
             const targetDateStr = drawDate || (typeof drawId === "string" && /^\d{2}\/\d{2}\/\d{4}/.test(drawId) ? drawId : null);
@@ -525,6 +537,18 @@ export const createOrder = async (req: any, res: Response) => {
         }
         if (!draw) {
           draw = await Draw.findOne({ drawCode: { $in: [drawId, cleanCode] } });
+        }
+
+        if (!draw && gameDoc && drawDate) {
+          const matchCode = String(drawDate).match(/#\d+/);
+          if (matchCode) {
+            const codeVariant = matchCode[0];
+            const rawNum = codeVariant.replace(/^#/, '');
+            draw = await Draw.findOne({
+              game: gameDoc._id,
+              drawCode: { $in: [codeVariant, rawNum, `#${rawNum.padStart(5, '0')}`, rawNum.padStart(5, '0')] }
+            });
+          }
         }
       }
 
