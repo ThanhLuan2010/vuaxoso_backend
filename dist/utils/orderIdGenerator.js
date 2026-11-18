@@ -26,8 +26,8 @@ function getLetterPrefix(index) {
 async function getNextOrderIds(count = 1) {
     if (count <= 0)
         return [];
-    const counter = await Counter_1.default.findByIdAndUpdate('order_id', { $inc: { seq: count } }, { returnDocument: 'after', upsert: true });
-    const endSeq = counter.seq;
+    const counter = await Counter_1.default.findByIdAndUpdate('order_id', { $inc: { seq: count } }, { new: true, upsert: true, returnDocument: 'after' });
+    const endSeq = (counter && typeof counter.seq === 'number') ? counter.seq : count;
     const startSeq = endSeq - count + 1;
     const ids = [];
     for (let s = startSeq; s <= endSeq; s++) {

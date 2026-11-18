@@ -790,6 +790,30 @@ export const normalizeDrawResults = (
     };
   }
 
+  if (gameCode === 'than_tai_4' || gameCode === 'than_tai') {
+    let tokens = cleanTokens;
+    if (tokens.length === 1 && tokens[0].length === 4 && /^\d{4}$/.test(tokens[0])) {
+      tokens = tokens[0].split('');
+    }
+    return {
+      winningNumbers: tokens.slice(0, 4)
+    };
+  }
+
+  if (gameCode === 'dientoan_123' || gameCode === 'dt123') {
+    let tokens = cleanTokens;
+    if (tokens.length >= 3) {
+      tokens = [
+        tokens[0].slice(-1),
+        tokens[1].slice(-2).padStart(2, '0'),
+        tokens[2].slice(-3).padStart(3, '0')
+      ];
+    }
+    return {
+      winningNumbers: tokens
+    };
+  }
+
   if (gameCode === 'lotto_535' || gameCode === 'lotto_570') {
     // 5 số thường (01-35 hoặc 01-70) + 1 số đặc biệt
     let mains: string[] = [];

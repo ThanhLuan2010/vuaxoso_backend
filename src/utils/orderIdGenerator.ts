@@ -21,13 +21,13 @@ export function getLetterPrefix(index: number): string {
 export async function getNextOrderIds(count = 1): Promise<string[]> {
   if (count <= 0) return [];
 
-  const counter = await Counter.findByIdAndUpdate(
+  const counter: any = await Counter.findByIdAndUpdate(
     'order_id',
     { $inc: { seq: count } },
-    { returnDocument: 'after', upsert: true }
+    { new: true, upsert: true, returnDocument: 'after' }
   );
 
-  const endSeq = counter.seq;
+  const endSeq = (counter && typeof counter.seq === 'number') ? counter.seq : count;
   const startSeq = endSeq - count + 1;
   const ids: string[] = [];
 
