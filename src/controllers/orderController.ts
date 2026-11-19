@@ -150,6 +150,10 @@ export const checkoutOrders = async (req: any, res: Response) => {
             }).sort({ closeTime: 1 });
           }
 
+          if (draw && isLodeOrRegion && (draw.status !== "open" || now > draw.closeTime)) {
+            draw = null;
+          }
+
           // Khớp kỳ quay theo ngày và đài đối với Lô Đề / XSKT nếu chưa tìm thấy draw theo drawId
           if (!draw && isLodeOrRegion) {
             const targetDateStr = drawDate || (typeof drawId === "string" && /^\d{2}\/\d{2}\/\d{4}/.test(drawId) ? drawId : null);
@@ -172,22 +176,28 @@ export const checkoutOrders = async (req: any, res: Response) => {
                   draw = await Draw.findOne({
                     game: { $in: relatedGameIds },
                     provinceId: { $in: [provCode, provinceName] },
-                    closeTime: { $gte: startOfDay, $lte: endOfDay }
+                    closeTime: { $gte: startOfDay, $lte: endOfDay },
+                    status: "open",
+                    $or: [{ closeTime: { $gt: now } }]
                   }).sort({ closeTime: 1 });
                 }
                 if (!draw) {
                   draw = await Draw.findOne({
                     game: { $in: relatedGameIds },
-                    closeTime: { $gte: startOfDay, $lte: endOfDay }
+                    closeTime: { $gte: startOfDay, $lte: endOfDay },
+                    status: "open",
+                    $or: [{ closeTime: { $gt: now } }]
                   }).sort({ closeTime: 1 });
                 }
               }
             }
           }
 
-          if (isLodeOrRegion && isScheduledDate && !draw) {
-            // Đối với vé lô đề đặt trước theo ngày tương lai không có kỳ CMS, giữ nguyên ngày/drawId
-            drawId = (typeof drawId === "string" && drawId.startsWith("#")) ? drawId : (drawDate || (typeof drawId === "string" ? drawId.replace("sched_", "") : drawId));
+          if (isLodeOrRegion && !draw) {
+            // Đối với vé lô đề khi chưa có kỳ quay open từ CMS, giữ nguyên targetDateStr làm drawId/drawDate
+            const targetDateStr = drawDate || (typeof drawId === "string" && /^\d{2}\/\d{2}\/\d{4}/.test(drawId) ? drawId : null);
+            drawId = (typeof drawId === "string" && drawId.startsWith("#")) ? drawId : (targetDateStr || drawDate || (typeof drawId === "string" ? drawId.replace("sched_", "") : drawId));
+            drawCode = (typeof drawCode === "string" && drawCode.startsWith("#")) ? drawCode : undefined;
           } else {
             if (!draw || draw.status !== "open" || now > draw.closeTime) {
               if (gameDoc) {
@@ -924,114 +934,6 @@ export const getMyOrders = async (req: any, res: Response) => {
     const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
     const { status, gameType } = req.query;
 
-    // --- BƯỚC TỰ ĐỘNG ĐỒNG BỘ: Kiểm tra & cập nhật các đơn 'pending' đã có kết quả kỳ quay ---
-    try {
-      const pendingOrders = await Order.find({ user: req.user.id, status: 'pending' }).lean();
-      if (pendingOrders.length > 0) {
-        const drawsToProcess = new Set<string>();
-
-        // 1. Thu thập theo drawId (ObjectId)
-        const validObjIds = pendingOrders
-          .map(o => o.drawId)
-          .filter(id => id && mongoose.Types.ObjectId.isValid(id));
-
-        // 2. Thu thập theo drawCode (chuỗi '#1107' hoặc '1107')
-        const drawCodes = pendingOrders
-          .flatMap(o => [o.drawCode, o.drawId])
-          .filter(c => typeof c === 'string' && (c.startsWith('#') || /^\d{3,}$/.test(c.trim())))
-          .map(c => String(c).trim());
-
-        const queryOr: any[] = [];
-        if (validObjIds.length > 0) queryOr.push({ _id: { $in: validObjIds } });
-        if (drawCodes.length > 0) {
-          const rawCodes = drawCodes.map(c => c.replace(/^#/, ''));
-          const hashCodes = rawCodes.map(c => `#${c}`);
-          queryOr.push({ drawCode: { $in: [...rawCodes, ...hashCodes] } });
-        }
-
-        if (queryOr.length > 0) {
-          const finishedDraws = await Draw.find({
-            $or: queryOr,
-            status: 'completed',
-            winningNumbers: { $exists: true, $ne: [] }
-          }).select('_id drawCode winningNumbers').lean();
-
-          finishedDraws.forEach(fd => {
-            drawsToProcess.add(fd._id.toString());
-          });
-        }
-
-        // 3. Thu thập theo Lô đề / XSKT (theo ngày và đài)
-        const unresolvedLode = pendingOrders.filter(o =>
-          ['xoso_3mien', 'lode', 'MB', 'MT', 'MN', 'mb', 'mt', 'mn'].includes(o.gameType) ||
-          String(o.gameType).startsWith('kienthiet')
-        );
-
-        if (unresolvedLode.length > 0) {
-          const provinces = await Province.find({}).lean();
-          const provMap = new Map<string, string>();
-          provinces.forEach((p: any) => {
-            if (p.name) provMap.set(p.name.toLowerCase().trim(), p.provinceId);
-            if (p.code) provMap.set(p.code.toLowerCase().trim(), p.provinceId);
-            if (p.provinceId) provMap.set(p.provinceId.toLowerCase().trim(), p.provinceId);
-          });
-
-          const drawSearchCache = new Map<string, string | null>();
-          for (const ord of unresolvedLode) {
-            const targetDateStr = ord.drawDate || (typeof ord.drawId === 'string' && /^\d{2}\/\d{2}\/\d{4}/.test(ord.drawId) ? ord.drawId : null);
-            if (targetDateStr) {
-              const provKey = ord.provinceName ? ord.provinceName.toLowerCase().trim() : '';
-              const cacheKey = `${targetDateStr}_${provKey}`;
-              if (drawSearchCache.has(cacheKey)) {
-                const cachedDrawId = drawSearchCache.get(cacheKey);
-                if (cachedDrawId) drawsToProcess.add(cachedDrawId);
-                continue;
-              }
-
-              const dateParts = targetDateStr.split('/');
-              if (dateParts.length === 3) {
-                const day = parseInt(dateParts[0], 10);
-                const month = parseInt(dateParts[1], 10);
-                const year = parseInt(dateParts[2], 10);
-                const startOfDay = new Date(Date.UTC(year, month - 1, day, 0 - 7, 0, 0));
-                const endOfDay = new Date(Date.UTC(year, month - 1, day, 23 - 7, 59, 59, 999));
-
-                const provId = provMap.get(provKey);
-
-                const findProvQuery: any = {
-                  closeTime: { $gte: startOfDay, $lte: endOfDay },
-                  status: 'completed',
-                  winningNumbers: { $exists: true, $ne: [] }
-                };
-                if (provId) {
-                  findProvQuery.provinceId = { $in: [provId, ord.provinceName] };
-                }
-
-                const matchedDraw = await Draw.findOne(findProvQuery).select('_id drawCode winningNumbers').lean();
-                if (matchedDraw) {
-                  drawSearchCache.set(cacheKey, matchedDraw._id.toString());
-                  drawsToProcess.add(matchedDraw._id.toString());
-                } else {
-                  drawSearchCache.set(cacheKey, null);
-                }
-              }
-            }
-          }
-        }
-
-        // Chạy dò vé ngay để cập nhật status 'completed' cho các đơn đã có kết quả
-        for (const dId of drawsToProcess) {
-          try {
-            await processDrawResults(dId);
-          } catch (e) {
-            console.error('getMyOrders pre-settle processDrawResults error:', e);
-          }
-        }
-      }
-    } catch (preSyncErr) {
-      console.error('getMyOrders pre-sync error:', preSyncErr);
-    }
-
     const filter: any = { user: req.user.id };
     if (status) {
       filter.status = status;
@@ -1089,7 +991,6 @@ export const getMyOrders = async (req: any, res: Response) => {
         }
       });
 
-      let needsRefresh = false;
       for (const order of orders) {
         let matchedDraw = null;
         if (order.drawId && drawIdMap.has(order.drawId.toString())) {
@@ -1100,18 +1001,9 @@ export const getMyOrders = async (req: any, res: Response) => {
           matchedDraw = drawCodeMap.get(order.drawId)!;
         }
 
-        if (matchedDraw) {
+        if (matchedDraw && matchedDraw.drawCode) {
           order.drawId = matchedDraw.drawCode;
-          const isUnsettledOrLost = order.status === 'pending' || (!order.isWinner && (!order.prizeAmount || order.prizeAmount === 0));
-          if (isUnsettledOrLost && matchedDraw.status === 'completed' && matchedDraw.winningNumbers && matchedDraw.winningNumbers.length > 0) {
-            await processDrawResults(matchedDraw._id.toString());
-            needsRefresh = true;
-          }
         }
-      }
-      if (needsRefresh) {
-        const refreshedOrders = await Order.find(filter).lean().sort({ createdAt: -1 }).skip(page ? (page - 1) * limit : 0).limit(limit);
-        return res.json(refreshedOrders);
       }
     }
 
@@ -1183,14 +1075,7 @@ export const getMyOrders = async (req: any, res: Response) => {
               resolveDrawCache.set(cacheKey, matchedDraw.drawCode);
               order.drawCode = matchedDraw.drawCode;
               order.drawId = matchedDraw.drawCode;
-              const updateDoc: any = { drawCode: matchedDraw.drawCode, drawId: matchedDraw.drawCode };
-              if (matchedDraw.status === 'completed' && matchedDraw.winningNumbers && matchedDraw.winningNumbers.length > 0) {
-                order.status = 'completed';
-                order.winningNumbers = matchedDraw.winningNumbers;
-                updateDoc.status = 'completed';
-                updateDoc.winningNumbers = matchedDraw.winningNumbers;
-              }
-              Order.updateOne({ _id: order._id }, { $set: updateDoc }).catch(() => {});
+              Order.updateOne({ _id: order._id }, { $set: { drawCode: matchedDraw.drawCode, drawId: matchedDraw.drawCode } }).catch(() => {});
             } else {
               resolveDrawCache.set(cacheKey, null);
             }
