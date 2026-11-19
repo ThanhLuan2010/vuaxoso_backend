@@ -654,35 +654,43 @@ export const processDrawResults = async (drawId: string) => {
             });
           }
         } else if (game.code === 'max_4d') {
-          const w = draw.winningNumbers;
-          if (w && w.length >= 6) {
+          const w = (draw.winningNumbers || []).map((s: any) => String(s).trim().padStart(4, '0'));
+          if (w.length >= 6) {
             const nhat = w[0];
             const nhi = w.slice(1, 3);
             const ba = w.slice(3, 6);
 
             allBoards.forEach((board) => {
               let boardPrize = 0;
-              const numStr = board.numbers.join('');
+              const rawNums = Array.isArray(board.numbers) ? board.numbers : [board.numbers];
+              const numStr = rawNums.join('').replace(/\D/g, '').padStart(4, '0');
 
               if (numStr.length === 4) {
+                // 1. Giải Nhất: Trúng đúng 4 chữ số (15.000.000đ)
                 if (numStr === nhat) {
                   boardPrize = 15000000;
-                } else if (nhi.includes(numStr)) {
+                }
+                // 2. Giải Nhì: Trúng đúng 4 chữ số (6.500.000đ)
+                else if (nhi.includes(numStr)) {
                   boardPrize = 6500000;
-                } else if (ba.includes(numStr)) {
+                }
+                // 3. Giải Ba: Trúng đúng 4 chữ số (3.000.000đ)
+                else if (ba.includes(numStr)) {
                   boardPrize = 3000000;
-                } else if (numStr.slice(1) === nhat.slice(1)) {
-                  // Khuyến khích 1: Khớp 3 chữ số cuối giải Nhất
+                }
+                // 4. Khuyến khích 1: Khớp 3 chữ số cuối giải Nhất (1.000.000đ)
+                else if (numStr.slice(-3) === nhat.slice(-3)) {
                   boardPrize = 1000000;
-                } else if (numStr.slice(2) === nhat.slice(2)) {
-                  // Khuyến khích 2: Khớp 2 chữ số cuối giải Nhất
+                }
+                // 5. Khuyến khích 2: Khớp 2 chữ số cuối giải Nhất (100.000đ)
+                else if (numStr.slice(-2) === nhat.slice(-2)) {
                   boardPrize = 100000;
                 }
               }
 
               if (boardPrize > 0) {
                 isWinner = true;
-                const multiplier = Math.floor(board.cost / 10000);
+                const multiplier = Math.floor((board.cost || 10000) / 10000);
                 prizeAmount += boardPrize * (multiplier > 0 ? multiplier : 1);
               }
             });
