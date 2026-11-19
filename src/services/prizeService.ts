@@ -620,16 +620,27 @@ export const processDrawResults = async (drawId: string) => {
                 }
               } else if (playType === 'Max3D Pro') {
                 if (num1 && num2) {
+                  // Max 3D Pro (Chọn 2 bộ 3 chữ số - bộ A và bộ B):
+                  // 1. Giải Đặc Biệt: Trúng đúng thứ tự 2 bộ số Đặc Biệt (2,000,000,000đ)
                   if (num1 === dacBiet[0] && num2 === dacBiet[1]) boardPrize = 2000000000;
+                  // 2. Giải Phụ Đặc Biệt: Trúng ngược thứ tự 2 bộ số Đặc Biệt (400,000,000đ)
                   else if (num1 === dacBiet[1] && num2 === dacBiet[0]) boardPrize = 400000000;
+                  // 3. Giải Nhất: Trúng cả 2 bộ số ở hạng Giải Nhất (30,000,000đ)
                   else if (hasTwoMatches(num1, num2, nhat)) boardPrize = 30000000;
+                  // 4. Giải Nhì: Trúng cả 2 bộ số ở hạng Giải Nhì (10,000,000đ)
                   else if (hasTwoMatches(num1, num2, nhi)) boardPrize = 10000000;
+                  // 5. Giải Ba: Trúng cả 2 bộ số ở hạng Giải Ba (4,000,000đ)
                   else if (hasTwoMatches(num1, num2, ba)) boardPrize = 4000000;
-                  else if ((dacBiet.includes(num1) && otherPrizes.includes(num2)) || (dacBiet.includes(num2) && otherPrizes.includes(num1))) {
+                  // 6. Giải Tư: Trúng bất kỳ 2 bộ số trong 20 bộ số mở thưởng (1,000,000đ)
+                  else if (hasTwoMatches(num1, num2, allPrizes)) {
                     boardPrize = 1000000;
-                  } else if (hasTwoMatches(num1, num2, otherPrizes)) {
+                  }
+                  // 7. Giải Năm: Trúng 1 bộ số ở Giải Đặc Biệt (100,000đ)
+                  else if (dacBiet.includes(num1) || dacBiet.includes(num2)) {
                     boardPrize = 100000;
-                  } else if (otherPrizes.includes(num1) || otherPrizes.includes(num2)) {
+                  }
+                  // 8. Giải Sáu: Trúng 1 bộ số thuộc Giải Nhất, Nhì hoặc Ba (40,000đ)
+                  else if (otherPrizes.includes(num1) || otherPrizes.includes(num2)) {
                     boardPrize = 40000;
                   }
                 }
