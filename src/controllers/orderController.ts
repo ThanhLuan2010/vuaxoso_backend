@@ -1017,10 +1017,46 @@ export const getOrderById = async (req: any, res: Response) => {
         drawDoc = await Draw.findById(order.drawId).lean();
       }
 
-      if (!drawDoc && order.drawId) {
-        const cleanCode = String(order.drawId).replace(/^#/, "").trim();
-        const codeWithHash = "#" + cleanCode;
-        let query: any = { $or: [{ drawCode: cleanCode }, { drawCode: codeWithHash }] };
+      // Xác định các Game ID phù hợp cho order để tránh lấy nhầm drawCode trùng số của game khác
+      let candidateCodes: string[] = ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn", "loto_235", "loto_cap", "bao_loto_2", "truot_loto"];
+      if (order.gameType) {
+        if (order.gameType.includes('max_3d') || order.gameType.includes('max3d')) {
+          candidateCodes.push('max_3d', 'max_3d_pro');
+        } else if (order.gameType.includes('mega')) {
+          candidateCodes.push('mega_645', 'mega');
+        } else if (order.gameType.includes('power')) {
+          candidateCodes.push('power_655', 'power');
+        } else if (order.gameType.includes('max_4d') || order.gameType.includes('max4d')) {
+          candidateCodes.push('max_4d');
+        } else {
+          candidateCodes.push(order.gameType);
+        }
+      }
+      const relatedGames = await Game.find({ code: { $in: candidateCodes } }).select("_id code").lean();
+      const isLotoDerivedMb = ["loto_235", "loto_cap", "bao_loto_2", "truot_loto"].includes(order.gameType);
+      const mbGame = relatedGames.find(g => g.code === "MB");
+      const targetGame = isLotoDerivedMb ? mbGame : relatedGames.find(g => g.code === order.gameType);
+      const relatedGameIds = targetGame ? [targetGame._id] : (isLotoDerivedMb && mbGame ? [mbGame._id] : relatedGames.map(g => g._id));
+
+      if (!drawDoc && (order.drawId || order.drawCode || order.drawDate)) {
+        const matchCode = String(order.drawCode || order.drawId || order.drawDate || "").match(/#*(\d{3,})/);
+        const extractedCode = matchCode ? matchCode[1] : "";
+        const cleanCode = String(order.drawId || "").replace(/^#/, "").trim();
+
+        const possibleCodes = Array.from(new Set([
+          order.drawCode,
+          order.drawId,
+          cleanCode,
+          extractedCode,
+          extractedCode ? "#" + extractedCode : "",
+          cleanCode ? "#" + cleanCode : ""
+        ].filter(Boolean) as string[]));
+
+        let query: any = { drawCode: { $in: possibleCodes } };
+        if (relatedGameIds.length > 0) {
+          query.game = { $in: relatedGameIds };
+        }
+
         if (order.provinceName) {
           const escapedName = order.provinceName.trim().replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
           const prov = await Province.findOne({
@@ -1035,8 +1071,8 @@ export const getOrderById = async (req: any, res: Response) => {
           }
         }
         drawDoc = await Draw.findOne(query).sort({ closeTime: -1, createdAt: -1 }).lean();
-        if (!drawDoc) {
-          drawDoc = await Draw.findOne({ drawCode: cleanCode }).sort({ closeTime: -1, createdAt: -1 }).lean();
+        if (!drawDoc && possibleCodes.length > 0) {
+          drawDoc = await Draw.findOne({ drawCode: { $in: possibleCodes } }).sort({ closeTime: -1, createdAt: -1 }).lean();
         }
       }
 
