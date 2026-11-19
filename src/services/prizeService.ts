@@ -177,12 +177,14 @@ export const processDrawResults = async (drawId: string) => {
     }
 
     let orderConditions: any[] = [
-      { drawId: { $in: possibleDrawIds } }
+      { drawId: { $in: possibleDrawIds } },
+      { drawCode: { $in: possibleDrawIds } }
     ];
 
     if (rawDrawCode) {
       orderConditions.push({ drawId: { $regex: new RegExp(`(#|^|\\b)${rawDrawCode}(\\b|\\s|$)`, 'i') } });
       orderConditions.push({ drawDate: { $regex: new RegExp(`(#|^|\\b)${rawDrawCode}(\\b|\\s|$)`, 'i') } });
+      orderConditions.push({ drawCode: { $regex: new RegExp(`(#|^|\\b)${rawDrawCode}(\\b|\\s|$)`, 'i') } });
     }
 
     if (game.code === 'bingo18' || game.code === 'bingo_18') {
@@ -254,11 +256,14 @@ export const processDrawResults = async (drawId: string) => {
 
       let targetProvince: any = null;
       if (draw.provinceId && draw.provinceId !== 'MB') {
+        const cleanP = String(draw.provinceId).trim();
+        const escapedP = cleanP.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
         targetProvince = await Province.findOne({
           $or: [
-            { provinceId: draw.provinceId },
-            { code: draw.provinceId },
-            { name: new RegExp(`^${draw.provinceId}$`, 'i') }
+            { provinceId: cleanP },
+            { provinceId: new RegExp(`^${escapedP}$`, 'i') },
+            { code: new RegExp(`^${escapedP}$`, 'i') },
+            { name: new RegExp(`^${escapedP}$`, 'i') }
           ]
         }).lean();
       }
@@ -267,7 +272,13 @@ export const processDrawResults = async (drawId: string) => {
         const mbRegex = /miền bắc|hà nội|mb|xsmb/i;
         orderConditions.push({
           $and: [
-            { $or: [{ drawDate: { $in: dateList } }, { drawId: { $in: [...dateList, ...possibleDrawIds] } }] },
+            {
+              $or: [
+                { drawDate: { $in: dateList } },
+                { drawId: { $in: [...dateList, ...possibleDrawIds] } },
+                { drawCode: { $in: possibleDrawIds } }
+              ]
+            },
             {
               $or: [
                 { gameType: { $in: ['MB', 'mb', 'kienthiet_mb', 'loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'] } },
@@ -283,17 +294,33 @@ export const processDrawResults = async (drawId: string) => {
             }
           ]
         });
-      } else if (targetProvince) {
+      } else if (targetProvince || (draw.provinceId && draw.provinceId !== 'MB')) {
         // Cho MT / MN khi có đài/tỉnh cụ thể: Chỉ dò vé của đúng đài/tỉnh này!
-        const escapedNames = [targetProvince.name, targetProvince.code, targetProvince.provinceId]
+        const provNames = targetProvince
+          ? [targetProvince.name, targetProvince.code, targetProvince.provinceId]
+          : [draw.provinceId];
+        const escapedNames = provNames
           .filter(Boolean)
           .map((s: string) => s.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&'));
-        const provRegex = new RegExp(`^(${escapedNames.join('|')})$`, 'i');
-        const ktGameType = `kienthiet_${targetProvince.provinceId.toLowerCase()}`;
+        const provRegex = new RegExp(`(${escapedNames.join('|')})`, 'i');
+        const ktGameType = targetProvince
+          ? `kienthiet_${targetProvince.provinceId.toLowerCase()}`
+          : `kienthiet_${String(draw.provinceId).toLowerCase()}`;
 
         orderConditions.push({
           $and: [
-            { $or: [{ drawDate: { $in: dateList } }, { drawId: { $in: dateList } }] },
+            {
+              $or: [
+                { drawDate: { $in: [...dateList, ...possibleDrawIds] } },
+                { drawId: { $in: [...dateList, ...possibleDrawIds] } },
+                { drawCode: { $in: possibleDrawIds } },
+                ...(rawDrawCode ? [
+                  { drawId: { $regex: new RegExp(`(#|^|\\b)${rawDrawCode}(\\b|\\s|$)`, 'i') } },
+                  { drawDate: { $regex: new RegExp(`(#|^|\\b)${rawDrawCode}(\\b|\\s|$)`, 'i') } },
+                  { drawCode: { $regex: new RegExp(`(#|^|\\b)${rawDrawCode}(\\b|\\s|$)`, 'i') } }
+                ] : [])
+              ]
+            },
             {
               $or: [
                 { provinceName: { $regex: provRegex } },
@@ -308,7 +335,13 @@ export const processDrawResults = async (drawId: string) => {
         const regionRegex = isMN ? /miền nam|mn/i : /miền trung|mt/i;
         orderConditions.push({
           $and: [
-            { $or: [{ drawDate: { $in: dateList } }, { drawId: { $in: dateList } }] },
+            {
+              $or: [
+                { drawDate: { $in: [...dateList, ...possibleDrawIds] } },
+                { drawId: { $in: [...dateList, ...possibleDrawIds] } },
+                { drawCode: { $in: possibleDrawIds } }
+              ]
+            },
             {
               $or: [
                 { gameType: { $in: regionGameTypes } },
