@@ -11,14 +11,40 @@ export const checkoutOrders = async (req: any, res: Response) => {
     const vnTimeStr = now.toLocaleString("en-US", { timeZone: "Asia/Ho_Chi_Minh" });
     const vnDate = new Date(vnTimeStr);
 
-    const user = await User.findById(req.user.id);
+    const [user, allGames, allProvinces] = await Promise.all([
+      User.findById(req.user.id),
+      Game.find({}).select('_id code name').lean(),
+      Province.find({}).lean()
+    ]);
     if (!user) {
       return res.status(400).json({ message: "Người dùng không tồn tại" });
     }
 
     const gameCache: Record<string, any> = {};
-    const drawCache: Record<string, any> = {};
+    const gameMapByCode = new Map<string, any>();
+    const gameMapById = new Map<string, any>();
+    allGames.forEach((g: any) => {
+      if (g.code) {
+        gameCache[g.code] = g;
+        gameMapByCode.set(g.code.toLowerCase(), g);
+      }
+      gameMapById.set(g._id.toString(), g);
+    });
+    const relatedGameIds = allGames
+      .filter((g: any) => ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn"].includes(g.code))
+      .map((g: any) => g._id);
+
     const provinceCache: Record<string, any> = {};
+    const provMap = new Map<string, any>();
+    allProvinces.forEach((p: any) => {
+      if (p.provinceId) {
+        provMap.set(p.provinceId.toLowerCase(), p);
+        provinceCache[p.provinceId] = p;
+      }
+      if (p.code) provMap.set(p.code.toLowerCase(), p);
+      if (p.name) provMap.set(p.name.toLowerCase().trim(), p);
+    });
+    const drawCache: Record<string, any> = {};
 
     let totalBatchCost = 0;
     const preparedOrders: any[] = [];
@@ -93,8 +119,6 @@ export const checkoutOrders = async (req: any, res: Response) => {
           } else if (typeof drawId === "string" && drawId.trim().length > 0) {
             const cleanCode = drawId.startsWith("#") ? drawId : `#${drawId}`;
             if (isLodeOrRegion) {
-              const relatedGames = await Game.find({ code: { $in: ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn"] } }).select("_id");
-              const relatedGameIds = relatedGames.map(g => g._id);
               draw = await Draw.findOne({ game: { $in: relatedGameIds }, drawCode: { $in: [drawId, cleanCode] } });
             } else if (gameDoc) {
               draw = await Draw.findOne({ game: gameDoc._id, drawCode: { $in: [drawId, cleanCode] } });
@@ -137,18 +161,9 @@ export const checkoutOrders = async (req: any, res: Response) => {
                 const startOfDay = new Date(Date.UTC(year, month - 1, day, 0 - 7, 0, 0));
                 const endOfDay = new Date(Date.UTC(year, month - 1, day, 23 - 7, 59, 59, 999));
 
-                const relatedGames = await Game.find({ code: { $in: ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn"] } }).select("_id");
-                const relatedGameIds = relatedGames.map(g => g._id);
-
                 let provCode: string | null = null;
                 if (provinceName) {
-                  const prov = await Province.findOne({
-                    $or: [
-                      { name: new RegExp(`^${provinceName.trim()}$`, "i") },
-                      { provinceId: new RegExp(`^${provinceName.trim()}$`, "i") },
-                      { code: new RegExp(`^${provinceName.trim()}$`, "i") }
-                    ]
-                  }).lean();
+                  const prov = provMap.get(provinceName.trim().toLowerCase());
                   if (prov) provCode = prov.provinceId;
                 }
 
@@ -307,25 +322,30 @@ export const checkoutOrders = async (req: any, res: Response) => {
       MN: "LÔ ĐỀ MIỀN NAM",
     };
 
-    // Tạo thông báo riêng biệt cho từng vé đã mua, tránh việc gộp nhiều vé vào 1 thông báo
-    // nhưng khi nhấn vào chi tiết lại chỉ ra 1 vé có giá tiền khác gây hiểu lầm cho người dùng
-    for (const ord of createdOrders) {
+    // Tạo thông báo riêng biệt cho từng vé đã mua bằng batch insert không gây block response
+    const notificationDocs = createdOrders.map((ord: any) => {
       let gameTitle = GAME_NAMES_MAP[ord.gameType] || ord.gameType;
       if (ord.gameType && ord.gameType.startsWith("kienthiet_")) {
         const provCode = ord.gameType.replace("kienthiet_", "").toUpperCase();
         gameTitle = `XSKT ${ord.provinceName || provCode}`;
       } else if (gameCache[ord.gameType]?.name) {
         gameTitle = gameCache[ord.gameType].name;
+      } else if (gameMapByCode.get(ord.gameType?.toLowerCase())?.name) {
+        gameTitle = gameMapByCode.get(ord.gameType?.toLowerCase()).name;
       }
 
-      await Notification.create({
+      return {
         user: user._id,
         title: "Mua vé thành công",
         body: `Bạn đã thanh toán thành công vé ${gameTitle} (#${ord.orderId}). Tiền thanh toán: ${(ord.totalCost || 0).toLocaleString("vi-VN")} đ`,
         type: "order",
         category: "important",
         orderId: ord._id.toString()
-      }).catch(() => {});
+      };
+    });
+
+    if (notificationDocs.length > 0) {
+      Notification.insertMany(notificationDocs, { ordered: false }).catch(() => {});
     }
 
     // Send single email containing full, clearly separated details of each ticket in background
