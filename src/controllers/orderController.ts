@@ -1017,9 +1017,10 @@ export const getOrderById = async (req: any, res: Response) => {
         drawDoc = await Draw.findById(order.drawId).lean();
       }
 
-      if (!drawDoc && order.drawId && String(order.drawId).startsWith("#")) {
-        const cleanCode = order.drawId.trim();
-        let query: any = { drawCode: cleanCode };
+      if (!drawDoc && order.drawId) {
+        const cleanCode = String(order.drawId).replace(/^#/, "").trim();
+        const codeWithHash = "#" + cleanCode;
+        let query: any = { $or: [{ drawCode: cleanCode }, { drawCode: codeWithHash }] };
         if (order.provinceName) {
           const escapedName = order.provinceName.trim().replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
           const prov = await Province.findOne({
@@ -1203,6 +1204,9 @@ export const getOrderById = async (req: any, res: Response) => {
             updateFields.winningNumbers = drawDoc.winningNumbers;
           }
           Order.updateOne({ _id: order._id }, { $set: updateFields }).catch(() => {});
+        }
+        if (!order.draw) {
+          order.draw = drawDoc;
         }
       }
     } catch (drawErr) {
