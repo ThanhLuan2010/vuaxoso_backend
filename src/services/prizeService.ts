@@ -387,6 +387,14 @@ export const processDrawResults = async (drawId: string) => {
       jackpotPrizePerWinner = Math.floor(maxJackpotPool / totalJackpotWinners);
     }
 
+    const subGames = await Game.find({ 
+      code: { $in: ['truot_loto', 'loto_cap', 'loto_235', 'bao_loto_2', 'xoso_3mien', 'lode'] } 
+    }).lean();
+    const gameRatesMap: Record<string, any> = {};
+    subGames.forEach(sg => {
+      gameRatesMap[sg.code] = sg.payoutRates || {};
+    });
+
     for (const order of orders) {
       let isWinner = false;
       let prizeAmount = 0;
@@ -878,7 +886,8 @@ export const processDrawResults = async (drawId: string) => {
                else defaultRate = 2.3;
 
                const rateKey = reqCount === 10 ? 'Trượt 10' : reqCount === 8 ? 'Trượt 8' : 'Trượt 4';
-               const rate = (game.payoutRates && (game.payoutRates[rateKey] || game.payoutRates[rateKey.toLowerCase()])) ?? defaultRate;
+               const effectiveRates = (order.gameType && gameRatesMap[order.gameType]) || game.payoutRates || {};
+               const rate = (effectiveRates[rateKey] || effectiveRates[rateKey.toLowerCase()]) ?? defaultRate;
 
                const combos = extractCombos(board.numbers || [], reqCount);
                const comboCount = Math.max(1, combos.length);
@@ -919,7 +928,8 @@ export const processDrawResults = async (drawId: string) => {
                else defaultRate = 15;
 
                const rateKey = reqCount === 4 ? 'Lô tô 4 cặp' : reqCount === 3 ? 'Lô tô 3 cặp' : 'Lô tô 2 cặp';
-               const rate = (game.payoutRates && (game.payoutRates[rateKey] || game.payoutRates[rateKey.toLowerCase()])) ?? defaultRate;
+               const effectiveRates = (order.gameType && gameRatesMap[order.gameType]) || game.payoutRates || {};
+               const rate = (effectiveRates[rateKey] || effectiveRates[rateKey.toLowerCase()]) ?? defaultRate;
 
                const combos = extractCombos(board.numbers || [], reqCount);
                const comboCount = Math.max(1, combos.length);
