@@ -14,19 +14,47 @@ const checkoutOrders = async (req, res) => {
         const now = new Date();
         const vnTimeStr = now.toLocaleString("en-US", { timeZone: "Asia/Ho_Chi_Minh" });
         const vnDate = new Date(vnTimeStr);
-        const user = await User_1.default.findById(req.user.id);
+        const [user, allGames, allProvinces] = await Promise.all([
+            User_1.default.findById(req.user.id),
+            Game_1.default.find({}).select('_id code name').lean(),
+            Province_1.default.find({}).lean()
+        ]);
         if (!user) {
             return res.status(400).json({ message: "Người dùng không tồn tại" });
         }
         const gameCache = {};
-        const drawCache = {};
+        const gameMapByCode = new Map();
+        const gameMapById = new Map();
+        allGames.forEach((g) => {
+            if (g.code) {
+                gameCache[g.code] = g;
+                gameMapByCode.set(g.code.toLowerCase(), g);
+            }
+            gameMapById.set(g._id.toString(), g);
+        });
+        const relatedGameIds = allGames
+            .filter((g) => ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn"].includes(g.code))
+            .map((g) => g._id);
         const provinceCache = {};
+        const provMap = new Map();
+        allProvinces.forEach((p) => {
+            if (p.provinceId) {
+                provMap.set(p.provinceId.toLowerCase(), p);
+                provinceCache[p.provinceId] = p;
+            }
+            if (p.code)
+                provMap.set(p.code.toLowerCase(), p);
+            if (p.name)
+                provMap.set(p.name.toLowerCase().trim(), p);
+        });
+        const drawCache = {};
         let totalBatchCost = 0;
         const preparedOrders = [];
         for (const rawOrd of rawOrders) {
             const gameType = rawOrd.gameType || rawOrd.gameId;
             const playType = rawOrd.playType || rawOrd.subCategory || rawOrd.category || "Cơ bản";
             let drawId = rawOrd.drawId || "DUMMY_DRAW_ID";
+            let drawCode = rawOrd.drawCode;
             const provinceName = rawOrd.provinceName;
             const drawDate = rawOrd.drawDate;
             const items = Array.isArray(rawOrd.items) ? rawOrd.items : (rawOrd.numbers ? [{
@@ -94,8 +122,6 @@ const checkoutOrders = async (req, res) => {
                     else if (typeof drawId === "string" && drawId.trim().length > 0) {
                         const cleanCode = drawId.startsWith("#") ? drawId : `#${drawId}`;
                         if (isLodeOrRegion) {
-                            const relatedGames = await Game_1.default.find({ code: { $in: ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn"] } }).select("_id");
-                            const relatedGameIds = relatedGames.map(g => g._id);
                             draw = await Draw_1.default.findOne({ game: { $in: relatedGameIds }, drawCode: { $in: [drawId, cleanCode] } });
                         }
                         else if (gameDoc) {
@@ -135,17 +161,9 @@ const checkoutOrders = async (req, res) => {
                                 const year = parseInt(dateParts[2], 10);
                                 const startOfDay = new Date(Date.UTC(year, month - 1, day, 0 - 7, 0, 0));
                                 const endOfDay = new Date(Date.UTC(year, month - 1, day, 23 - 7, 59, 59, 999));
-                                const relatedGames = await Game_1.default.find({ code: { $in: ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn"] } }).select("_id");
-                                const relatedGameIds = relatedGames.map(g => g._id);
                                 let provCode = null;
                                 if (provinceName) {
-                                    const prov = await Province_1.default.findOne({
-                                        $or: [
-                                            { name: new RegExp(`^${provinceName.trim()}$`, "i") },
-                                            { provinceId: new RegExp(`^${provinceName.trim()}$`, "i") },
-                                            { code: new RegExp(`^${provinceName.trim()}$`, "i") }
-                                        ]
-                                    }).lean();
+                                    const prov = provMap.get(provinceName.trim().toLowerCase());
                                     if (prov)
                                         provCode = prov.provinceId;
                                 }
@@ -178,14 +196,21 @@ const checkoutOrders = async (req, res) => {
                             }
                         }
                     }
-                    drawCache[cacheKey] = draw ? draw._id : drawId;
+                    drawCache[cacheKey] = {
+                        drawId: draw ? draw._id : drawId,
+                        drawCode: (draw && draw.drawCode) ? draw.drawCode : drawCode
+                    };
                 }
-                drawId = drawCache[cacheKey];
+                drawId = drawCache[cacheKey]?.drawId || drawCache[cacheKey];
+                if (drawCache[cacheKey]?.drawCode) {
+                    drawCode = drawCache[cacheKey].drawCode;
+                }
             }
             preparedOrders.push({
                 gameType,
                 playType,
                 drawId,
+                drawCode,
                 provinceName,
                 drawDate,
                 items,
@@ -225,6 +250,7 @@ const checkoutOrders = async (req, res) => {
                 gameType: ord.gameType,
                 playType: ord.playType,
                 drawId: ord.drawId,
+                drawCode: ord.drawCode,
                 provinceName: ord.provinceName,
                 drawDate: ord.drawDate,
                 items: ord.items,
@@ -295,9 +321,8 @@ const checkoutOrders = async (req, res) => {
             MT: "LÔ ĐỀ MIỀN TRUNG",
             MN: "LÔ ĐỀ MIỀN NAM",
         };
-        // Tạo thông báo riêng biệt cho từng vé đã mua, tránh việc gộp nhiều vé vào 1 thông báo
-        // nhưng khi nhấn vào chi tiết lại chỉ ra 1 vé có giá tiền khác gây hiểu lầm cho người dùng
-        for (const ord of createdOrders) {
+        // Tạo thông báo riêng biệt cho từng vé đã mua bằng batch insert không gây block response
+        const notificationDocs = createdOrders.map((ord) => {
             let gameTitle = GAME_NAMES_MAP[ord.gameType] || ord.gameType;
             if (ord.gameType && ord.gameType.startsWith("kienthiet_")) {
                 const provCode = ord.gameType.replace("kienthiet_", "").toUpperCase();
@@ -306,14 +331,20 @@ const checkoutOrders = async (req, res) => {
             else if (gameCache[ord.gameType]?.name) {
                 gameTitle = gameCache[ord.gameType].name;
             }
-            await Notification_1.default.create({
+            else if (gameMapByCode.get(ord.gameType?.toLowerCase())?.name) {
+                gameTitle = gameMapByCode.get(ord.gameType?.toLowerCase()).name;
+            }
+            return {
                 user: user._id,
                 title: "Mua vé thành công",
                 body: `Bạn đã thanh toán thành công vé ${gameTitle} (#${ord.orderId}). Tiền thanh toán: ${(ord.totalCost || 0).toLocaleString("vi-VN")} đ`,
                 type: "order",
                 category: "important",
                 orderId: ord._id.toString()
-            }).catch(() => { });
+            };
+        });
+        if (notificationDocs.length > 0) {
+            Notification_1.default.insertMany(notificationDocs, { ordered: false }).catch(() => { });
         }
         // Send single email containing full, clearly separated details of each ticket in background
         (async () => {
@@ -339,15 +370,29 @@ const checkoutOrders = async (req, res) => {
                     if (ord.drawId && drawMap.has(ord.drawId.toString())) {
                         displayDraw = drawMap.get(ord.drawId.toString());
                     }
-                    const itemsListHtml = (ord.items || []).map((it) => `
+                    const itemsListHtml = (ord.items || []).map((it) => {
+                        let numStr = "";
+                        if (Array.isArray(it.numbers)) {
+                            if (it.numbers.length > 25) {
+                                numStr = `${it.numbers.slice(0, 25).join(", ")} ... (+${it.numbers.length - 25} số khác)`;
+                            }
+                            else {
+                                numStr = it.numbers.join(", ");
+                            }
+                        }
+                        else {
+                            numStr = String(it.numbers || "");
+                        }
+                        return `
             <li style="margin-bottom: 5px; font-size: 13px;">
               ${it.playType && it.playType !== ord.playType ? `<span style="background: #EBF3FF; color: #007AFF; padding: 2px 6px; border-radius: 4px; font-size: 11px; margin-right: 4px;">${it.playType}</span>` : ""}
               <strong>${it.id ? `${it.id}: ` : ""}</strong>
-              <span style="font-weight: bold; color: #0F2942; font-size: 14px;">${Array.isArray(it.numbers) ? it.numbers.join(", ") : it.numbers}</span>
+              <span style="font-weight: bold; color: #0F2942; font-size: 14px;">${numStr}</span>
               ${it.specialNumbers && it.specialNumbers.length > 0 ? ` | <span style="color: #FF5C00; font-weight: bold;">${it.specialNumbers.join(", ")}</span>` : ""}
               - <span style="color: #E51F27; font-weight: bold;">${(Number(it.cost) || 0).toLocaleString("vi-VN")} đ</span>
             </li>
-          `).join("");
+          `;
+                    }).join("");
                     return `
             <div style="border: 1px solid #D0D7DE; border-radius: 6px; padding: 12px 14px; margin-bottom: 12px; background-color: #FAFAFA;">
               <table style="width: 100%; border-bottom: 1px dashed #DDD; padding-bottom: 8px; margin-bottom: 8px;">
@@ -414,11 +459,23 @@ const checkoutOrders = async (req, res) => {
                 console.error("Failed to send batch order email:", err);
             }
         })();
+        const orderSummaries = createdOrders.map((ord) => ({
+            _id: ord._id,
+            orderId: ord.orderId,
+            gameType: ord.gameType,
+            playType: ord.playType,
+            totalCost: ord.totalCost,
+            status: ord.status,
+            drawId: ord.drawId,
+            drawCode: ord.drawCode,
+            provinceName: ord.provinceName,
+        }));
         return res.status(201).json({
             success: true,
             message: `Thanh toán thành công ${createdOrders.length} vé!`,
-            orders: createdOrders,
-            totalCost: totalBatchCost
+            orders: orderSummaries,
+            totalCost: totalBatchCost,
+            newBalance: user.balance
         });
     }
     catch (error) {
@@ -828,6 +885,106 @@ const getMyOrders = async (req, res) => {
         const page = req.query.page ? parseInt(req.query.page) : undefined;
         const limit = req.query.limit ? parseInt(req.query.limit) : 10;
         const { status, gameType } = req.query;
+        // --- BƯỚC TỰ ĐỘNG ĐỒNG BỘ: Kiểm tra & cập nhật các đơn 'pending' đã có kết quả kỳ quay ---
+        try {
+            const pendingOrders = await Order_1.default.find({ user: req.user.id, status: 'pending' }).lean();
+            if (pendingOrders.length > 0) {
+                const drawsToProcess = new Set();
+                // 1. Thu thập theo drawId (ObjectId)
+                const validObjIds = pendingOrders
+                    .map(o => o.drawId)
+                    .filter(id => id && mongoose_1.default.Types.ObjectId.isValid(id));
+                // 2. Thu thập theo drawCode (chuỗi '#1107' hoặc '1107')
+                const drawCodes = pendingOrders
+                    .flatMap(o => [o.drawCode, o.drawId])
+                    .filter(c => typeof c === 'string' && (c.startsWith('#') || /^\d{3,}$/.test(c.trim())))
+                    .map(c => String(c).trim());
+                const queryOr = [];
+                if (validObjIds.length > 0)
+                    queryOr.push({ _id: { $in: validObjIds } });
+                if (drawCodes.length > 0) {
+                    const rawCodes = drawCodes.map(c => c.replace(/^#/, ''));
+                    const hashCodes = rawCodes.map(c => `#${c}`);
+                    queryOr.push({ drawCode: { $in: [...rawCodes, ...hashCodes] } });
+                }
+                if (queryOr.length > 0) {
+                    const finishedDraws = await Draw_1.default.find({
+                        $or: queryOr,
+                        status: 'completed',
+                        winningNumbers: { $exists: true, $ne: [] }
+                    }).select('_id drawCode winningNumbers').lean();
+                    finishedDraws.forEach(fd => {
+                        drawsToProcess.add(fd._id.toString());
+                    });
+                }
+                // 3. Thu thập theo Lô đề / XSKT (theo ngày và đài)
+                const unresolvedLode = pendingOrders.filter(o => ['xoso_3mien', 'lode', 'MB', 'MT', 'MN', 'mb', 'mt', 'mn'].includes(o.gameType) ||
+                    String(o.gameType).startsWith('kienthiet'));
+                if (unresolvedLode.length > 0) {
+                    const provinces = await Province_1.default.find({}).lean();
+                    const provMap = new Map();
+                    provinces.forEach((p) => {
+                        if (p.name)
+                            provMap.set(p.name.toLowerCase().trim(), p.provinceId);
+                        if (p.code)
+                            provMap.set(p.code.toLowerCase().trim(), p.provinceId);
+                        if (p.provinceId)
+                            provMap.set(p.provinceId.toLowerCase().trim(), p.provinceId);
+                    });
+                    const drawSearchCache = new Map();
+                    for (const ord of unresolvedLode) {
+                        const targetDateStr = ord.drawDate || (typeof ord.drawId === 'string' && /^\d{2}\/\d{2}\/\d{4}/.test(ord.drawId) ? ord.drawId : null);
+                        if (targetDateStr) {
+                            const provKey = ord.provinceName ? ord.provinceName.toLowerCase().trim() : '';
+                            const cacheKey = `${targetDateStr}_${provKey}`;
+                            if (drawSearchCache.has(cacheKey)) {
+                                const cachedDrawId = drawSearchCache.get(cacheKey);
+                                if (cachedDrawId)
+                                    drawsToProcess.add(cachedDrawId);
+                                continue;
+                            }
+                            const dateParts = targetDateStr.split('/');
+                            if (dateParts.length === 3) {
+                                const day = parseInt(dateParts[0], 10);
+                                const month = parseInt(dateParts[1], 10);
+                                const year = parseInt(dateParts[2], 10);
+                                const startOfDay = new Date(Date.UTC(year, month - 1, day, 0 - 7, 0, 0));
+                                const endOfDay = new Date(Date.UTC(year, month - 1, day, 23 - 7, 59, 59, 999));
+                                const provId = provMap.get(provKey);
+                                const findProvQuery = {
+                                    closeTime: { $gte: startOfDay, $lte: endOfDay },
+                                    status: 'completed',
+                                    winningNumbers: { $exists: true, $ne: [] }
+                                };
+                                if (provId) {
+                                    findProvQuery.provinceId = { $in: [provId, ord.provinceName] };
+                                }
+                                const matchedDraw = await Draw_1.default.findOne(findProvQuery).select('_id drawCode winningNumbers').lean();
+                                if (matchedDraw) {
+                                    drawSearchCache.set(cacheKey, matchedDraw._id.toString());
+                                    drawsToProcess.add(matchedDraw._id.toString());
+                                }
+                                else {
+                                    drawSearchCache.set(cacheKey, null);
+                                }
+                            }
+                        }
+                    }
+                }
+                // Chạy dò vé ngay để cập nhật status 'completed' cho các đơn đã có kết quả
+                for (const dId of drawsToProcess) {
+                    try {
+                        await (0, prizeService_1.processDrawResults)(dId);
+                    }
+                    catch (e) {
+                        console.error('getMyOrders pre-settle processDrawResults error:', e);
+                    }
+                }
+            }
+        }
+        catch (preSyncErr) {
+            console.error('getMyOrders pre-sync error:', preSyncErr);
+        }
         const filter = { user: req.user.id };
         if (status) {
             filter.status = status;
@@ -864,18 +1021,45 @@ const getMyOrders = async (req, res) => {
             query = query.skip((page - 1) * limit).limit(limit);
         }
         const orders = await query;
-        const drawIds = Array.from(new Set(orders.map((o) => o.drawId).filter((id) => id && mongoose_1.default.Types.ObjectId.isValid(id))));
-        if (drawIds.length > 0) {
-            const draws = await Draw_1.default.find({ _id: { $in: drawIds } }).select("_id drawCode status winningNumbers").lean();
-            const drawMap = new Map(draws.map((d) => [d._id.toString(), d]));
+        const drawObjIds = Array.from(new Set(orders.map((o) => o.drawId).filter((id) => id && mongoose_1.default.Types.ObjectId.isValid(id))));
+        const drawCodesList = Array.from(new Set(orders.flatMap((o) => [o.drawCode, o.drawId]).filter((c) => typeof c === 'string' && (c.startsWith('#') || /^\d{3,}$/.test(c.trim()))).map(c => String(c).trim())));
+        const drawLookupOr = [];
+        if (drawObjIds.length > 0)
+            drawLookupOr.push({ _id: { $in: drawObjIds } });
+        if (drawCodesList.length > 0) {
+            const rawC = drawCodesList.map(c => c.replace(/^#/, ''));
+            const hashC = rawC.map(c => `#${c}`);
+            drawLookupOr.push({ drawCode: { $in: [...rawC, ...hashC] } });
+        }
+        if (drawLookupOr.length > 0) {
+            const draws = await Draw_1.default.find({ $or: drawLookupOr }).select("_id drawCode status winningNumbers").lean();
+            const drawIdMap = new Map(draws.map((d) => [d._id.toString(), d]));
+            const drawCodeMap = new Map();
+            draws.forEach((d) => {
+                if (d.drawCode) {
+                    const raw = d.drawCode.replace(/^#/, '');
+                    drawCodeMap.set(d.drawCode, d);
+                    drawCodeMap.set(raw, d);
+                    drawCodeMap.set(`#${raw}`, d);
+                }
+            });
             let needsRefresh = false;
             for (const order of orders) {
-                if (order.drawId && drawMap.has(order.drawId.toString())) {
-                    const d = drawMap.get(order.drawId.toString());
-                    order.drawId = d.drawCode;
+                let matchedDraw = null;
+                if (order.drawId && drawIdMap.has(order.drawId.toString())) {
+                    matchedDraw = drawIdMap.get(order.drawId.toString());
+                }
+                else if (order.drawCode && drawCodeMap.has(order.drawCode)) {
+                    matchedDraw = drawCodeMap.get(order.drawCode);
+                }
+                else if (order.drawId && drawCodeMap.has(order.drawId)) {
+                    matchedDraw = drawCodeMap.get(order.drawId);
+                }
+                if (matchedDraw) {
+                    order.drawId = matchedDraw.drawCode;
                     const isUnsettledOrLost = order.status === 'pending' || (!order.isWinner && (!order.prizeAmount || order.prizeAmount === 0));
-                    if (isUnsettledOrLost && d.status === 'completed' && d.winningNumbers && d.winningNumbers.length > 0) {
-                        await (0, prizeService_1.processDrawResults)(d._id.toString());
+                    if (isUnsettledOrLost && matchedDraw.status === 'completed' && matchedDraw.winningNumbers && matchedDraw.winningNumbers.length > 0) {
+                        await (0, prizeService_1.processDrawResults)(matchedDraw._id.toString());
                         needsRefresh = true;
                     }
                 }
@@ -886,7 +1070,20 @@ const getMyOrders = async (req, res) => {
             }
         }
         // Tự động khôi phục số kỳ quay (#number) cho các đơn vé đang bị thiếu hoặc chỉ lưu ngày
-        const unresolvedOrders = orders.filter((o) => !o.drawId || !String(o.drawId).startsWith("#"));
+        const unresolvedOrders = orders.filter((o) => {
+            if (!o.drawId)
+                return true;
+            const str = String(o.drawId).trim();
+            if (!str.startsWith("#"))
+                return true;
+            // Nếu là #day (ví dụ #20 khi ngày là 20)
+            const numPart = str.replace(/^#+/, '');
+            const targetDate = o.drawDate || '';
+            const dayPart = targetDate.split(/[\/\-\s]/)[0];
+            if (dayPart && numPart === dayPart && numPart.length <= 2)
+                return true;
+            return false;
+        });
         if (unresolvedOrders.length > 0) {
             const relatedGames = await Game_1.default.find({ code: { $in: ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn"] } }).select("_id").lean();
             const relatedGameIds = relatedGames.map(g => g._id);
@@ -900,9 +1097,21 @@ const getMyOrders = async (req, res) => {
                 if (p.provinceId)
                     provMap.set(p.provinceId.toLowerCase().trim(), p.provinceId);
             });
+            const resolveDrawCache = new Map();
             for (const order of unresolvedOrders) {
                 const targetDateStr = order.drawDate || (typeof order.drawId === "string" && /^\d{2}\/\d{2}\/\d{4}/.test(order.drawId) ? order.drawId : null);
                 if (targetDateStr) {
+                    const provKey = order.provinceName ? order.provinceName.toLowerCase().trim() : '';
+                    const cacheKey = `${targetDateStr}_${provKey}`;
+                    if (resolveDrawCache.has(cacheKey)) {
+                        const cachedCode = resolveDrawCache.get(cacheKey);
+                        if (cachedCode) {
+                            order.drawCode = cachedCode;
+                            order.drawId = cachedCode;
+                            Order_1.default.updateOne({ _id: order._id }, { $set: { drawCode: cachedCode, drawId: cachedCode } }).catch(() => { });
+                        }
+                        continue;
+                    }
                     const dateParts = targetDateStr.split('/');
                     if (dateParts.length === 3) {
                         const day = parseInt(dateParts[0], 10);
@@ -910,7 +1119,6 @@ const getMyOrders = async (req, res) => {
                         const year = parseInt(dateParts[2], 10);
                         const startOfDay = new Date(Date.UTC(year, month - 1, day, 0 - 7, 0, 0));
                         const endOfDay = new Date(Date.UTC(year, month - 1, day, 23 - 7, 59, 59, 999));
-                        const provKey = order.provinceName ? order.provinceName.toLowerCase().trim() : '';
                         const provId = provMap.get(provKey);
                         let matchedDraw = null;
                         if (provId) {
@@ -918,23 +1126,42 @@ const getMyOrders = async (req, res) => {
                                 game: { $in: relatedGameIds },
                                 provinceId: { $in: [provId, order.provinceName].filter(Boolean) },
                                 closeTime: { $gte: startOfDay, $lte: endOfDay }
-                            }).select("_id drawCode").lean();
+                            }).select("_id drawCode status winningNumbers").lean();
                         }
                         if (!matchedDraw) {
                             matchedDraw = await Draw_1.default.findOne({
                                 game: { $in: relatedGameIds },
                                 closeTime: { $gte: startOfDay, $lte: endOfDay }
-                            }).select("_id drawCode").lean();
+                            }).select("_id drawCode status winningNumbers").lean();
                         }
                         if (matchedDraw && matchedDraw.drawCode) {
+                            resolveDrawCache.set(cacheKey, matchedDraw.drawCode);
+                            order.drawCode = matchedDraw.drawCode;
                             order.drawId = matchedDraw.drawCode;
-                            Order_1.default.updateOne({ _id: order._id }, { $set: { drawId: matchedDraw.drawCode } }).catch(() => { });
+                            const updateDoc = { drawCode: matchedDraw.drawCode, drawId: matchedDraw.drawCode };
+                            if (matchedDraw.status === 'completed' && matchedDraw.winningNumbers && matchedDraw.winningNumbers.length > 0) {
+                                order.status = 'completed';
+                                order.winningNumbers = matchedDraw.winningNumbers;
+                                updateDoc.status = 'completed';
+                                updateDoc.winningNumbers = matchedDraw.winningNumbers;
+                            }
+                            Order_1.default.updateOne({ _id: order._id }, { $set: updateDoc }).catch(() => { });
+                        }
+                        else {
+                            resolveDrawCache.set(cacheKey, null);
                         }
                     }
                 }
             }
         }
-        res.json(orders);
+        let finalOrders = orders;
+        if (status === 'pending') {
+            finalOrders = orders.filter((o) => o.status === 'pending');
+        }
+        else if (status === 'completed') {
+            finalOrders = orders.filter((o) => o.status === 'completed');
+        }
+        res.json(finalOrders);
     }
     catch (error) {
         res.status(500).json({ message: error.message });
@@ -974,9 +1201,53 @@ const getOrderById = async (req, res) => {
             if (order.drawId && mongoose_1.default.Types.ObjectId.isValid(order.drawId)) {
                 drawDoc = await Draw_1.default.findById(order.drawId).lean();
             }
-            if (!drawDoc && order.drawId && String(order.drawId).startsWith("#")) {
-                const cleanCode = order.drawId.trim();
-                let query = { drawCode: cleanCode };
+            // Xác định các Game ID phù hợp cho order để tránh lấy nhầm drawCode trùng số của game khác
+            let candidateCodes = ["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn", "loto_235", "loto_cap", "bao_loto_2", "truot_loto"];
+            if (order.gameType) {
+                if (order.gameType.includes('max_3d') || order.gameType.includes('max3d')) {
+                    candidateCodes.push('max_3d', 'max_3d_pro');
+                }
+                else if (order.gameType.includes('mega')) {
+                    candidateCodes.push('mega_645', 'mega');
+                }
+                else if (order.gameType.includes('power')) {
+                    candidateCodes.push('power_655', 'power');
+                }
+                else if (order.gameType.includes('max_4d') || order.gameType.includes('max4d')) {
+                    candidateCodes.push('max_4d');
+                }
+                else {
+                    candidateCodes.push(order.gameType);
+                }
+            }
+            const relatedGames = await Game_1.default.find({ code: { $in: candidateCodes } }).select("_id code").lean();
+            const isLotoDerivedMb = ["loto_235", "loto_cap", "bao_loto_2", "truot_loto"].includes(order.gameType);
+            const mbGame = relatedGames.find(g => g.code === "MB");
+            const targetGame = isLotoDerivedMb ? mbGame : relatedGames.find(g => g.code === order.gameType);
+            const relatedGameIds = targetGame ? [targetGame._id] : (isLotoDerivedMb && mbGame ? [mbGame._id] : relatedGames.map(g => g._id));
+            if (!drawDoc && (order.drawId || order.drawCode || order.drawDate)) {
+                const matchCode = String(order.drawCode || order.drawId || order.drawDate || "").match(/#*(\d{3,})/);
+                const extractedCode = matchCode ? matchCode[1] : "";
+                const cleanCode = String(order.drawId || "").replace(/^#/, "").trim();
+                const targetDate = order.drawDate || (typeof order.drawId === 'string' && /^\d{2}\/\d{2}\/\d{4}/.test(order.drawId) ? order.drawId : '');
+                const dayPart = targetDate.split(/[\/\-\s]/)[0];
+                const possibleCodes = Array.from(new Set([
+                    order.drawCode,
+                    order.drawId,
+                    cleanCode,
+                    extractedCode,
+                    extractedCode ? "#" + extractedCode : "",
+                    cleanCode ? "#" + cleanCode : ""
+                ].filter(Boolean))).filter(c => {
+                    const rawNum = c.replace(/^#+/, '');
+                    if (dayPart && rawNum === dayPart && rawNum.length <= 2)
+                        return false;
+                    return true;
+                });
+                let query = { drawCode: { $in: possibleCodes } };
+                if (relatedGameIds.length > 0) {
+                    query.game = { $in: relatedGameIds };
+                }
                 if (order.provinceName) {
                     const escapedName = order.provinceName.trim().replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
                     const prov = await Province_1.default.findOne({
@@ -990,9 +1261,11 @@ const getOrderById = async (req, res) => {
                         query.provinceId = prov.provinceId;
                     }
                 }
-                drawDoc = await Draw_1.default.findOne(query).sort({ closeTime: -1, createdAt: -1 }).lean();
-                if (!drawDoc) {
-                    drawDoc = await Draw_1.default.findOne({ drawCode: cleanCode }).sort({ closeTime: -1, createdAt: -1 }).lean();
+                if (possibleCodes.length > 0) {
+                    drawDoc = await Draw_1.default.findOne(query).sort({ closeTime: -1, createdAt: -1 }).lean();
+                }
+                if (!drawDoc && possibleCodes.length > 0 && !order.provinceName && !["xoso_3mien", "lode", "MB", "MT", "MN", "mb", "mt", "mn"].includes(order.gameType)) {
+                    drawDoc = await Draw_1.default.findOne({ drawCode: { $in: possibleCodes } }).sort({ closeTime: -1, createdAt: -1 }).lean();
                 }
             }
             if (!drawDoc) {
@@ -1068,6 +1341,9 @@ const getOrderById = async (req, res) => {
                 order.draw = drawDoc;
                 order.drawCode = drawDoc.drawCode;
                 order.drawId = drawDoc.drawCode;
+                if (drawDoc.drawCode && order.drawCode !== drawDoc.drawCode) {
+                    Order_1.default.updateOne({ _id: order._id }, { $set: { drawCode: drawDoc.drawCode, drawId: drawDoc.drawCode } }).catch(() => { });
+                }
                 const isUnsettledOrLost = order.status === "pending" || (!order.isWinner && (!order.prizeAmount || order.prizeAmount === 0));
                 if (isUnsettledOrLost && drawDoc.status === "completed" && drawDoc.winningNumbers && drawDoc.winningNumbers.length > 0) {
                     try {
@@ -1153,6 +1429,9 @@ const getOrderById = async (req, res) => {
                         updateFields.winningNumbers = drawDoc.winningNumbers;
                     }
                     Order_1.default.updateOne({ _id: order._id }, { $set: updateFields }).catch(() => { });
+                }
+                if (!order.draw) {
+                    order.draw = drawDoc;
                 }
             }
         }

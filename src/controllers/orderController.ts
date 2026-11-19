@@ -385,15 +385,27 @@ export const checkoutOrders = async (req: any, res: Response) => {
             displayDraw = drawMap.get(ord.drawId.toString());
           }
 
-          const itemsListHtml = (ord.items || []).map((it: any) => `
+          const itemsListHtml = (ord.items || []).map((it: any) => {
+            let numStr = "";
+            if (Array.isArray(it.numbers)) {
+              if (it.numbers.length > 25) {
+                numStr = `${it.numbers.slice(0, 25).join(", ")} ... (+${it.numbers.length - 25} số khác)`;
+              } else {
+                numStr = it.numbers.join(", ");
+              }
+            } else {
+              numStr = String(it.numbers || "");
+            }
+            return `
             <li style="margin-bottom: 5px; font-size: 13px;">
               ${it.playType && it.playType !== ord.playType ? `<span style="background: #EBF3FF; color: #007AFF; padding: 2px 6px; border-radius: 4px; font-size: 11px; margin-right: 4px;">${it.playType}</span>` : ""}
               <strong>${it.id ? `${it.id}: ` : ""}</strong>
-              <span style="font-weight: bold; color: #0F2942; font-size: 14px;">${Array.isArray(it.numbers) ? it.numbers.join(", ") : it.numbers}</span>
+              <span style="font-weight: bold; color: #0F2942; font-size: 14px;">${numStr}</span>
               ${it.specialNumbers && it.specialNumbers.length > 0 ? ` | <span style="color: #FF5C00; font-weight: bold;">${it.specialNumbers.join(", ")}</span>` : ""}
               - <span style="color: #E51F27; font-weight: bold;">${(Number(it.cost) || 0).toLocaleString("vi-VN")} đ</span>
             </li>
-          `).join("");
+          `;
+          }).join("");
 
           return `
             <div style="border: 1px solid #D0D7DE; border-radius: 6px; padding: 12px 14px; margin-bottom: 12px; background-color: #FAFAFA;">
@@ -463,11 +475,24 @@ export const checkoutOrders = async (req: any, res: Response) => {
       }
     })();
 
+    const orderSummaries = createdOrders.map((ord: any) => ({
+      _id: ord._id,
+      orderId: ord.orderId,
+      gameType: ord.gameType,
+      playType: ord.playType,
+      totalCost: ord.totalCost,
+      status: ord.status,
+      drawId: ord.drawId,
+      drawCode: ord.drawCode,
+      provinceName: ord.provinceName,
+    }));
+
     return res.status(201).json({
       success: true,
       message: `Thanh toán thành công ${createdOrders.length} vé!`,
-      orders: createdOrders,
-      totalCost: totalBatchCost
+      orders: orderSummaries,
+      totalCost: totalBatchCost,
+      newBalance: user.balance
     });
   } catch (error: any) {
     console.error("checkoutOrders error:", error);
@@ -951,9 +976,18 @@ export const getMyOrders = async (req: any, res: Response) => {
             if (p.provinceId) provMap.set(p.provinceId.toLowerCase().trim(), p.provinceId);
           });
 
+          const drawSearchCache = new Map<string, string | null>();
           for (const ord of unresolvedLode) {
             const targetDateStr = ord.drawDate || (typeof ord.drawId === 'string' && /^\d{2}\/\d{2}\/\d{4}/.test(ord.drawId) ? ord.drawId : null);
             if (targetDateStr) {
+              const provKey = ord.provinceName ? ord.provinceName.toLowerCase().trim() : '';
+              const cacheKey = `${targetDateStr}_${provKey}`;
+              if (drawSearchCache.has(cacheKey)) {
+                const cachedDrawId = drawSearchCache.get(cacheKey);
+                if (cachedDrawId) drawsToProcess.add(cachedDrawId);
+                continue;
+              }
+
               const dateParts = targetDateStr.split('/');
               if (dateParts.length === 3) {
                 const day = parseInt(dateParts[0], 10);
@@ -962,7 +996,6 @@ export const getMyOrders = async (req: any, res: Response) => {
                 const startOfDay = new Date(Date.UTC(year, month - 1, day, 0 - 7, 0, 0));
                 const endOfDay = new Date(Date.UTC(year, month - 1, day, 23 - 7, 59, 59, 999));
 
-                const provKey = ord.provinceName ? ord.provinceName.toLowerCase().trim() : '';
                 const provId = provMap.get(provKey);
 
                 const findProvQuery: any = {
@@ -976,7 +1009,10 @@ export const getMyOrders = async (req: any, res: Response) => {
 
                 const matchedDraw = await Draw.findOne(findProvQuery).select('_id drawCode winningNumbers').lean();
                 if (matchedDraw) {
+                  drawSearchCache.set(cacheKey, matchedDraw._id.toString());
                   drawsToProcess.add(matchedDraw._id.toString());
+                } else {
+                  drawSearchCache.set(cacheKey, null);
                 }
               }
             }
@@ -1102,9 +1138,22 @@ export const getMyOrders = async (req: any, res: Response) => {
         if (p.provinceId) provMap.set(p.provinceId.toLowerCase().trim(), p.provinceId);
       });
 
+      const resolveDrawCache = new Map<string, string | null>();
       for (const order of unresolvedOrders) {
         const targetDateStr = order.drawDate || (typeof order.drawId === "string" && /^\d{2}\/\d{2}\/\d{4}/.test(order.drawId) ? order.drawId : null);
         if (targetDateStr) {
+          const provKey = order.provinceName ? order.provinceName.toLowerCase().trim() : '';
+          const cacheKey = `${targetDateStr}_${provKey}`;
+          if (resolveDrawCache.has(cacheKey)) {
+            const cachedCode = resolveDrawCache.get(cacheKey);
+            if (cachedCode) {
+              order.drawCode = cachedCode;
+              order.drawId = cachedCode;
+              Order.updateOne({ _id: order._id }, { $set: { drawCode: cachedCode, drawId: cachedCode } }).catch(() => {});
+            }
+            continue;
+          }
+
           const dateParts = targetDateStr.split('/');
           if (dateParts.length === 3) {
             const day = parseInt(dateParts[0], 10);
@@ -1113,34 +1162,51 @@ export const getMyOrders = async (req: any, res: Response) => {
             const startOfDay = new Date(Date.UTC(year, month - 1, day, 0 - 7, 0, 0));
             const endOfDay = new Date(Date.UTC(year, month - 1, day, 23 - 7, 59, 59, 999));
 
-            const provKey = order.provinceName ? order.provinceName.toLowerCase().trim() : '';
             const provId = provMap.get(provKey);
 
-            let matchedDraw = null;
+            let matchedDraw: any = null;
             if (provId) {
               matchedDraw = await Draw.findOne({
                 game: { $in: relatedGameIds },
                 provinceId: { $in: [provId, order.provinceName].filter(Boolean) as string[] },
                 closeTime: { $gte: startOfDay, $lte: endOfDay }
-              }).select("_id drawCode").lean();
+              }).select("_id drawCode status winningNumbers").lean();
             }
             if (!matchedDraw) {
               matchedDraw = await Draw.findOne({
                 game: { $in: relatedGameIds },
                 closeTime: { $gte: startOfDay, $lte: endOfDay }
-              }).select("_id drawCode").lean();
+              }).select("_id drawCode status winningNumbers").lean();
             }
 
             if (matchedDraw && matchedDraw.drawCode) {
+              resolveDrawCache.set(cacheKey, matchedDraw.drawCode);
               order.drawCode = matchedDraw.drawCode;
               order.drawId = matchedDraw.drawCode;
-              Order.updateOne({ _id: order._id }, { $set: { drawCode: matchedDraw.drawCode, drawId: matchedDraw.drawCode } }).catch(() => {});
+              const updateDoc: any = { drawCode: matchedDraw.drawCode, drawId: matchedDraw.drawCode };
+              if (matchedDraw.status === 'completed' && matchedDraw.winningNumbers && matchedDraw.winningNumbers.length > 0) {
+                order.status = 'completed';
+                order.winningNumbers = matchedDraw.winningNumbers;
+                updateDoc.status = 'completed';
+                updateDoc.winningNumbers = matchedDraw.winningNumbers;
+              }
+              Order.updateOne({ _id: order._id }, { $set: updateDoc }).catch(() => {});
+            } else {
+              resolveDrawCache.set(cacheKey, null);
             }
           }
         }
       }
     }
-    res.json(orders);
+
+    let finalOrders = orders;
+    if (status === 'pending') {
+      finalOrders = orders.filter((o: any) => o.status === 'pending');
+    } else if (status === 'completed') {
+      finalOrders = orders.filter((o: any) => o.status === 'completed');
+    }
+
+    res.json(finalOrders);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }

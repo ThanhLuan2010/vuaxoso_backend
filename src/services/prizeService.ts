@@ -429,7 +429,8 @@ export const processDrawResults = async (drawId: string) => {
     });
 
     for (const order of orders) {
-      let isWinner = false;
+      try {
+        let isWinner = false;
       let prizeAmount = 0;
 
       let allBoards: { numbers: string[], specialNumbers?: string[], cost: number, baseCost?: number, playType?: string }[] = [];
@@ -2328,18 +2329,32 @@ export const processDrawResults = async (drawId: string) => {
         order.isWinner = false;
         order.prizeAmount = 0;
 
-        const user = await User.findById(order.user);
-        const userName = user?.name || 'Khách hàng';
-        const userPhone = user?.phone ? EncryptionHelper.decryptDeterministic(user.phone) : '';
-        await AdminLog.create({
-          targetUserId: (user?._id || (order.user as any)?._id || order.user) as any,
-          adminName: 'Hệ thống',
-          action: 'THUA CƯỢC',
-          details: `Vé #${order.orderId} KHÔNG TRÚNG (THUA CƯỢC): -${(order.totalCost || 0).toLocaleString('vi-VN')} đ. Khách hàng: ${userName}${userPhone ? ` (${userPhone})` : ''}. Kỳ quay: ${draw.drawCode} (${game.name || game.code}).`
-        });
+        try {
+          const user = await User.findById(order.user);
+          const userName = user?.name || 'Khách hàng';
+          const userPhone = user?.phone ? EncryptionHelper.decryptDeterministic(user.phone) : '';
+          await AdminLog.create({
+            targetUserId: (user?._id || (order.user as any)?._id || order.user) as any,
+            adminName: 'Hệ thống',
+            action: 'THUA CƯỢC',
+            details: `Vé #${order.orderId} KHÔNG TRÚNG (THUA CƯỢC): -${(order.totalCost || 0).toLocaleString('vi-VN')} đ. Khách hàng: ${userName}${userPhone ? ` (${userPhone})` : ''}. Kỳ quay: ${draw.drawCode} (${game.name || game.code}).`
+          });
+        } catch (logErr) {
+          console.error('Error creating lose admin log:', logErr);
+        }
       }
       
-      await order.save();
+        await order.save();
+      } catch (orderErr) {
+        console.error(`PrizeService: Lỗi xử lý vé ${order?.orderId}:`, orderErr);
+        try {
+          order.status = 'completed';
+          order.winningNumbers = draw.winningNumbers;
+          await order.save();
+        } catch (saveFallbackErr) {
+          console.error(`PrizeService: Fallback save failed for ${order?.orderId}:`, saveFallbackErr);
+        }
+      }
     }
 
     console.log(`PrizeService: Hoàn tất dò vé cho kỳ quay ${draw.drawCode}.`);

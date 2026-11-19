@@ -26,8 +26,8 @@ function getVNDayOfWeek(date) {
 const ensureUpcomingDraws = async () => {
     try {
         const now = new Date();
-        // Tự động dọn dẹp các kỳ quay thừa của game phái sinh lô đề & loto (dùng chung kết quả XSKT 3 Miền / MB)
-        const derivedGames = await Game_1.default.find({ code: { $in: ['xoso_3mien', 'lode', 'loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'] } }).select('_id');
+        // Tự động dọn dẹp các kỳ quay thừa của game dùng chung kỳ quay (xoso_3mien, loto ăn theo MB, max_3d_pro ăn theo MAX 3D)
+        const derivedGames = await Game_1.default.find({ code: { $in: ['xoso_3mien', 'lode', 'loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2', 'max_3d_pro', 'max_3d_plus'] } }).select('_id');
         if (derivedGames.length > 0) {
             await Draw_1.default.deleteMany({
                 game: { $in: derivedGames.map(g => g._id) }
@@ -35,7 +35,7 @@ const ensureUpcomingDraws = async () => {
         }
         // 1. Vietlott / Điện Toán: Đảm bảo luôn có sẵn 10 kỳ quay
         const scheduledGames = await Game_1.default.find({
-            code: { $nin: ['keno', 'bao_keno', 'clln_keno', 'bingo18', 'MB', 'MT', 'MN', 'xoso_3mien', 'lode', 'loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2'] }
+            code: { $nin: ['keno', 'bao_keno', 'clln_keno', 'bingo18', 'MB', 'MT', 'MN', 'xoso_3mien', 'lode', 'loto_235', 'loto_cap', 'truot_loto', 'bao_loto_2', 'max_3d_pro', 'max_3d_plus'] }
         });
         for (const game of scheduledGames) {
             const todayCutoff = getVNCutoffDate(now, 17, 20);

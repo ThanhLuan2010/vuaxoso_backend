@@ -56,6 +56,7 @@ const orderSchema = new mongoose_1.Schema({
     totalCost: { type: Number, required: true },
     status: { type: String, enum: ['pending', 'completed', 'cancelled'], default: 'pending' },
     drawId: { type: String },
+    drawCode: { type: String },
     provinceName: { type: String },
     drawDate: { type: String },
     isWinner: { type: Boolean, default: false },
