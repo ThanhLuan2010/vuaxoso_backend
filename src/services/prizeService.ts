@@ -758,16 +758,27 @@ export const processDrawResults = async (drawId: string) => {
                 });
 
                 if (is570) {
-                  // Cơ cấu thưởng Lotto 5/70 (Mega Millions)
+                  // Cơ cấu thưởng Lotto 5/70 (Mega Millions) theo bảng tỉ lệ thắng chuẩn:
+                  // 1. Trúng 5 số trắng + 1 số Mega Ball: 6,000,000,000đ (Jackpot)
                   if (matchCount === 5 && hasSpecial) boardPrize += jackpotPrize;
+                  // 2. Trúng 5 số trắng + 0 Mega Ball: 10,000,000đ
                   else if (matchCount === 5 && !hasSpecial) boardPrize += 10000000;
+                  // 3. Trúng 4 số trắng + 1 số Mega Ball: 10,000,000đ
                   else if (matchCount === 4 && hasSpecial) boardPrize += 10000000;
+                  // 4. Trúng 4 số trắng + 0 Mega Ball: 9,000,000đ
                   else if (matchCount === 4 && !hasSpecial) boardPrize += 9000000;
-                  else if (matchCount === 3 && hasSpecial) boardPrize += 5000000;
+                  // 5. Trúng 3 số trắng + 1 số Mega Ball: 9,000,000đ
+                  else if (matchCount === 3 && hasSpecial) boardPrize += 9000000;
+                  // 6. Trúng 3 số trắng + 0 Mega Ball: 5,000,000đ
                   else if (matchCount === 3 && !hasSpecial) boardPrize += 5000000;
-                  else if (matchCount === 2 && hasSpecial) boardPrize += 1000000;
-                  else if (matchCount === 1 && hasSpecial) boardPrize += 100000;
-                  else if (matchCount === 0 && hasSpecial) boardPrize += 10000;
+                  // 7. Trúng 2 số trắng + 1 số Mega Ball: 5,000,000đ
+                  else if (matchCount === 2 && hasSpecial) boardPrize += 5000000;
+                  // 8. Trúng 1 số trắng + 1 Mega Ball: 1,000,000đ
+                  else if (matchCount === 1 && hasSpecial) boardPrize += 1000000;
+                  // 9. Trúng 0 số trắng + 1 Mega Ball: 100,000đ
+                  else if (matchCount === 0 && hasSpecial) boardPrize += 100000;
+                  // 10. Trúng 1 số trắng + 0 Mega Ball: 10,000đ
+                  else if (matchCount === 1 && !hasSpecial) boardPrize += 10000;
                 } else {
                   // Cơ cấu thưởng Lotto 5/35
                   if (matchCount === 5 && hasSpecial) boardPrize += jackpotPrize;
